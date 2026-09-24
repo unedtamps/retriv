@@ -1,0 +1,343 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100svh;
+    overflow-x: hidden;
+    background: #f4f1e8;
+    color: #292524;
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button,
+  select {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    background: #d9f15f;
+    color: #17231f;
+  }
+}
+
+@layer components {
+  .button-primary,
+  .button-secondary,
+  .button-danger {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 border px-4 py-2.5 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-55;
+  }
+
+  .button-primary {
+    @apply border-[#17231f] bg-[#17231f] text-white hover:border-emerald-950 hover:bg-emerald-950 focus-visible:outline-emerald-800;
+  }
+
+  .button-secondary {
+    @apply border-stone-300 bg-white text-stone-800 hover:border-stone-400 hover:bg-stone-50 focus-visible:outline-emerald-800;
+  }
+
+  .button-danger {
+    @apply border-red-800 bg-red-800 text-white hover:bg-red-900 focus-visible:outline-red-700;
+  }
+
+  .icon-button {
+    @apply inline-flex h-9 w-9 cursor-pointer items-center justify-center border border-stone-300 bg-white text-stone-600 transition-colors duration-200 hover:border-stone-400 hover:bg-stone-50 hover:text-stone-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .text-button {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 text-sm font-medium text-emerald-900 transition-colors duration-200 hover:text-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-800;
+  }
+
+  .field-label {
+    @apply mb-2 block text-sm font-medium text-stone-800;
+  }
+
+  .field-input {
+    @apply block w-full border border-stone-300 bg-white px-3.5 py-2.5 text-stone-950 outline-none transition-colors placeholder:text-stone-400 hover:border-stone-400 focus:border-emerald-800 focus:ring-1 focus:ring-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-500;
+  }
+
+  .markdown-answer {
+    @apply min-w-0 break-words text-sm leading-7 text-stone-800;
+  }
+
+  .markdown-answer > :first-child {
+    @apply mt-0;
+  }
+
+  .markdown-answer > :last-child {
+    @apply mb-0;
+  }
+
+  .markdown-answer p {
+    @apply my-3;
+  }
+
+  .markdown-answer h1,
+  .markdown-answer h2,
+  .markdown-answer h3,
+  .markdown-answer h4 {
+    @apply mt-5 font-semibold tracking-[-0.02em] text-stone-950;
+  }
+
+  .markdown-answer h1 {
+    @apply text-xl;
+  }
+
+  .markdown-answer h2 {
+    @apply text-lg;
+  }
+
+  .markdown-answer h3,
+  .markdown-answer h4 {
+    @apply text-base;
+  }
+
+  .markdown-answer ul,
+  .markdown-answer ol {
+    @apply my-3 pl-6;
+  }
+
+  .markdown-answer ul {
+    @apply list-disc;
+  }
+
+  .markdown-answer ol {
+    @apply list-decimal;
+  }
+
+  .markdown-answer li {
+    @apply my-1 pl-1;
+  }
+
+  .markdown-answer blockquote {
+    @apply my-4 border-l-2 border-emerald-800 pl-4 text-stone-600;
+  }
+
+  .markdown-answer a {
+    @apply text-emerald-900 underline decoration-emerald-700 underline-offset-2 hover:text-emerald-700;
+  }
+
+  .markdown-answer :not(pre) > code {
+    @apply rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[0.85em] text-emerald-950;
+  }
+
+  .markdown-answer pre {
+    @apply my-4 max-w-full overflow-x-auto border border-stone-800 bg-[#17231f] p-4 text-xs leading-6 text-stone-100;
+  }
+
+  .markdown-answer pre code {
+    @apply font-mono;
+  }
+
+  .markdown-answer table {
+    @apply my-4 block w-full max-w-full overflow-x-auto border-collapse text-left text-xs;
+  }
+
+  .markdown-answer th,
+  .markdown-answer td {
+    @apply whitespace-nowrap border border-stone-300 px-3 py-2 align-top;
+  }
+
+  .markdown-answer th {
+    @apply bg-stone-50 font-semibold text-stone-900;
+  }
+
+  .markdown-answer input[type='checkbox'] {
+    @apply mr-2 accent-emerald-800;
+  }
+
+  .field-icon {
+    @apply pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400;
+  }
+
+  .form-error {
+    @apply border-l-2 border-red-700 bg-red-50 px-4 py-3 text-sm leading-6 text-red-900;
+  }
+
+  .choice-card {
+    @apply grid cursor-pointer gap-1 border border-stone-300 bg-white p-4 transition-colors hover:border-stone-400;
+  }
+
+  .choice-card input {
+    @apply sr-only;
+  }
+
+  .choice-card-active {
+    @apply border-emerald-800 bg-emerald-50 ring-1 ring-emerald-800;
+  }
+
+  .section-eyebrow {
+    @apply font-mono text-[0.65rem] font-semibold uppercase tracking-[0.17em] text-emerald-800;
+  }
+
+  .role-badge {
+    @apply inline-flex border border-stone-300 bg-stone-50 px-2 py-1 font-mono text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-stone-700;
+  }
+
+  .status-dot {
+    @apply inline-flex items-center gap-2 text-sm text-stone-500 before:h-1.5 before:w-1.5 before:rounded-full before:bg-stone-400;
+  }
+
+  .status-active {
+    @apply text-emerald-800 before:bg-emerald-600;
+  }
+
+  .data-table {
+    @apply w-full border-collapse text-left;
+  }
+
+  .data-table th {
+    @apply border-b border-stone-200 bg-stone-50 px-5 py-3 font-mono text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-stone-500 lg:px-6;
+  }
+
+  .data-table td {
+    @apply border-b border-stone-200 px-5 py-4 align-middle text-sm last:border-b-0 lg:px-6;
+  }
+
+  .data-table tbody tr {
+    @apply transition-colors hover:bg-stone-50/80;
+  }
+
+  .nav-item {
+    @apply mb-1 flex cursor-pointer items-center gap-3 border-l-2 border-transparent px-3 py-2.5 text-sm text-stone-400 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d9f15f];
+  }
+
+  .nav-item-active {
+    @apply border-[#d9f15f] bg-white/5 text-white;
+  }
+
+  .capability-on,
+  .capability-off {
+    @apply inline-flex items-center gap-1;
+  }
+
+  .capability-on {
+    @apply text-emerald-800;
+  }
+
+  .capability-off {
+    @apply text-stone-300;
+  }
+
+  .skip-link {
+    @apply fixed left-3 top-3 z-[100] -translate-y-20 bg-[#d9f15f] px-4 py-2 text-sm font-semibold text-[#17231f] transition-transform focus:translate-y-0;
+  }
+
+  .notice {
+    @apply fixed bottom-4 right-4 z-[70] flex max-w-md items-center gap-3 border border-emerald-800 bg-emerald-950 px-4 py-3 text-sm text-white shadow-xl;
+  }
+
+  .notice-error {
+    @apply border-red-800 bg-red-950;
+  }
+
+  .notice button {
+    @apply ml-2 cursor-pointer text-white/70 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white;
+  }
+}
+
+.app-dialog {
+  width: min(calc(100% - 2rem), 36rem);
+  max-height: min(90svh, 54rem);
+  margin: auto;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.app-dialog::backdrop {
+  background: rgb(23 35 31 / 0.62);
+  backdrop-filter: blur(2px);
+}
+
+.dialog-surface {
+  max-height: inherit;
+  overflow-y: auto;
+  border: 1px solid #d6d3d1;
+  background: white;
+  box-shadow: 0 30px 100px rgb(16 24 20 / 0.25);
+}
+
+.app-drawer {
+  width: min(100%, 46rem);
+  height: 100svh;
+  max-height: 100svh;
+  margin: 0 0 0 auto;
+}
+
+.app-drawer .dialog-surface {
+  display: flex;
+  height: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  border-block: 0;
+  border-right: 0;
+}
+
+.drawer-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .app-dialog {
+    width: min(calc(100% - 1rem), 36rem);
+  }
+
+  .app-drawer {
+    width: 100%;
+  }
+
+  .app-drawer .dialog-surface {
+    border-left: 0;
+  }
+
+  .notice {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    left: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

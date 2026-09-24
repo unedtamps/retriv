@@ -1,0 +1,13 @@
+.env
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+htmlcov/
+migration-manifests/
+*.migration.json
+users-v*.json

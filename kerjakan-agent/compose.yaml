@@ -1,0 +1,53 @@
+name: kerjakan-agent
+
+services:
+  agent:
+    build: .
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 64
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      AGENT_ENVIRONMENT: ${AGENT_ENVIRONMENT:?AGENT_ENVIRONMENT is required}
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:?AGENT_API_TOKEN is required}
+      AGENT_SCOPE_PUBLIC_KEY_B64: ${AGENT_SCOPE_PUBLIC_KEY_B64:?AGENT_SCOPE_PUBLIC_KEY_B64 is required}
+      AGENT_SCOPE_ISSUER: ${AGENT_SCOPE_ISSUER:-enterprise-ai-ingestion}
+      AGENT_DATABASE_URL: ${AGENT_DATABASE_URL:?AGENT_DATABASE_URL is required}
+      AGENT_QDRANT_URL: ${AGENT_QDRANT_URL:-http://127.0.0.1:6333}
+      AGENT_QDRANT_API_KEY: ${AGENT_QDRANT_API_KEY:?AGENT_QDRANT_API_KEY is required}
+      AGENT_QDRANT_COLLECTION: ${AGENT_QDRANT_COLLECTION:-kerjakan-chunks-qwen3-8b-4096-v1}
+      AGENT_QDRANT_TIMEOUT_SECONDS: ${AGENT_QDRANT_TIMEOUT_SECONDS:-20}
+      AGENT_EMBEDDING_BASE_URL: ${AGENT_EMBEDDING_BASE_URL:-http://127.0.0.1:1234/v1}
+      AGENT_EMBEDDING_API_KEY: ${AGENT_EMBEDDING_API_KEY:?AGENT_EMBEDDING_API_KEY is required}
+      AGENT_EMBEDDING_MODEL: ${AGENT_EMBEDDING_MODEL:-text-embedding-qwen3-embedding-8b}
+      AGENT_EMBEDDING_PROFILE: ${AGENT_EMBEDDING_PROFILE:-qwen3-embedding-8b-4096-v1}
+      AGENT_EMBEDDING_DIMENSIONS: ${AGENT_EMBEDDING_DIMENSIONS:-4096}
+      AGENT_EMBEDDING_TIMEOUT_SECONDS: ${AGENT_EMBEDDING_TIMEOUT_SECONDS:-60}
+      AGENT_MIN_RELEVANCE_SCORE: ${AGENT_MIN_RELEVANCE_SCORE:-0.25}
+      AGENT_CHAT_BASE_URL: ${AGENT_CHAT_BASE_URL:-https://openrouter.ai/api/v1}
+      AGENT_CHAT_API_KEY: ${AGENT_CHAT_API_KEY:?AGENT_CHAT_API_KEY is required}
+      AGENT_CHAT_MODEL: ${AGENT_CHAT_MODEL:?AGENT_CHAT_MODEL is required}
+      AGENT_CHAT_TIMEOUT_SECONDS: ${AGENT_CHAT_TIMEOUT_SECONDS:-90}
+      AGENT_MAX_CONTEXT_CHUNKS: ${AGENT_MAX_CONTEXT_CHUNKS:-8}
+    # Local Linux deployment: source and model servers are host processes on loopback.
+    network_mode: host
+    command: ["uvicorn", "agent.main:app", "--host", "127.0.0.1", "--port", "8090"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health/live')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

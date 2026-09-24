@@ -1,0 +1,128 @@
+name: enterprise-ai-ingestion
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - ingestion
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    networks:
+      - ingestion
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL:-http://minio:9000}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:?APP_ENVIRONMENT is required}
+      MINIO_APP_USER: ${MINIO_APP_USER:?MINIO_APP_USER is required}
+      MINIO_APP_PASSWORD: ${MINIO_APP_PASSWORD:?MINIO_APP_PASSWORD is required}
+      MINIO_INTERNAL_USER: ${MINIO_INTERNAL_USER:?MINIO_INTERNAL_USER is required}
+      MINIO_INTERNAL_PASSWORD: ${MINIO_INTERNAL_PASSWORD:?MINIO_INTERNAL_PASSWORD is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:?MINIO_BUCKET is required}
+      MINIO_CONTEXT_BUCKET: ${MINIO_CONTEXT_BUCKET:?MINIO_CONTEXT_BUCKET is required}
+      MINIO_MANIFEST_BUCKET: ${MINIO_MANIFEST_BUCKET:?MINIO_MANIFEST_BUCKET is required}
+      MINIO_MANIFEST_PREFIX: ${MIGRATION_MANIFEST_PREFIX:-bootstrap/}
+      MINIO_MANIFEST_RETENTION_DAYS: ${MINIO_MANIFEST_RETENTION_DAYS:-7}
+      MINIO_MANIFEST_READER_USER: ${MINIO_MANIFEST_READER_USER:?MINIO_MANIFEST_READER_USER is required}
+      MINIO_MANIFEST_READER_PASSWORD: ${MINIO_MANIFEST_READER_PASSWORD:?MINIO_MANIFEST_READER_PASSWORD is required}
+      MINIO_MANIFEST_WRITER_USER: ${MINIO_MANIFEST_WRITER_USER:?MINIO_MANIFEST_WRITER_USER is required}
+      MINIO_MANIFEST_WRITER_PASSWORD: ${MINIO_MANIFEST_WRITER_PASSWORD:?MINIO_MANIFEST_WRITER_PASSWORD is required}
+    entrypoint: ["/bin/sh", "/config/init.sh"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./docker/minio/init.sh:/config/init.sh:ro
+    networks:
+      - ingestion
+
+  clamav:
+    image: clamav/clamav:1.4_base
+    restart: unless-stopped
+    environment:
+      CLAMD_CONF_StreamMaxLength: 60M
+      CLAMD_CONF_MaxFileSize: 60M
+      CLAMD_CONF_MaxScanSize: 120M
+      CLAMD_CONF_AlertExceedsMax: "yes"
+    mem_limit: 4g
+    pids_limit: 512
+    volumes:
+      - clamav_data:/var/lib/clamav
+    ports:
+      - "127.0.0.1:3310:3310"
+    networks:
+      - ingestion
+
+  dummy-receiver:
+    profiles: ["events"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command:
+      [
+        "uvicorn",
+        "dummy_receiver.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      - ingestion
+
+networks:
+  ingestion:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  clamav_data:
