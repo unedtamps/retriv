@@ -353,6 +353,9 @@ async def apply_manifest(
                 user.password_hash = password_hash
                 user.role = user_manifest.role
                 user.is_active = user_manifest.is_active
+                # Credentials or permissions changed: invalidate sessions issued
+                # before this update so stolen tokens cannot outlive a rotation.
+                user.auth_version += 1
                 result.users_updated += 1
 
         result_payload = result.model_dump(mode="json")

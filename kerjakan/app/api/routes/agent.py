@@ -7,11 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import AgentClient
-from app.api.schemas import (
-    AgentAnswerResponse,
-    AgentAskResponse,
-    AskContextRequest,
-)
+from app.api.schemas import AgentAnswerResponse, AgentAskResponse, AskContextRequest
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.models import WorkspaceMembership
@@ -60,7 +56,9 @@ async def ask_context(
     try:
         upstream = await client.post(
             f"{settings.agent_base_url}/v1/answer",
-            headers={"Authorization": f"Bearer {settings.agent_api_token.get_secret_value()}"},
+            headers={
+                "Authorization": f"Bearer {settings.agent_api_token.get_secret_value()}"
+            },
             json={"question": payload.question, "scope_token": delegation},
         )
     except httpx.TimeoutException as exc:
@@ -68,14 +66,22 @@ async def ask_context(
     except httpx.HTTPError as exc:
         raise agent_unavailable_error("The answer service is unavailable.") from exc
     if upstream.status_code != 200:
-        raise agent_unavailable_error("The answer service could not complete the request.")
+        raise agent_unavailable_error(
+            "The answer service could not complete the request."
+        )
     try:
         agent_response = AgentAnswerResponse.model_validate(upstream.json())
     except (ValueError, TypeError) as exc:
-        raise agent_unavailable_error("The answer service returned an invalid response.") from exc
+        raise agent_unavailable_error(
+            "The answer service returned an invalid response."
+        ) from exc
 
-    if any(source.workspace_id not in workspace_ids for source in agent_response.sources):
-        raise agent_unavailable_error("The answer service returned an out-of-scope source.")
+    if any(
+        source.workspace_id not in workspace_ids for source in agent_response.sources
+    ):
+        raise agent_unavailable_error(
+            "The answer service returned an out-of-scope source."
+        )
     response.headers["Cache-Control"] = "no-store"
     return AgentAskResponse(
         answer=agent_response.answer,
@@ -83,9 +89,7 @@ async def ask_context(
     )
 
 
-async def searchable_workspace_ids(
-    session: AsyncSession, user_id: UUID
-) -> list[UUID]:
+async def searchable_workspace_ids(session: AsyncSession, user_id: UUID) -> list[UUID]:
     roles = [
         role
         for role, permissions in ROLE_PERMISSIONS.items()

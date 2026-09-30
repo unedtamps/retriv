@@ -6,8 +6,13 @@ import pytest
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import select
 
+from app.core.config import Settings
 from app.db.models import User, Workspace
-from app.security.auth import verify_password
+from app.security.auth import (
+    create_access_token,
+    decode_access_token,
+    verify_password,
+)
 from provisioning.models import ProvisioningRun
 from provisioning.service import (
     ManifestConflictError,
@@ -101,6 +106,10 @@ async def test_new_manifest_id_upserts_existing_records(
         manifest_payload=first_payload,
         source_uri="s3://migration-manifests/bootstrap/users-v1.json",
     )
+    async with db_session_factory() as session:
+        created = await session.scalar(select(User).where(User.username == "admin"))
+        assert created is not None
+        assert created.auth_version == 0
 
     updated_payload, updated_digest = make_manifest(
         manifest_payload(
@@ -127,7 +136,43 @@ async def test_new_manifest_id_upserts_existing_records(
         assert user.role == "auditor"
         assert not user.is_active
         assert verify_password("new-correct-password-123", user.password_hash)
+        assert user.auth_version == 1
         assert workspace.name == "Updated Finance"
+
+
+@pytest.mark.asyncio
+async def test_rotated_password_invalidates_previously_issued_token(
+    db_session_factory: Any,
+    settings: Settings,
+) -> None:
+    first_payload, first_digest = make_manifest(manifest_payload())
+    await apply_manifest(
+        db_session_factory,
+        manifest_payload=first_payload,
+        source_uri="s3://migration-manifests/bootstrap/users-v1.json",
+    )
+    async with db_session_factory() as session:
+        user = await session.scalar(select(User).where(User.username == "admin"))
+        assert user is not None
+        token, _ = create_access_token(user, settings)
+
+    rotated_payload, _ = make_manifest(
+        manifest_payload(
+            migration_id="rotation-2",
+            password="rotated-password-123",
+        )
+    )
+    await apply_manifest(
+        db_session_factory,
+        manifest_payload=rotated_payload,
+        source_uri="s3://migration-manifests/bootstrap/users-v2.json",
+    )
+
+    claims = decode_access_token(token, settings)
+    async with db_session_factory() as session:
+        rotated = await session.scalar(select(User).where(User.username == "admin"))
+        assert rotated is not None
+        assert rotated.auth_version == claims.auth_version + 1
 
 
 @pytest.mark.asyncio
