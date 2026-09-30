@@ -594,7 +594,7 @@ class ProcessingWorker:
                 "size_bytes": document.size_bytes,
             },
             "pipeline": {
-                "name": "kerjakan-context-pipeline",
+                "name": "retriv-context-pipeline",
                 "version": self._settings.pipeline_version,
                 "docling_version": extraction.extractor_version,
                 "ocr_enabled": document.media_type == "application/pdf",

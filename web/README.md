@@ -1,6 +1,6 @@
-# Kerjakan Control Plane
+# Retriv Control Plane
 
-Vite, React, and TypeScript dashboard for Kerjakan identity and workspace administration.
+Vite, React, and TypeScript dashboard for Retriv identity and workspace administration.
 The browser routes `/dashboard` and `/upload-context` share the same login session. Open
 `/upload-context` directly to sign in and submit a PDF or DOCX to a workspace where you are an
 owner or editor.
@@ -8,8 +8,8 @@ owner or editor.
 ## Requirements
 
 - Node.js `^20.19.0` or `>=22.12.0`
-- The Kerjakan API running on `http://127.0.0.1:8000`
-- An admin user provisioned in the Kerjakan database
+- The Retriv API running on `http://127.0.0.1:8000`
+- An admin user provisioned in the Retriv database
 
 ## Local Development
 

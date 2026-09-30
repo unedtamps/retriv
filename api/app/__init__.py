@@ -1,1 +1,1 @@
-"""Enterprise AI document ingestion service."""
+"""Retriv document intake service."""

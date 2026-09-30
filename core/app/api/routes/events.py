@@ -29,15 +29,15 @@ async def receive_event(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header()] = None,
-    x_kerjakan_key_id: Annotated[str | None, Header()] = None,
-    x_kerjakan_timestamp: Annotated[str | None, Header()] = None,
-    x_kerjakan_signature: Annotated[str | None, Header()] = None,
+    x_retriv_key_id: Annotated[str | None, Header()] = None,
+    x_retriv_timestamp: Annotated[str | None, Header()] = None,
+    x_retriv_signature: Annotated[str | None, Header()] = None,
 ) -> EventAcceptedResponse:
     if (
         idempotency_key is None
-        or x_kerjakan_key_id is None
-        or x_kerjakan_timestamp is None
-        or x_kerjakan_signature is None
+        or x_retriv_key_id is None
+        or x_retriv_timestamp is None
+        or x_retriv_signature is None
     ):
         raise signature_error()
     try:
@@ -59,9 +59,9 @@ async def receive_event(
     verify_webhook_signature(
         body=body,
         event_id=event_id,
-        key_id=x_kerjakan_key_id,
-        timestamp_value=x_kerjakan_timestamp,
-        supplied_signature=x_kerjakan_signature,
+        key_id=x_retriv_key_id,
+        timestamp_value=x_retriv_timestamp,
+        supplied_signature=x_retriv_signature,
         secrets=settings.webhook_secrets(),
         max_age_seconds=settings.webhook_max_age_seconds,
     )

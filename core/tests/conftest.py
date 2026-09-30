@@ -373,7 +373,7 @@ def ready_event(
     return {
         "id": str(event_id or uuid4()),
         "type": "document.ready",
-        "source": "enterprise-ai-ingestion",
+        "source": "retriv-api",
         "subject": f"document/{document_id}",
         "schema_version": 1,
         "occurred_at": datetime.now(UTC).isoformat(),
@@ -396,7 +396,7 @@ def deleted_event(ready: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(uuid4()),
         "type": "document.deleted",
-        "source": "enterprise-ai-ingestion",
+        "source": "retriv-api",
         "subject": f"document/{document_id}",
         "schema_version": 1,
         "occurred_at": datetime.now(UTC).isoformat(),
@@ -436,8 +436,8 @@ async def send_event(
         headers={
             "Content-Type": "application/json",
             "Idempotency-Key": str(event_id),
-            "X-Kerjakan-Key-Id": key_id or settings.webhook_key_id,
-            "X-Kerjakan-Timestamp": str(timestamp),
-            "X-Kerjakan-Signature": signature,
+            "X-Retriv-Key-Id": key_id or settings.webhook_key_id,
+            "X-Retriv-Timestamp": str(timestamp),
+            "X-Retriv-Signature": signature,
         },
     )

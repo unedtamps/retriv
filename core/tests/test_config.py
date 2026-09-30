@@ -57,7 +57,7 @@ def test_production_worker_does_not_require_api_credentials() -> None:
 @pytest.mark.parametrize(
     "database_url",
     [
-        "postgresql+asyncpg://kerjakan_internal:kerjakan_internal@postgres/context",
+        "postgresql+asyncpg://retriv_core:retriv_core@postgres/context",
         "postgresql+asyncpg://context:context@postgres/context",
         "postgresql+asyncpg://context@postgres/context",
     ],

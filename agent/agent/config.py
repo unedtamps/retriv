@@ -20,16 +20,16 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "production"]
     api_token: SecretStr = SecretStr("development-agent-api-token-change-this")
     scope_public_key_b64: SecretStr
-    scope_issuer: str = "enterprise-ai-ingestion"
+    scope_issuer: str = "retriv-api"
 
     database_url: SecretStr = SecretStr(
-        "postgresql+asyncpg://kerjakan_agent_readonly:change-this"
-        "@127.0.0.1:5433/kerjakan_internal"
+        "postgresql+asyncpg://agent_readonly:change-this"
+        "@127.0.0.1:5433/retriv_core"
     )
 
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_api_key: SecretStr = SecretStr("replace-with-qdrant-read-only-key")
-    qdrant_collection: str = "kerjakan-chunks-qwen3-8b-4096-v1"
+    qdrant_collection: str = "retriv-chunks-qwen3-8b-4096-v1"
     qdrant_timeout_seconds: float = Field(default=20.0, gt=0, le=180)
 
     embedding_base_url: str = "http://127.0.0.1:1234/v1"

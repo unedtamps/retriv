@@ -32,7 +32,7 @@ export function CredentialDialog({ credential, onClose }: CredentialDialogProps)
           <div className="mb-5 flex items-start gap-3 border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
             <KeyRound className="mt-0.5 shrink-0" aria-hidden="true" size={18} />
             <p>
-              This is the only plaintext copy. Kerjakan stores only the password hash.
+              This is the only plaintext copy. Retriv stores only the password hash.
             </p>
           </div>
           <dl className="divide-y divide-stone-200 border-y border-stone-200 bg-stone-50">

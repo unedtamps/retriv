@@ -38,7 +38,7 @@ def make_event() -> OutboxEvent:
         payload={
             "id": str(event_id),
             "type": "document.ready",
-            "source": "enterprise-ai-ingestion",
+            "source": "retriv-api",
             "subject": f"document/{document_id}",
             "schema_version": 1,
             "occurred_at": datetime.now(UTC).isoformat(),
@@ -103,7 +103,7 @@ async def test_relay_signs_and_sends_exact_serialized_payload(
     expected_body = json.dumps(
         event.payload, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
-    timestamp = request.headers["X-Kerjakan-Timestamp"]
+    timestamp = request.headers["X-Retriv-Timestamp"]
     expected_signature = hmac.new(
         SIGNING_SECRET.encode("utf-8"),
         f"{timestamp}.{event.id}.".encode() + expected_body,
@@ -113,9 +113,9 @@ async def test_relay_signs_and_sends_exact_serialized_payload(
     assert request.content == expected_body
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["Idempotency-Key"] == str(event.id)
-    assert request.headers["X-Kerjakan-Key-Id"] == SIGNING_KEY_ID
+    assert request.headers["X-Retriv-Key-Id"] == SIGNING_KEY_ID
     assert int(timestamp) > 0
-    assert request.headers["X-Kerjakan-Signature"] == f"v1={expected_signature}"
+    assert request.headers["X-Retriv-Signature"] == f"v1={expected_signature}"
 
 
 def test_outbox_settings_store_and_validate_signing_secret() -> None:

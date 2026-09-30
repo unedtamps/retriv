@@ -1,4 +1,4 @@
-# Enterprise AI Ingestion
+# Retriv API
 
 Backend FastAPI untuk menerima raw document perusahaan dengan scope per workspace.
 Versi MVP ini menerima `PDF`, `DOCX`, dan `XLSX`; file asli disimpan pada bucket private
@@ -19,7 +19,7 @@ MinIO dan metadata disimpan di PostgreSQL.
 - Password-protected/encrypted document dan macro-enabled Office document ditolak.
 - ClamAV memindai upload sebelum file divalidasi dan disimpan ke MinIO.
 - OCR, parsing isi, chunking, dan embedding berjalan di service internal. Semantic Q&A berjalan
-  melalui `kerjakan-agent` dan hanya menerima context dari scope workspace yang diverifikasi oleh API.
+  melalui `retriv-agent` dan hanya menerima context dari scope workspace yang diverifikasi oleh API.
 
 ## Prerequisites
 
@@ -57,39 +57,39 @@ uv run --env-file .env -- alembic upgrade head
 uv run --env-file .env -- uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Jalankan dashboard dari project `kerjakan-web` pada terminal lain. Konfigurasi `.env.example`
+Jalankan dashboard dari project `retriv-web` pada terminal lain. Konfigurasi `.env.example`
 backend sudah mengizinkan kedua origin development Vite secara eksplisit:
 
 ```bash
-cd ../kerjakan-web
+cd ../web
 npm ci
 npm run dev
 ```
 
 Dashboard tersedia di `http://127.0.0.1:5173/dashboard`.
 
-Untuk chat atas dokumen, siapkan `kerjakan-agent` dan `kerjakan-internal`, isi variabel
+Untuk chat atas dokumen, siapkan `retriv-agent` dan `retriv-core`, isi variabel
 `APP_AGENT_*` pada `.env`, serta set `APP_PROCESSING_API_BASE_URL` dan
 `APP_PROCESSING_API_TOKEN` untuk menunjuk ke API internal (token harus sama dengan
-`INTERNAL_API_TOKEN` pada `kerjakan-internal/.env`). Buka `http://127.0.0.1:5173/ask-context`.
+`INTERNAL_API_TOKEN` pada `retriv-core/.env`). Buka `http://127.0.0.1:5173/ask-context`.
 Notifikasi pemrosesan memuat seluruh workspace yang dapat dibaca user, memperlihatkan proses aktif
 terbaru dan aktivitas satu jam terakhir, serta diperbarui setiap 10 detik. Setiap percakapan memiliki
 ID dan dimiliki oleh user pembuatnya; pertanyaan, jawaban, serta referensi sumber disimpan di
-PostgreSQL utama Kerjakan. Chunk hasil retrieval dan output tool tidak disimpan terpisah, tetapi
+PostgreSQL utama Retriv. Chunk hasil retrieval dan output tool tidak disimpan terpisah, tetapi
 jawaban tersimpan dapat mengutip teks sumber. Untuk mencegah jawaban lama menjadi bukti baru,
 jawaban berbasis dokumen tetap terlihat di transcript privat tetapi teks dan referensi sumbernya
 tidak dikirim kembali ke model; pertanyaan user, workspace provenance, dan pencarian segar digunakan
 untuk melanjutkan chat.
-Kerjakan menghitung membership `search_context` saat tiap pesan dimulai dan menandatangani scope
+Retriv menghitung membership `search_context` saat tiap pesan dimulai dan menandatangani scope
 workspace untuk agent. Pesan salam sederhana dijawab secara statis; pesan lainnya harus memperoleh
 bukti dari tool retrieval yang dipilih model sebelum jawaban dapat dikembalikan. Agent memverifikasi
 tanda tangan dan menjalankan loop PydanticAI terbatas, dengan retrieval hanya melalui wrapper
 server-side. Jika tidak ada bukti relevan yang lolos ambang skor, API mengembalikan jawaban tetap
 tanpa memanggil model untuk menjawab dari pengetahuan umum. Perubahan membership berlaku pada pesan
 berikutnya; turn lama dari workspace yang sudah dicabut tidak diteruskan sebagai konteks ke model.
-Lihat `../kerjakan-agent/README.md` untuk konfigurasi dan setup agent.
+Lihat `../agent/README.md` untuk konfigurasi dan setup agent.
 
-Setelah `kerjakan-internal` siap pada port `8082`, jalankan outbox relay dari host pada terminal
+Setelah `retriv-core` siap pada port `8082`, jalankan outbox relay dari host pada terminal
 kedua:
 
 ```bash
@@ -105,9 +105,9 @@ agar aplikasi host dapat terhubung.
 
 Data disimpan pada Docker named volumes:
 
-- `enterprise-ai-ingestion_postgres_data`
-- `enterprise-ai-ingestion_minio_data`
-- `enterprise-ai-ingestion_clamav_data`
+- `retriv-api_postgres_data`
+- `retriv-api_minio_data`
+- `retriv-api_clamav_data`
 
 Tidak ada folder data yang di-bind mount ke host. `docker compose down` tidak menghapus
 data; `docker compose down -v` menghapus seluruh volume dan seluruh data lokal.
@@ -218,7 +218,7 @@ lama tidak dapat menyelesaikan lease yang sudah diambil ulang:
 uv run --env-file .env -- python -m outbox
 ```
 
-Konfigurasi contoh mengarah ke receiver durable `kerjakan-internal` pada
+Konfigurasi contoh mengarah ke receiver durable `retriv-core` pada
 `http://127.0.0.1:8082/internal/events`. Untuk menguji dengan dummy receiver, jalankan relay dengan
 override sementara:
 
@@ -232,9 +232,9 @@ Set `OUTBOX_ENVIRONMENT=production` pada deployment production; mode ini mewajib
 
 Setiap request memakai compact JSON deterministik (`sort_keys=True`) dan body bytes yang sama
 untuk pengiriman serta HMAC-SHA256. Signature `v1=<hex>` pada
-`X-Kerjakan-Signature` dihitung atas
-`{unix_timestamp}.{event_id}.<body>`. Key dipilih melalui `X-Kerjakan-Key-Id`, sedangkan timestamp
-dikirim melalui `X-Kerjakan-Timestamp`. Receiver harus memverifikasi signature dengan raw body,
+`X-Retriv-Signature` dihitung atas
+`{unix_timestamp}.{event_id}.<body>`. Key dipilih melalui `X-Retriv-Key-Id`, sedangkan timestamp
+dikirim melalui `X-Retriv-Timestamp`. Receiver harus memverifikasi signature dengan raw body,
 menerapkan kebijakan freshness timestamp-nya sendiri, dan menangani `Idempotency-Key` secara
 idempotent.
 

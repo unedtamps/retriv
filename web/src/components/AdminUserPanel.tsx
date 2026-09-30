@@ -285,7 +285,7 @@ function CreateUserDialog({
       open={open}
       title="Create a user"
       eyebrow="Platform admin"
-      description="Kerjakan generates a permanent password and displays it once after creation."
+      description="Retriv generates a permanent password and displays it once after creation."
       onClose={onClose}
     >
       <form className="space-y-5 px-5 py-6 sm:px-7" onSubmit={handleSubmit}>

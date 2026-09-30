@@ -13,7 +13,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.db.models import User
 
-CONTEXT_SCOPE_AUDIENCE = "kerjakan-agent-answer"
+CONTEXT_SCOPE_AUDIENCE = "retriv-agent-answer"
 CONTEXT_SCOPE_TYPE = "context_search"
 MAX_SCOPE_WORKSPACES = 1000
 SCOPE_ALGORITHM = "RS256"

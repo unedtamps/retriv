@@ -135,9 +135,9 @@ class OutboxRelay:
         headers = {
             "Content-Type": "application/json",
             "Idempotency-Key": str(event.id),
-            "X-Kerjakan-Key-Id": self._settings.signing_key_id,
-            "X-Kerjakan-Timestamp": str(timestamp),
-            "X-Kerjakan-Signature": sign_request(
+            "X-Retriv-Key-Id": self._settings.signing_key_id,
+            "X-Retriv-Timestamp": str(timestamp),
+            "X-Retriv-Signature": sign_request(
                 secret=self._settings.signing_secret.get_secret_value(),
                 timestamp=timestamp,
                 event_id=event.id,

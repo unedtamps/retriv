@@ -116,9 +116,9 @@ async def test_rejects_event_body_before_buffering_beyond_limit(
         content=b"x" * (65 * 1024),
         headers={
             "Idempotency-Key": event_id,
-            "X-Kerjakan-Key-Id": "irrelevant",
-            "X-Kerjakan-Timestamp": "1",
-            "X-Kerjakan-Signature": "v1=invalid",
+            "X-Retriv-Key-Id": "irrelevant",
+            "X-Retriv-Timestamp": "1",
+            "X-Retriv-Signature": "v1=invalid",
         },
     )
 

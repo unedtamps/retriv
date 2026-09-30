@@ -244,7 +244,7 @@ async def test_delete_persists_document_deleted_outbox_event(
     assert event.workspace_id == entities.finance.id
     assert event.payload["id"] == str(event.id)
     assert event.payload["type"] == "document.deleted"
-    assert event.payload["source"] == "enterprise-ai-ingestion"
+    assert event.payload["source"] == "retriv-api"
     assert event.payload["subject"] == f"document/{created.json()['id']}"
     assert event.payload["schema_version"] == 1
     assert event.payload["occurred_at"]

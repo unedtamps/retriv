@@ -1,6 +1,6 @@
-# Kerjakan Internal
+# Retriv Core
 
-Internal document-context service for events emitted by `kerjakan`. It accepts signed
+Internal document-context service for events emitted by `retriv`. It accepts signed
 `document.ready` and `document.deleted` webhooks, processes PDF and DOCX files with Docling,
 stores the complete structured extraction in private object storage, and stores retrieval chunks
 in PostgreSQL. It generates embeddings through an OpenAI-compatible API and stores vectors in a
@@ -9,10 +9,10 @@ separate Qdrant collection.
 ## Data Ownership
 
 ```text
-kerjakan
+retriv
   raw S3 objects + source metadata + delivery outbox
 
-kerjakan-internal
+retriv-core
   PostgreSQL: durable event inbox + processing runs + chunk text + embedding ledger
   Qdrant: vectors + identifier/hash payloads (no chunk text)
   S3: structured Docling artifacts
@@ -57,7 +57,7 @@ workspaces/{workspace_id}/documents/{document_id}/runs/{run_id}/attempts/{lease_
 
 Local execution requires:
 
-- The sibling `kerjakan` infrastructure running MinIO on `127.0.0.1:9000`.
+- The sibling `retriv` infrastructure running MinIO on `127.0.0.1:9000`.
 - Docker for PostgreSQL, Qdrant, and the document-processing worker.
 - An OpenAI-compatible embedding server. Local development uses LM Studio on port `1234`.
 - `uv` for the host API and development commands.
@@ -83,15 +83,15 @@ lms server start --port 1234 --bind 0.0.0.0
 This exposes LM Studio to other hosts on the local network; restrict host access accordingly.
 The worker cannot reach a server bound only to `127.0.0.1` on the host.
 
-The sibling `kerjakan` stack provisions the `context-service` MinIO user and private
+The sibling `retriv` stack provisions the `context-service` MinIO user and private
 `context-documents` bucket. Keep these values aligned between both `.env` files:
 
 ```text
-kerjakan OUTBOX_SIGNING_KEY_ID       = internal INTERNAL_WEBHOOK_KEY_ID
-kerjakan OUTBOX_SIGNING_SECRET       = internal INTERNAL_WEBHOOK_SECRET
-kerjakan MINIO_INTERNAL_USER         = internal INTERNAL_S3_ACCESS_KEY
-kerjakan MINIO_INTERNAL_PASSWORD     = internal INTERNAL_S3_SECRET_KEY
-kerjakan MINIO_CONTEXT_BUCKET        = internal INTERNAL_S3_ARTIFACT_BUCKET
+retriv OUTBOX_SIGNING_KEY_ID       = internal INTERNAL_WEBHOOK_KEY_ID
+retriv OUTBOX_SIGNING_SECRET       = internal INTERNAL_WEBHOOK_SECRET
+retriv MINIO_INTERNAL_USER         = internal INTERNAL_S3_ACCESS_KEY
+retriv MINIO_INTERNAL_PASSWORD     = internal INTERNAL_S3_SECRET_KEY
+retriv MINIO_CONTEXT_BUCKET        = internal INTERNAL_S3_ARTIFACT_BUCKET
 ```
 
 Create the environment file and install the host API dependencies:
@@ -109,9 +109,9 @@ The agent uses only the latter key. The example values are placeholders.
 Start the sibling infrastructure first so MinIO and its service credentials are available:
 
 ```bash
-cd ../kerjakan
+cd ../api
 make infra
-cd ../kerjakan-internal
+cd ../core
 ```
 
 Build/start the Docker worker and run the API on the host:
@@ -178,10 +178,10 @@ The event endpoint verifies HMAC-SHA256 over the exact request bytes using:
 ```
 
 The context and processing-run endpoints require `Authorization: Bearer <INTERNAL_API_TOKEN>`. This token
-authenticates the source `kerjakan` service only and must never be given to a browser or agent.
+authenticates the source `retriv` service only and must never be given to a browser or agent.
 `POST /internal/context/search` remains an internal API for trusted service callers; the agent's
 answer flow no longer calls it. The agent uses separately provisioned read-only PostgreSQL and
-Qdrant credentials, verifies a Kerjakan-signed workspace scope, applies the workspace/profile
+Qdrant credentials, verifies a Retriv-signed workspace scope, applies the workspace/profile
 filter in Qdrant, then validates active runs, indexed profile, hashes, and document state in
 PostgreSQL before passing any chunk text to its LLM. API documentation is disabled when
 `INTERNAL_ENVIRONMENT=production`.

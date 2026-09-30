@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 DOCUMENT_READY_EVENT_TYPE: Literal["document.ready"] = "document.ready"
 DOCUMENT_DELETED_EVENT_TYPE: Literal["document.deleted"] = "document.deleted"
-EVENT_SOURCE = "enterprise-ai-ingestion"
+EVENT_SOURCE = "retriv-api"
 
 
 class DocumentReadyData(BaseModel):

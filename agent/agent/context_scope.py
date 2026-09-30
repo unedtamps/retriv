@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent.config import Settings
 
-SCOPE_AUDIENCE = "kerjakan-agent-answer"
+SCOPE_AUDIENCE = "retriv-agent-answer"
 SCOPE_TYPE = "context_search"
 SCOPE_ALGORITHM = "RS256"
 MAX_SCOPE_WORKSPACES = 1000
@@ -39,7 +39,7 @@ class ContextScope(BaseModel):
 
 
 class InvalidContextScope(ValueError):
-    """Raised when a Kerjakan-signed scope is invalid or expired."""
+    """Raised when a Retriv-signed scope is invalid or expired."""
 
 
 def verify_context_scope(token: str, settings: Settings) -> ContextScope:

@@ -1,1 +1,1 @@
-"""Kerjakan internal document context service."""
+"""Retriv core document context processing service."""

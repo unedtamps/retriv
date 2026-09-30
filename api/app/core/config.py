@@ -19,14 +19,14 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Enterprise AI Ingestion"
+    app_name: str = "Retriv API"
     environment: Literal["local", "test", "production"] = "local"
-    database_url: str = "postgresql+asyncpg://ingestion:ingestion@localhost:5432/ingestion"
+    database_url: str = "postgresql+asyncpg://retriv_api:retriv_api@localhost:5432/retriv_api"
 
     jwt_secret: SecretStr = Field(default_factory=lambda: SecretStr(token_urlsafe(48)))
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
-    jwt_issuer: str = "enterprise-ai-ingestion"
-    jwt_audience: str = "enterprise-ai-ingestion-api"
+    jwt_issuer: str = "retriv-api"
+    jwt_audience: str = "retriv-api"
     access_token_minutes: int = Field(default=60, ge=1, le=1440)
     login_max_attempts: int = Field(default=5, ge=1, le=100)
     login_window_seconds: int = Field(default=300, ge=1, le=3600)

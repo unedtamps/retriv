@@ -1,4 +1,4 @@
-name: kerjakan-internal
+name: retriv-core
 
 x-worker-environment: &worker-environment
   INTERNAL_COMPONENT: worker
@@ -25,7 +25,7 @@ x-worker-environment: &worker-environment
   INTERNAL_EMBEDDING_RECONCILIATION_INTERVAL_SECONDS: ${INTERNAL_EMBEDDING_RECONCILIATION_INTERVAL_SECONDS:-300}
   INTERNAL_QDRANT_URL: http://qdrant:6333
   INTERNAL_QDRANT_API_KEY: ${INTERNAL_QDRANT_API_KEY:?INTERNAL_QDRANT_API_KEY is required}
-  INTERNAL_QDRANT_COLLECTION: ${INTERNAL_QDRANT_COLLECTION:-kerjakan-chunks-qwen3-8b-4096-v1}
+  INTERNAL_QDRANT_COLLECTION: ${INTERNAL_QDRANT_COLLECTION:-retriv-chunks-qwen3-8b-4096-v1}
   INTERNAL_QDRANT_TIMEOUT_SECONDS: ${INTERNAL_QDRANT_TIMEOUT_SECONDS:-30}
   INTERNAL_QDRANT_VECTORS_ON_DISK: ${INTERNAL_QDRANT_VECTORS_ON_DISK:-true}
   INTERNAL_PARSER_MEMORY_LIMIT_BYTES: ${INTERNAL_PARSER_MEMORY_LIMIT_BYTES:-8589934592}
@@ -113,7 +113,7 @@ networks:
         - subnet: ${INTERNAL_DOCKER_SUBNET:-10.254.0.0/24}
   source-ingestion:
     external: true
-    name: enterprise-ai-ingestion_ingestion
+    name: retriv-api_api-net
 
 volumes:
   postgres_data:

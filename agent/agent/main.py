@@ -38,7 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await retriever.aclose()
 
     application = FastAPI(
-        title="Kerjakan Agent",
+        title="Retriv Agent",
         version="0.1.0",
         docs_url=None,
         redoc_url=None,
@@ -70,7 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ):
             raise HTTPException(
                 status_code=401,
-                detail="Valid Kerjakan service credentials are required.",
+                detail="Valid Retriv service credentials are required.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 

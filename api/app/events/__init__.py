@@ -1,1 +1,1 @@
-"""Event contracts emitted by the ingestion service."""
+"""Event contracts emitted by the intake service."""

@@ -1,7 +1,7 @@
 [project]
-name = "kerjakan-agent"
+name = "retriv-agent"
 version = "0.1.0"
-description = "Workspace-scoped question answering harness for Kerjakan"
+description = "Workspace-scoped question answering harness for Retriv"
 requires-python = ">=3.12,<3.15"
 dependencies = [
     "asyncpg>=0.30,<1",

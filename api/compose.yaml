@@ -1,4 +1,4 @@
-name: enterprise-ai-ingestion
+name: retriv-api
 
 services:
   postgres:
@@ -18,7 +18,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     networks:
-      - ingestion
+      - api-net
 
   minio:
     image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
@@ -38,7 +38,7 @@ services:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     networks:
-      - ingestion
+      - api-net
 
   minio-init:
     image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
@@ -68,7 +68,7 @@ services:
     volumes:
       - ./docker/minio/init.sh:/config/init.sh:ro
     networks:
-      - ingestion
+      - api-net
 
   clamav:
     image: clamav/clamav:1.4_base
@@ -85,10 +85,10 @@ services:
     ports:
       - "127.0.0.1:3310:3310"
     networks:
-      - ingestion
+      - api-net
 
 networks:
-  ingestion:
+  api-net:
     driver: bridge
 
 volumes:

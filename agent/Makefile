@@ -10,7 +10,7 @@ help:
 	@printf '%s\n' \
 		'Usage: make <target>' \
 		'' \
-		'  run      Build and start the Kerjakan agent in the background' \
+		'  run      Build and start the Retriv agent in the background' \
 		'  up       Alias for run' \
 		'  build    Build the agent image' \
 		'  restart  Restart the running agent' \

@@ -159,7 +159,7 @@ export function Brand({ light = false }: BrandProps) {
       </span>
       <span>
         <span className={light ? 'block text-base font-semibold text-white' : 'block text-base font-semibold text-stone-950'}>
-          Kerjakan
+          Retriv
         </span>
         <span className={light ? 'block font-mono text-[0.58rem] uppercase tracking-[0.22em] text-stone-400' : 'block font-mono text-[0.58rem] uppercase tracking-[0.22em] text-stone-500'}>
           Control plane

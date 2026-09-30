@@ -1,1 +1,1 @@
-"""Kerjakan scoped question-answering harness."""
+"""Retriv scoped question-answering harness."""

@@ -814,7 +814,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kerjakan-internal"
+name = "retriv-core"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

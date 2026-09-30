@@ -25,8 +25,8 @@ def production_settings(database_password: str) -> Settings:
         api_token=SecretStr("production-agent-api-token-0123456789"),
         scope_public_key_b64=public_key_b64(),
         database_url=SecretStr(
-            "postgresql+asyncpg://kerjakan_agent_readonly:"
-            f"{database_password}@postgres.example.test:5432/kerjakan_internal"
+            "postgresql+asyncpg://agent_readonly:"
+            f"{database_password}@postgres.example.test:5432/retriv_core"
         ),
         qdrant_url="https://qdrant.example.test",
         qdrant_api_key=SecretStr("production-qdrant-readonly-key-0123456789"),
@@ -46,8 +46,8 @@ def test_production_rejects_placeholder_database_password() -> None:
 def test_production_rejects_database_url_ssl_overrides() -> None:
     values = production_settings("generated-db-secret-123456").model_dump()
     values["database_url"] = SecretStr(
-        "postgresql+asyncpg://kerjakan_agent_readonly:generated-db-secret-123456"
-        "@postgres.example.test:5432/kerjakan_internal?sslmode=disable"
+        "postgresql+asyncpg://agent_readonly:generated-db-secret-123456"
+        "@postgres.example.test:5432/retriv_core?sslmode=disable"
     )
 
     with pytest.raises(ValidationError, match="TLS through the verified"):

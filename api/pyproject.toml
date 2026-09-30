@@ -1,5 +1,5 @@
 [project]
-name = "enterprise-ai-ingestion"
+name = "retriv-api"
 version = "0.1.0"
 description = "Workspace-scoped document intake service for enterprise AI systems"
 readme = "README.md"

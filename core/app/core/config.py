@@ -16,11 +16,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Kerjakan Internal"
+    app_name: str = "Retriv Core"
     component: Literal["api", "worker"] = "api"
     environment: Literal["local", "test", "production"] = "local"
     database_url: str = (
-        "postgresql+asyncpg://kerjakan_internal:kerjakan_internal@localhost:5433/kerjakan_internal"
+        "postgresql+asyncpg://retriv_core:retriv_core@localhost:5433/retriv_core"
     )
 
     webhook_key_id: str = "local-primary"
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     webhook_previous_key_id: str | None = None
     webhook_previous_secret: SecretStr | None = None
     webhook_max_age_seconds: int = Field(default=300, ge=1, le=3600)
-    expected_event_source: str = "enterprise-ai-ingestion"
+    expected_event_source: str = "retriv-api"
     api_token: SecretStr = SecretStr("development-internal-api-token-change-this")
 
     s3_endpoint_url: str = "http://localhost:9000"
@@ -69,7 +69,7 @@ class Settings(BaseSettings):
 
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_api_key: SecretStr = SecretStr("development-qdrant-api-key-change-this")
-    qdrant_collection: str = "kerjakan-chunks-qwen3-8b-4096-v1"
+    qdrant_collection: str = "retriv-chunks-qwen3-8b-4096-v1"
     qdrant_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     qdrant_vectors_on_disk: bool = True
 

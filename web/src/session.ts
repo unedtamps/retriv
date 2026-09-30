@@ -1,4 +1,4 @@
-const SESSION_KEY = 'kerjakan.dashboard.session.v1'
+const SESSION_KEY = 'retriv.dashboard.session.v1'
 
 interface StoredSession {
   version: 1

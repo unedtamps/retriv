@@ -464,7 +464,7 @@ async def test_history_outside_scope_is_rejected_before_harness() -> None:
 
 
 @pytest.mark.parametrize("authorization", [None, "Bearer invalid-agent-token"])
-async def test_agent_endpoint_requires_kerjakan_m2m_token(
+async def test_agent_endpoint_requires_retriv_m2m_token(
     authorization: str | None,
 ) -> None:
     configuration, private_key = settings()
