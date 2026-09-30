@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     database_url: SecretStr = SecretStr(
         "postgresql+asyncpg://agent_readonly:change-this"
-        "@127.0.0.1:5433/retriv_core"
+        "@127.0.0.1:5433/retriv_ingest"
     )
 
     qdrant_url: str = "http://127.0.0.1:6333"

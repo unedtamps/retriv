@@ -1,4 +1,4 @@
-# Retriv Core
+# Retriv Ingest
 
 Internal document-context service for events emitted by `retriv`. It accepts signed
 `document.ready` and `document.deleted` webhooks, processes PDF and DOCX files with Docling,
@@ -12,7 +12,7 @@ separate Qdrant collection.
 retriv
   raw S3 objects + source metadata + delivery outbox
 
-retriv-core
+retriv-ingest
   PostgreSQL: durable event inbox + processing runs + chunk text + embedding ledger
   Qdrant: vectors + identifier/hash payloads (no chunk text)
   S3: structured Docling artifacts
@@ -111,7 +111,7 @@ Start the sibling infrastructure first so MinIO and its service credentials are 
 ```bash
 cd ../api
 make infra
-cd ../core
+cd ../ingest
 ```
 
 Build/start the Docker worker and run the API on the host:

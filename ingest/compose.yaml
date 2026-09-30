@@ -1,4 +1,4 @@
-name: retriv-core
+name: retriv-ingest
 
 x-worker-environment: &worker-environment
   INTERNAL_COMPONENT: worker

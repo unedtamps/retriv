@@ -16,11 +16,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Retriv Core"
+    app_name: str = "Retriv Ingest"
     component: Literal["api", "worker"] = "api"
     environment: Literal["local", "test", "production"] = "local"
     database_url: str = (
-        "postgresql+asyncpg://retriv_core:retriv_core@localhost:5433/retriv_core"
+        "postgresql+asyncpg://retriv_ingest:retriv_ingest@localhost:5433/retriv_ingest"
     )
 
     webhook_key_id: str = "local-primary"

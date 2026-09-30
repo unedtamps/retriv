@@ -69,7 +69,7 @@ The agent reads its ignored `.env` file. Do not commit either service's `.env` o
 
    ```sql
    CREATE ROLE agent_readonly LOGIN PASSWORD 'replace-with-a-generated-password';
-   GRANT CONNECT ON DATABASE retriv_core TO agent_readonly;
+   GRANT CONNECT ON DATABASE retriv_ingest TO agent_readonly;
    GRANT USAGE ON SCHEMA public TO agent_readonly;
    GRANT SELECT ON TABLE public.source_documents,
        public.document_chunks,
@@ -77,7 +77,7 @@ The agent reads its ignored `.env` file. Do not commit either service's `.env` o
    ALTER ROLE agent_readonly SET default_transaction_read_only = on;
    ```
 
-   Use this account in `AGENT_DATABASE_URL` with the `retriv-core` database. URL-encode any
+   Use this account in `AGENT_DATABASE_URL` with the `retriv-ingest` database. URL-encode any
    special characters in the password. Do not grant write privileges or access to other databases.
    Production agent connections require PostgreSQL TLS with certificate-chain and hostname
    verification; use a database certificate trusted by the agent container's system trust store
@@ -85,12 +85,12 @@ The agent reads its ignored `.env` file. Do not commit either service's `.env` o
 
 3. Configure independent service credentials and matching retrieval settings:
 
-   - Set `INTERNAL_QDRANT_READ_ONLY_API_KEY` in `retriv-core/.env` and restart Qdrant. Set the
+   - Set `INTERNAL_QDRANT_READ_ONLY_API_KEY` in `retriv-ingest/.env` and restart Qdrant. Set the
      same value as `AGENT_QDRANT_API_KEY`. Qdrant's read-only key restricts writes; the wrapper's
      signed-scope filters and metadata checks enforce workspace authorization.
    - Set `AGENT_EMBEDDING_BASE_URL`, `AGENT_EMBEDDING_API_KEY`, `AGENT_EMBEDDING_MODEL`,
      `AGENT_EMBEDDING_PROFILE`, and `AGENT_EMBEDDING_DIMENSIONS` to match the indexed profile in
-     `retriv-core`.
+     `retriv-ingest`.
    - Set `AGENT_QDRANT_URL` and `AGENT_QDRANT_COLLECTION` to the internal Qdrant instance and
      indexed collection.
     - Match `AGENT_API_TOKEN` here to `APP_AGENT_API_TOKEN` in `api/.env`. Set the OpenRouter

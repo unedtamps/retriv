@@ -1,5 +1,5 @@
 [project]
-name = "retriv-core"
+name = "retriv-ingest"
 version = "0.1.0"
 description = "Workspace-scoped document context processing service"
 readme = "README.md"

@@ -31,7 +31,7 @@ class DoclingExtractor:
         except ImportError as exc:
             raise RuntimeError(
                 "Docling extraction dependencies are not installed; "
-                "install retriv-core[extraction]"
+                "install retriv-ingest[extraction]"
             ) from exc
 
         pipeline_options = PdfPipelineOptions(

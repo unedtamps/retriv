@@ -68,10 +68,10 @@ npm run dev
 
 Dashboard tersedia di `http://127.0.0.1:5173/dashboard`.
 
-Untuk chat atas dokumen, siapkan `retriv-agent` dan `retriv-core`, isi variabel
+Untuk chat atas dokumen, siapkan `retriv-agent` dan `retriv-ingest`, isi variabel
 `APP_AGENT_*` pada `.env`, serta set `APP_PROCESSING_API_BASE_URL` dan
 `APP_PROCESSING_API_TOKEN` untuk menunjuk ke API internal (token harus sama dengan
-`INTERNAL_API_TOKEN` pada `retriv-core/.env`). Buka `http://127.0.0.1:5173/ask-context`.
+`INTERNAL_API_TOKEN` pada `retriv-ingest/.env`). Buka `http://127.0.0.1:5173/ask-context`.
 Notifikasi pemrosesan memuat seluruh workspace yang dapat dibaca user, memperlihatkan proses aktif
 terbaru dan aktivitas satu jam terakhir, serta diperbarui setiap 10 detik. Setiap percakapan memiliki
 ID dan dimiliki oleh user pembuatnya; pertanyaan, jawaban, serta referensi sumber disimpan di
@@ -89,7 +89,7 @@ tanpa memanggil model untuk menjawab dari pengetahuan umum. Perubahan membership
 berikutnya; turn lama dari workspace yang sudah dicabut tidak diteruskan sebagai konteks ke model.
 Lihat `../agent/README.md` untuk konfigurasi dan setup agent.
 
-Setelah `retriv-core` siap pada port `8082`, jalankan outbox relay dari host pada terminal
+Setelah `retriv-ingest` siap pada port `8082`, jalankan outbox relay dari host pada terminal
 kedua:
 
 ```bash
@@ -218,7 +218,7 @@ lama tidak dapat menyelesaikan lease yang sudah diambil ulang:
 uv run --env-file .env -- python -m outbox
 ```
 
-Konfigurasi contoh mengarah ke receiver durable `retriv-core` pada
+Konfigurasi contoh mengarah ke receiver durable `retriv-ingest` pada
 `http://127.0.0.1:8082/internal/events`. Untuk menguji dengan dummy receiver, jalankan relay dengan
 override sementara:
 
