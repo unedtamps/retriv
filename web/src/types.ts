@@ -43,7 +43,8 @@ export interface DocumentUpload {
   size_bytes: number
   sha256: string
   status: string
-  created_by_user_id: string
+  /** Null for a record ingested from an external system rather than uploaded. */
+  created_by_user_id: string | null
   created_at: string
   duplicate: boolean
 }

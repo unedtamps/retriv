@@ -1,0 +1,203 @@
+# One project. The app runs on the host; this file provides the services
+# it depends on plus the worker.
+#
+# The worker is the only app process in here, and it is here rather than on
+# the host because Docling and PyTorch need ~1.7 GB, an 8 GiB parser memory
+# cap, and a sandboxed subprocess per document. Keeping that in its own
+# container is what keeps the API image small and the API process free of
+# anything a hostile PDF can reach.
+
+name: retriv-api
+
+# The worker's environment. Every value is the RETRIV_ name the merged
+# Settings reads, so there is one settings vocabulary across both processes.
+# Note what is absent: the JWT secret, the chat key, and the read-only
+# Qdrant key. The worker has no use for them and should not hold them.
+x-worker-environment: &worker-environment
+  RETRIV_COMPONENT: worker
+  RETRIV_ENVIRONMENT: ${RETRIV_ENVIRONMENT:-local}
+  RETRIV_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  RETRIV_PIPELINE_VERSION: ${RETRIV_PIPELINE_VERSION:-2026.1}
+  RETRIV_DOCLING_ARTIFACTS_PATH: ${RETRIV_DOCLING_ARTIFACTS_PATH:-/opt/docling-models}
+  RETRIV_OCR_LANGUAGES: ${RETRIV_OCR_LANGUAGES:-["ind","eng"]}
+  RETRIV_CHUNK_MAX_TOKENS: ${RETRIV_CHUNK_MAX_TOKENS:-700}
+  RETRIV_MAX_SOURCE_BYTES: ${RETRIV_MAX_SOURCE_BYTES:-52428800}
+  RETRIV_MAX_CHUNKS_PER_DOCUMENT: ${RETRIV_MAX_CHUNKS_PER_DOCUMENT:-10000}
+  RETRIV_MAX_ARTIFACT_BYTES: ${RETRIV_MAX_ARTIFACT_BYTES:-104857600}
+  RETRIV_MAX_EXTRACTED_TEXT_BYTES: ${RETRIV_MAX_EXTRACTED_TEXT_BYTES:-52428800}
+  RETRIV_MAX_CHUNK_PAYLOAD_BYTES: ${RETRIV_MAX_CHUNK_PAYLOAD_BYTES:-104857600}
+  RETRIV_PROCESSING_TIMEOUT_SECONDS: ${RETRIV_PROCESSING_TIMEOUT_SECONDS:-1800}
+  RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS: ${RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS:-300}
+  RETRIV_EMBEDDING_BASE_URL: ${RETRIV_EMBEDDING_CONTAINER_BASE_URL:-http://host.docker.internal:1234/v1}
+  RETRIV_EMBEDDING_API_KEY: ${RETRIV_EMBEDDING_API_KEY:?RETRIV_EMBEDDING_API_KEY is required}
+  RETRIV_EMBEDDING_MODEL: ${RETRIV_EMBEDDING_MODEL:-text-embedding-qwen3-embedding-8b}
+  RETRIV_EMBEDDING_PROFILE: ${RETRIV_EMBEDDING_PROFILE:-qwen3-embedding-8b-4096-v1}
+  RETRIV_EMBEDDING_DIMENSIONS: ${RETRIV_EMBEDDING_DIMENSIONS:-4096}
+  RETRIV_EMBEDDING_BATCH_SIZE: ${RETRIV_EMBEDDING_BATCH_SIZE:-16}
+  RETRIV_EMBEDDING_TIMEOUT_SECONDS: ${RETRIV_EMBEDDING_TIMEOUT_SECONDS:-120}
+  RETRIV_EMBEDDING_RECONCILIATION_INTERVAL_SECONDS: ${RETRIV_EMBEDDING_RECONCILIATION_INTERVAL_SECONDS:-300}
+  RETRIV_QDRANT_URL: http://qdrant:6333
+  RETRIV_QDRANT_API_KEY: ${RETRIV_QDRANT_API_KEY:?RETRIV_QDRANT_API_KEY is required}
+  RETRIV_QDRANT_COLLECTION: ${RETRIV_QDRANT_COLLECTION:-retriv-chunks-qwen3-8b-4096-v1}
+  RETRIV_QDRANT_TIMEOUT_SECONDS: ${RETRIV_QDRANT_TIMEOUT_SECONDS:-30}
+  RETRIV_QDRANT_VECTORS_ON_DISK: ${RETRIV_QDRANT_VECTORS_ON_DISK:-true}
+  RETRIV_PARSER_MEMORY_LIMIT_BYTES: ${RETRIV_PARSER_MEMORY_LIMIT_BYTES:-8589934592}
+  RETRIV_PARSER_MAX_PROCESSES: ${RETRIV_PARSER_MAX_PROCESSES:-4096}
+  RETRIV_S3_RAW_BUCKET: ${RETRIV_S3_RAW_BUCKET:-raw-documents}
+  RETRIV_S3_ARTIFACT_BUCKET: ${RETRIV_S3_ARTIFACT_BUCKET:-context-documents}
+  RETRIV_S3_REGION: ${RETRIV_S3_REGION:-us-east-1}
+
+services:
+  postgres:
+    # Plain postgres: no vector column exists anywhere in the schema.
+    # Vectors live in Qdrant, so the pgvector image was 250 MB of unused
+    # extension for no benefit.
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - app-net
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${RETRIV_QDRANT_API_KEY:?RETRIV_QDRANT_API_KEY is required}
+      QDRANT__SERVICE__READ_ONLY_API_KEY: ${RETRIV_QDRANT_READ_ONLY_API_KEY:?RETRIV_QDRANT_READ_ONLY_API_KEY is required}
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ': > /dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "127.0.0.1:6333:6333"
+    networks:
+      - app-net
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    networks:
+      - app-net
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL:-http://minio:9000}
+      RETRIV_ENVIRONMENT: ${RETRIV_ENVIRONMENT:?RETRIV_ENVIRONMENT is required}
+      RETRIV_S3_ACCESS_KEY: ${RETRIV_S3_ACCESS_KEY:?RETRIV_S3_ACCESS_KEY is required}
+      RETRIV_S3_SECRET_KEY: ${RETRIV_S3_SECRET_KEY:?RETRIV_S3_SECRET_KEY is required}
+      RETRIV_S3_ARTIFACT_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
+      RETRIV_S3_ARTIFACT_SECRET_KEY: ${RETRIV_S3_ARTIFACT_SECRET_KEY:?RETRIV_S3_ARTIFACT_SECRET_KEY is required}
+      RETRIV_S3_RAW_BUCKET: ${RETRIV_S3_RAW_BUCKET:?RETRIV_S3_RAW_BUCKET is required}
+      RETRIV_S3_ARTIFACT_BUCKET: ${RETRIV_S3_ARTIFACT_BUCKET:?RETRIV_S3_ARTIFACT_BUCKET is required}
+      MINIO_MANIFEST_BUCKET: ${MINIO_MANIFEST_BUCKET:?MINIO_MANIFEST_BUCKET is required}
+      MIGRATION_MANIFEST_PREFIX: ${MIGRATION_MANIFEST_PREFIX:-bootstrap/}
+      MINIO_MANIFEST_RETENTION_DAYS: ${MINIO_MANIFEST_RETENTION_DAYS:-7}
+      MINIO_MANIFEST_READER_USER: ${MINIO_MANIFEST_READER_USER:?MINIO_MANIFEST_READER_USER is required}
+      MINIO_MANIFEST_READER_PASSWORD: ${MINIO_MANIFEST_READER_PASSWORD:?MINIO_MANIFEST_READER_PASSWORD is required}
+      MINIO_MANIFEST_WRITER_USER: ${MINIO_MANIFEST_WRITER_USER:?MINIO_MANIFEST_WRITER_USER is required}
+      MINIO_MANIFEST_WRITER_PASSWORD: ${MINIO_MANIFEST_WRITER_PASSWORD:?MINIO_MANIFEST_WRITER_PASSWORD is required}
+    entrypoint: ["/bin/sh", "/config/init.sh"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./docker/minio/init.sh:/config/init.sh:ro
+    networks:
+      - app-net
+
+  clamav:
+    image: clamav/clamav:1.4_base
+    restart: unless-stopped
+    environment:
+      CLAMD_CONF_StreamMaxLength: 60M
+      CLAMD_CONF_MaxFileSize: 60M
+      CLAMD_CONF_MaxScanSize: 120M
+      CLAMD_CONF_AlertExceedsMax: "yes"
+    mem_limit: 4g
+    pids_limit: 512
+    volumes:
+      - clamav_data:/var/lib/clamav
+    ports:
+      - "127.0.0.1:3310:3310"
+    networks:
+      - app-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    mem_limit: 10g
+    cpus: 4
+    pids_limit: 320
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=4g,mode=1777
+    command: ["python", "-m", "worker"]
+    environment:
+      <<: *worker-environment
+      RETRIV_S3_ENDPOINT_URL: ${RETRIV_S3_CONTAINER_ENDPOINT_URL:-http://minio:9000}
+      RETRIV_S3_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
+      RETRIV_S3_SECRET_KEY: ${RETRIV_S3_ARTIFACT_SECRET_KEY:?RETRIV_S3_ARTIFACT_SECRET_KEY is required}
+      RETRIV_S3_ARTIFACT_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
+      RETRIV_S3_ARTIFACT_SECRET_KEY: ${RETRIV_S3_ARTIFACT_SECRET_KEY:?RETRIV_S3_ARTIFACT_SECRET_KEY is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${RETRIV_DOCKER_SUBNET:-10.254.0.0/24}
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  minio_data:
+  clamav_data:
