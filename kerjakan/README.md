@@ -96,15 +96,8 @@ kedua:
 uv run --env-file .env -- python -m outbox
 ```
 
-Dummy event receiver untuk menguji outbox dijalankan secara opsional melalui Compose profile:
-
-```bash
-docker compose --profile events up -d dummy-receiver
-curl http://127.0.0.1:8081/health/live
-```
-
-Receiver tersedia pada `http://127.0.0.1:8081`. Compose default tidak menjalankan API, relay,
-atau dummy receiver.
+Receiver untuk menguji outbox adalah service terpisah di luar repo ini. Jalankan receiver tersebut
+lalu arahkan `OUTBOX_TARGET_URL` ke address-nya. Compose default tidak menjalankan API atau relay.
 
 Startup pertama ClamAV dapat memerlukan waktu karena database signature diunduh. Port
 PostgreSQL (`127.0.0.1:5432`) dan ClamAV (`127.0.0.1:3310`) hanya dibuka pada loopback host
@@ -322,7 +315,7 @@ Install dependency dan jalankan semua test:
 uv sync
 uv run pytest -q
 uv run ruff check .
-uv run mypy app provisioning outbox dummy_receiver alembic tests
+uv run mypy app provisioning outbox alembic tests
 ```
 
 Schema migration dijalankan dari host sebelum API dimulai. Untuk menjalankan pemeriksaan drift

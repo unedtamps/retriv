@@ -16,7 +16,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
-COPY dummy_receiver ./dummy_receiver
 COPY provisioning ./provisioning
 COPY outbox ./outbox
 COPY README.md ./

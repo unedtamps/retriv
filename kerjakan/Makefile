@@ -9,7 +9,7 @@ WAIT_TIMEOUT ?= 300
 UV_RUN := uv run --env-file $(ENV_FILE) --
 COMPOSE := docker compose --env-file $(ENV_FILE)
 
-.PHONY: help install infra migrate api outbox run status logs dummy down test check check-env
+.PHONY: help install infra migrate api outbox run status logs down test check check-env
 
 help:
 	@printf '%s\n' \
@@ -22,7 +22,6 @@ help:
 		'  migrate  Apply database migrations' \
 		'  status   Show infrastructure container status' \
 		'  logs     Follow infrastructure logs' \
-		'  dummy    Start the optional dummy event receiver' \
 		'  down     Stop infrastructure containers' \
 		'  install  Install project and development dependencies' \
 		'  test     Run the test suite' \
@@ -70,9 +69,6 @@ status: check-env
 logs: check-env
 	$(COMPOSE) logs -f
 
-dummy: check-env
-	$(COMPOSE) --profile events up -d --wait --wait-timeout $(WAIT_TIMEOUT) dummy-receiver
-
 down: check-env
 	$(COMPOSE) down
 
@@ -82,4 +78,4 @@ test:
 check:
 	uv run pytest -q
 	uv run ruff check .
-	uv run mypy app provisioning outbox dummy_receiver alembic tests
+	uv run mypy app provisioning outbox alembic tests

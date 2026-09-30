@@ -87,37 +87,6 @@ services:
     networks:
       - ingestion
 
-  dummy-receiver:
-    profiles: ["events"]
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command:
-      [
-        "uvicorn",
-        "dummy_receiver.main:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8080",
-      ]
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live')",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    ports:
-      - "127.0.0.1:8081:8080"
-    networks:
-      - ingestion
-
 networks:
   ingestion:
     driver: bridge
