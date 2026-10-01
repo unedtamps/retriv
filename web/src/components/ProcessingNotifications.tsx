@@ -5,12 +5,12 @@ import {
   CircleAlert,
   FileText,
   LoaderCircle,
+  RefreshCw,
   X,
 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import type { ProcessingRun, Workspace } from '../types'
 
-const POLL_INTERVAL_MS = 10_000
 const ACTIVE_STATUSES = new Set([
   'queued',
   'fetching',
@@ -40,6 +40,12 @@ export function ProcessingNotifications({
   const [recentRuns, setRecentRuns] = useState<ProcessingRun[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Bumped by the Refresh button to re-run the load. There is no polling
+  // timer: an idle page used to re-request both endpoints every ten
+  // seconds forever, which is a request per user per ten seconds for
+  // data that usually has not changed. Fetch once on mount so the bell
+  // badge has a count, then only when someone asks for it again.
+  const [refreshKey, setRefreshKey] = useState(0)
   const bellButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onUnauthorizedRef = useRef(onUnauthorized)
@@ -50,12 +56,9 @@ export function ProcessingNotifications({
 
   useEffect(() => {
     let cancelled = false
-    let stopAfterAuthFailure = false
-    let timer: number | undefined
-    let controller: AbortController | undefined
+    const controller = new AbortController()
 
-    async function poll(): Promise<void> {
-      controller = new AbortController()
+    async function load(): Promise<void> {
       try {
         const [activeResponse, recentResponse] = await Promise.all([
           api.getActiveProcessingRun(token, controller.signal),
@@ -69,28 +72,21 @@ export function ProcessingNotifications({
       } catch (caught) {
         if (cancelled || (caught instanceof Error && caught.name === 'AbortError')) return
         if (isUnauthorized(caught)) {
-          stopAfterAuthFailure = true
           onUnauthorizedRef.current()
         } else {
           setError(getErrorMessage(caught))
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false)
-          if (!stopAfterAuthFailure) {
-            timer = window.setTimeout(() => void poll(), POLL_INTERVAL_MS)
-          }
-        }
+        if (!cancelled) setLoading(false)
       }
     }
 
-    void poll()
+    void load()
     return () => {
       cancelled = true
-      if (timer !== undefined) window.clearTimeout(timer)
-      controller?.abort()
+      controller.abort()
     }
-  }, [token])
+  }, [token, refreshKey])
 
   useEffect(() => {
     if (!open) return
@@ -166,20 +162,38 @@ export function ProcessingNotifications({
           >
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-stone-300 bg-white px-5 py-5 sm:px-6">
               <div>
-                <p className="section-eyebrow">Last hour · updates every 10 seconds</p>
+                <p className="section-eyebrow">Last hour · refresh to update</p>
                 <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-stone-950">
                   Processing activity
                 </h2>
               </div>
-              <button
-                ref={closeButtonRef}
-                type="button"
-                className="icon-button"
-                aria-label="Close processing notifications panel"
-                onClick={() => changeOpen(false)}
-              >
-                <X aria-hidden="true" size={18} />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Refresh processing activity"
+                  disabled={loading}
+                  onClick={() => {
+                    setLoading(true)
+                    setRefreshKey((value) => value + 1)
+                  }}
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={loading ? 'animate-spin' : undefined}
+                    size={18}
+                  />
+                </button>
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  className="icon-button"
+                  aria-label="Close processing notifications panel"
+                  onClick={() => changeOpen(false)}
+                >
+                  <X aria-hidden="true" size={18} />
+                </button>
+              </div>
             </header>
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-4 sm:p-5">
@@ -189,7 +203,7 @@ export function ProcessingNotifications({
                   {error}
                 </p>
               )}
-              {loading ? (
+              {loading && activeRun === null && recentRuns.length === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-stone-500" role="status">
                   <LoaderCircle className="animate-spin" size={17} />Loading processing activity…
                 </div>

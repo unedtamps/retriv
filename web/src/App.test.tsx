@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -599,6 +599,91 @@ Use \`report.csv\` for details.
     expect(screen.getByText('finished-report.pdf')).toBeInTheDocument()
     expect(screen.getByText('2/4 embeddings')).toBeInTheDocument()
     expect(screen.getAllByText('report-processing.pdf')).toHaveLength(1)
+  })
+
+  it('stops requesting processing runs once loaded instead of polling', async () => {
+    // Fake timers are what make this meaningful. The old timer was ten
+    // seconds, so without advancing the clock a short test would pass
+    // against the polling code too and prove nothing.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState(null, '', '/ask-context')
+      writeSessionToken('member-token')
+      const fetchMock = installApi(owner, [workspace])
+      const countProcessingRequests = () => fetchMock.mock.calls.filter(([input]) => {
+        const url = String(input)
+        return url === '/v1/processing-runs/active' || url === '/v1/processing-runs/recent'
+      }).length
+
+      render(<App />)
+
+      // The bell renders before its data arrives, so wait on the request
+      // itself rather than on the button being present.
+      await waitFor(() => expect(countProcessingRequests()).toBeGreaterThan(0))
+      const afterMount = countProcessingRequests()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000)
+      })
+
+      expect(countProcessingRequests()).toBe(afterMount)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reloads processing activity only when Refresh is pressed', async () => {
+    window.history.replaceState(null, '', '/ask-context')
+    writeSessionToken('member-token')
+    const firstRun = {
+      id: 'run-first',
+      workspace_id: workspace.id,
+      document_id: 'document-first',
+      filename: 'first-upload.pdf',
+      job_kind: 'extract',
+      status: 'ready',
+      attempts: 1,
+      chunk_count: 2,
+      embedded_chunk_count: 2,
+      created_at: '2026-09-24T08:00:00Z',
+      started_at: '2026-09-24T08:00:01Z',
+      completed_at: '2026-09-24T08:00:30Z',
+    }
+    // Kept mutable on purpose: installApi reads these fields per request,
+    // so swapping them between clicks is what the refresh has to pick up.
+    const processingResponses = {
+      active: { item: null },
+      recent: {
+        items: [firstRun],
+        total: 1,
+        since: '2026-09-24T07:00:00Z',
+      },
+    }
+    installApi(owner, [workspace], undefined, undefined, processingResponses)
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', {
+      name: 'Open processing notifications, 1 recent runs',
+    }))
+    expect(await screen.findByText('first-upload.pdf')).toBeInTheDocument()
+
+    processingResponses.recent = {
+      items: [{
+        ...firstRun,
+        id: 'run-second',
+        document_id: 'document-second',
+        filename: 'second-upload.pdf',
+      }],
+      total: 1,
+      since: '2026-09-24T07:00:00Z',
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Refresh processing activity' }))
+
+    expect(await screen.findByText('second-upload.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('first-upload.pdf')).not.toBeInTheDocument()
   })
 
   it('closes the slide-in navigation with Escape and the backdrop', async () => {
