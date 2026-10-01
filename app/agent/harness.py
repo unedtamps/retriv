@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from html import escape
@@ -24,8 +25,17 @@ from app.agent.schemas import (
 )
 from app.core.config import Settings
 
-MAX_TOOL_CALLS = 2
-MAX_MODEL_REQUESTS = 3
+logger = logging.getLogger(__name__)
+
+# A single model response can carry more than one tool call. This model
+# routinely answers with two search_context calls at once, which spent a
+# budget of 2 in one turn and left no room to actually answer. The old
+# numbers were also exactly tight even when nothing misbehaved: search,
+# search, answer is 3 requests against a cap of 3, so any extra retry
+# exhausted the loop and surfaced as a 503. Cost is negligible on these
+# models, so the headroom is cheaper than the failures.
+MAX_TOOL_CALLS = 4
+MAX_MODEL_REQUESTS = 5
 MAX_CURRENT_SOURCES = 16
 NO_EVIDENCE_ANSWER = (
     "I could not find relevant information for that question."
@@ -187,8 +197,25 @@ class AnswerHarness:
                     answer=NO_EVIDENCE_ANSWER,
                     sources=[],
                 )
+            if isinstance(exc, UsageLimitExceeded) and dependencies.sources_by_chunk:
+                # The budget ran out mid-conversation, but retrieval had
+                # already produced evidence. Answering from what is in
+                # hand beats discarding it and returning a 503: the user
+                # asked a question we can partly answer. Scoped and
+                # citation-checked exactly like the normal path.
+                synthesized = await self._synthesize_from_evidence(question, dependencies)
+                if synthesized is not None:
+                    return synthesized
             if isinstance(exc, (OutOfScopeSearchResult, RetrievalUnavailable)):
                 raise
+            # Nothing above can recover, and the routes answer every
+            # remaining failure with one generic 503. Log the chain here,
+            # where it is still intact -- otherwise a provider or model
+            # regression is undiagnosable from the outside.
+            logger.exception(
+                "Answer generation failed with %d retrieved chunk(s)",
+                len(dependencies.retrieved_chunk_ids),
+            )
             raise AnswerGenerationUnavailable(
                 "The configured chat model could not complete the agent run"
             ) from exc
@@ -206,24 +233,65 @@ class AnswerHarness:
                 answer=NO_EVIDENCE_ANSWER,
                 sources=[],
             )
-        citation_numbers = [
-            int(value) for value in CITATION_PATTERN.findall(result.output)
-        ]
+        return cited_response(result.output, dependencies)
+
+    async def _synthesize_from_evidence(
+        self, question: str, dependencies: AnswerDependencies
+    ) -> AnswerResponse | None:
+        """Answer from evidence already retrieved, with tools disabled.
+
+        Reached only when the tool budget is spent and real sources are
+        in hand. ``tool_choice: "none"`` stops the model from spending
+        what budget is left, and ``request_limit=1`` means this call can
+        never recurse into the failure it is recovering from.
+
+        Returns None when the fallback cannot produce a citable answer,
+        so the caller can fall through to the normal error path.
+        """
+        sources = list(dependencies.sources_by_chunk.values())
         indices = source_indices(dependencies.sources_by_chunk)
-        chunk_by_index = {index: chunk_id for chunk_id, index in indices.items()}
-        if not citation_numbers or any(
-            chunk_by_index.get(citation) not in dependencies.retrieved_chunk_ids
-            for citation in citation_numbers
-        ):
-            return AnswerResponse(answer=UNCITED_ANSWER, sources=[])
-        return AnswerResponse(
-            answer=result.output.strip(),
-            sources=list(dependencies.sources_by_chunk.values()),
-        )
+        prompt = format_current_prompt(question, sources, indices)
+        try:
+            result = await self._agent.run(
+                prompt,
+                deps=dependencies,
+                instructions=system_prompt(),
+                model_settings={"tool_choice": "none", "temperature": 0.2, "max_tokens": 1600},
+                usage_limits=UsageLimits(request_limit=1, tool_calls_limit=0),
+            )
+        except Exception:
+            logger.exception("Synthesis from retrieved evidence failed")
+            return None
+        if not isinstance(result.output, str) or not result.output.strip():
+            return None
+        return cited_response(result.output, dependencies)
 
     async def aclose(self) -> None:
         if self._openai_client is not None:
             await self._openai_client.close()
+
+
+def cited_response(text: str, dependencies: AnswerDependencies) -> AnswerResponse:
+    """Gate an answer on citing only chunks retrieved during this run.
+
+    Shared by the normal path and the exhausted-budget fallback so the
+    fallback cannot return something the normal path would have
+    rejected. An answer with no citation, or one citing a chunk that
+    was not retrieved under the signed workspace scope, is refused
+    rather than returned with its sources stripped.
+    """
+    citation_numbers = [int(value) for value in CITATION_PATTERN.findall(text)]
+    indices = source_indices(dependencies.sources_by_chunk)
+    chunk_by_index = {index: chunk_id for chunk_id, index in indices.items()}
+    if not citation_numbers or any(
+        chunk_by_index.get(citation) not in dependencies.retrieved_chunk_ids
+        for citation in citation_numbers
+    ):
+        return AnswerResponse(answer=UNCITED_ANSWER, sources=[])
+    return AnswerResponse(
+        answer=text.strip(),
+        sources=list(dependencies.sources_by_chunk.values()),
+    )
 
 
 def to_model_history(history: list[AgentHistoryMessage]) -> list[ModelMessage]:

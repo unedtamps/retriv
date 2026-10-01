@@ -1,13 +1,27 @@
 import json
+import logging
 from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import SecretStr
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from app.agent.harness import AnswerHarness
+from app.agent.harness import (
+    MAX_MODEL_REQUESTS,
+    MAX_TOOL_CALLS,
+    NO_EVIDENCE_ANSWER,
+    UNCITED_ANSWER,
+    AnswerGenerationUnavailable,
+    AnswerHarness,
+)
 from app.agent.retrieval import OutOfScopeSearchResult
 from app.agent.schemas import AgentHistoryMessage, AnswerResponse, ContextSource
 from app.core.config import Settings
@@ -184,10 +198,14 @@ async def test_harness_stops_after_tool_call_limit() -> None:
     finally:
         await harness.aclose()
 
+    # Retrieval never produced a chunk, so the run degrades to the
+    # no-evidence answer. The bound is asserted against the limit rather
+    # than a literal: the limit carries headroom because one model
+    # response can emit several tool calls at once.
     assert result.sources == []
     assert "could not find relevant information" in result.answer
-    assert len(retriever.calls) == 2
-    assert model_calls <= 3
+    assert len(retriever.calls) == MAX_TOOL_CALLS
+    assert model_calls <= MAX_MODEL_REQUESTS
 
 
 async def test_out_of_scope_followup_aborts_agent_run() -> None:
@@ -492,3 +510,188 @@ async def test_the_scope_cannot_be_widened_by_a_tool_call() -> None:
     # every search the run performed stayed inside the given scope
     for _, workspace_ids, _ in retriever.calls:
         assert workspace_ids == [workspace_id]
+
+
+
+# --- exhausted tool budget with evidence in hand -------------------------
+#
+# This model answers with two search_context calls in a single response.
+# That spent a budget of 2 in one turn, the run then hit
+# UsageLimitExceeded, and because retrieval had already succeeded the
+# no-evidence fallback was skipped -- so a 503. It is stochastic: the
+# same question succeeded two runs in three.
+
+NO_EVIDENCE_MARKER = "No relevant workspace evidence has been retrieved yet."
+
+
+def budget_exhausting_model(answer_text: str) -> FunctionModel:
+    """A model that never answers until the fallback asks it to.
+
+    The harness's first prompt embeds that no-evidence marker because it
+    starts with zero sources; the fallback prompt instead embeds the real
+    formatted context. Keying on that is what makes these tests reach the
+    recovery path: simply counting calls lets the run finish inside the
+    request limit, which is the normal path and proves nothing.
+    """
+
+    def behavior(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        first = messages[0]
+        text = "".join(
+            part.content
+            for part in getattr(first, "parts", [])
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        )
+        if NO_EVIDENCE_MARKER in text:
+            # Never answers: the tool budget is guaranteed to run out.
+            return ModelResponse(
+                parts=[ToolCallPart("search_context", {"query": "keep searching"})]
+            )
+        return ModelResponse(parts=[TextPart(answer_text)])
+
+    return tool_loop_model(behavior)
+
+
+async def test_exhausted_budget_with_evidence_answers_from_retrieval() -> None:
+    """The regression that produced the 503.
+
+    Retrieval succeeded, so the evidence is real and in scope. Losing it
+    because the model wanted one more search is worse than answering
+    partially from what is already in hand.
+    """
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever([[context_item(workspace_id)]])
+
+    harness = AnswerHarness(
+        configuration,
+        retriever,
+        model=budget_exhausting_model("Revenue increased by 20 percent. [1]"),
+    )
+    try:
+        result = await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+    assert result.sources != [], "recovered evidence should be returned"
+    assert "20 percent" in result.answer
+    assert "[1]" in result.answer
+
+
+async def test_exhausted_budget_still_enforces_the_workspace_scope() -> None:
+    """The recovery path must not become a way around the scope check.
+
+    A scope violation on the follow-up search has to abort even though
+    earlier searches produced citable sources, and even though the
+    failure surfaces as a usage limit.
+    """
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever(
+        [[context_item(workspace_id)], OutOfScopeSearchResult("point outside scope")]
+    )
+
+    harness = AnswerHarness(
+        configuration, retriever, model=budget_exhausting_model("Should not be used. [1]")
+    )
+    try:
+        with pytest.raises(OutOfScopeSearchResult):
+            await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+
+async def test_recovered_answer_without_a_citation_is_refused() -> None:
+    """A recovered answer is held to the same citation rule as a normal one.
+
+    Otherwise the fallback becomes the easy path for returning an
+    unsourced claim: exhaust the budget and get away with more than the
+    normal path allows.
+    """
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever([[context_item(workspace_id)]])
+
+    harness = AnswerHarness(
+        configuration, retriever, model=budget_exhausting_model("Revenue rose sharply.")
+    )
+    try:
+        result = await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+    assert result.sources == []
+    assert result.answer == UNCITED_ANSWER
+
+
+async def test_recovered_answer_cannot_cite_a_chunk_that_was_not_retrieved() -> None:
+    """Citation 99 does not exist in this run, so the answer is refused."""
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever([[context_item(workspace_id)]])
+
+    harness = AnswerHarness(
+        configuration, retriever, model=budget_exhausting_model("Revenue rose sharply. [99]")
+    )
+    try:
+        result = await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+    assert result.sources == []
+    assert result.answer == UNCITED_ANSWER
+
+
+async def test_exhausted_budget_still_reports_no_evidence_when_nothing_retrieved() -> None:
+    """No sources means there is nothing to synthesize from.
+
+    NO_EVIDENCE_ANSWER is the proof the recovery branch was never
+    reached: a synthesis attempt answers with either a citation or
+    UNCITED_ANSWER, never this.
+    """
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever([[]])
+
+    harness = AnswerHarness(
+        configuration, retriever, model=budget_exhausting_model("Should not be used. [1]")
+    )
+    try:
+        result = await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+    assert result.sources == []
+    assert result.answer == NO_EVIDENCE_ANSWER
+    assert len(retriever.calls) == MAX_TOOL_CALLS
+
+
+async def test_unrecoverable_failure_is_logged_with_its_cause(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The routes answer every remaining failure with one generic 503.
+
+    Without a log record the cause is unrecoverable from the outside: the
+    exception chain is intact here and discarded one frame later. This
+    is what made a provider-side usage-limit regression look like an
+    unexplained outage.
+    """
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever([[context_item(workspace_id)]])
+
+    def behavior(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        raise RuntimeError("provider returned a malformed completion")
+
+    harness = AnswerHarness(configuration, retriever, model=tool_loop_model(behavior))
+    try:
+        with (
+            caplog.at_level(logging.ERROR, logger="app.agent.harness"),
+            pytest.raises(AnswerGenerationUnavailable),
+        ):
+            await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+    assert "Answer generation failed" in caplog.text
+    # The underlying reason has to be in the record, not just the wrapper.
+    assert "malformed completion" in caplog.text
