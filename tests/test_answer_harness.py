@@ -21,6 +21,9 @@ from app.agent.harness import (
     UNCITED_ANSWER,
     AnswerGenerationUnavailable,
     AnswerHarness,
+    format_synthesis_prompt,
+    synthesis_prompt,
+    system_prompt,
 )
 from app.agent.retrieval import OutOfScopeSearchResult
 from app.agent.schemas import AgentHistoryMessage, AnswerResponse, ContextSource
@@ -695,3 +698,61 @@ async def test_unrecoverable_failure_is_logged_with_its_cause(
     assert "Answer generation failed" in caplog.text
     # The underlying reason has to be in the record, not just the wrapper.
     assert "malformed completion" in caplog.text
+
+
+async def test_fallback_offers_no_tools_while_the_normal_run_offers_one() -> None:
+    """Assert what the agent *offers*, not what the request asks for.
+
+    The previous fix set tool_choice="none" on the fallback and these
+    tests still passed, because a FunctionModel never enforces it. The
+    live model ignores that directive, kept emitting search_context, and
+    a zero tool-call limit turned each call into a failure -- so the
+    fallback never ran and the 503 survived a green suite.
+
+    Counting offered tools is the check that cannot be faked by a stub.
+    """
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever([[context_item(workspace_id)]])
+    offered: list[int] = []
+
+    def behavior(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        offered.append(len(info.function_tools))
+        first = messages[0]
+        text = "".join(
+            part.content
+            for part in getattr(first, "parts", [])
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        )
+        if NO_EVIDENCE_MARKER in text:
+            return ModelResponse(
+                parts=[ToolCallPart("search_context", {"query": "keep searching"})]
+            )
+        return ModelResponse(parts=[TextPart("Revenue increased by 20 percent. [1]")])
+
+    harness = AnswerHarness(
+        configuration, retriever, model=tool_loop_model(behavior)
+    )
+    try:
+        result = await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+    assert result.sources != []
+    assert offered[0] == 1, "the normal run must offer search_context"
+    assert offered[-1] == 0, "the fallback must offer no tool to call"
+    # Every fallback request, not just the last one.
+    assert set(offered) == {0, 1}
+
+
+def test_synthesis_prompts_never_name_a_tool() -> None:
+    """The fallback agent is offered no tools, so naming one invites the
+    model to emit a call it cannot satisfy, which pydantic-ai reports as
+    unexpected model behaviour rather than a tool result."""
+    source = context_item(uuid4())
+    indices = {source.chunk_id: 1}
+    assert "search_context" not in synthesis_prompt()
+    assert "search_context" not in format_synthesis_prompt("q", [source], indices)
+    assert "search_context" not in format_synthesis_prompt("q", [], {})
+    # The normal path is the opposite case and must keep naming its tool.
+    assert "search_context" in system_prompt()
