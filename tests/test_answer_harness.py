@@ -16,6 +16,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.agent.harness import (
     MAX_MODEL_REQUESTS,
+    MAX_OUTPUT_TOKENS,
     MAX_TOOL_CALLS,
     NO_EVIDENCE_ANSWER,
     UNCITED_ANSWER,
@@ -756,3 +757,47 @@ def test_synthesis_prompts_never_name_a_tool() -> None:
     assert "search_context" not in format_synthesis_prompt("q", [], {})
     # The normal path is the opposite case and must keep naming its tool.
     assert "search_context" in system_prompt()
+
+
+async def test_both_agents_share_one_output_token_budget() -> None:
+    """The fallback and the main run must not drift apart on max_tokens.
+
+    The fallback carries a prompt holding every retrieved source, so it
+    needs at least as much room as the main run to produce an answer at
+    all -- it once inherited a 1600-token allowance, spent it on
+    reasoning, and returned no text. Raising one and not the other is
+    how that recurs, so the shared constant is asserted rather than
+    trusted.
+    """
+    configuration = settings()
+    workspace_id = uuid4()
+    retriever = StubRetriever([[context_item(workspace_id)]])
+    seen: list[int | None] = []
+
+    def behavior(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        settings_seen = info.model_settings or {}
+        seen.append(settings_seen.get("max_tokens"))
+        first = messages[0]
+        text = "".join(
+            part.content
+            for part in getattr(first, "parts", [])
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        )
+        if NO_EVIDENCE_MARKER in text:
+            return ModelResponse(
+                parts=[ToolCallPart("search_context", {"query": "keep searching"})]
+            )
+        return ModelResponse(parts=[TextPart("Revenue increased by 20 percent. [1]")])
+
+    harness = AnswerHarness(
+        configuration, retriever, model=tool_loop_model(behavior)
+    )
+    try:
+        await harness.answer("Question", [workspace_id], [])
+    finally:
+        await harness.aclose()
+
+    assert seen, "the model was never called"
+    assert set(seen) == {MAX_OUTPUT_TOKENS}, f"agents disagree: {seen}"
+    # A budget this small is a run total, not a per-answer cap.
+    assert MAX_OUTPUT_TOKENS >= 4000

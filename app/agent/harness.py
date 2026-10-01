@@ -32,18 +32,33 @@ logger = logging.getLogger(__name__)
 # budget of 2 in one turn and left no room to actually answer. The old
 # numbers were also exactly tight even when nothing misbehaved: search,
 # search, answer is 3 requests against a cap of 3, so any extra retry
-# exhausted the loop and surfaced as a 503. Cost is negligible on these
-# models, so the headroom is cheaper than the failures.
-#
-# MAX_TOOL_CALLS is a runaway guard rather than a budget: it is not what
-# limits a real run. MAX_CURRENT_SOURCES is the evidence ceiling, so once
-# that many distinct chunks are held every further search returns nothing
-# new, and MAX_MODEL_REQUESTS caps how many model round trips there are.
-# Raising the tool cap past those buys latency, not evidence.
+# exhausted the loop and surfaced as a 503.
 MAX_TOOL_CALLS = 4
 MAX_MODEL_REQUESTS = 5
+
+# MAX_CURRENT_SOURCES bounds the evidence a run can gather. It is
+# approximate rather than hard: each tool call works out its headroom
+# from the chunks held when it starts, and this model issues two
+# search_context calls in parallel, so both see the same headroom and
+# the total can overshoot by a call's worth. Observed at 18 against 16.
+# Every source is still workspace-scoped and validated, so this is a
+# prompt-size and latency bound, not a correctness or access one.
 MAX_CURRENT_SOURCES = 16
-MAX_OUTPUT_TOKENS = 1600
+
+# MAX_OUTPUT_TOKENS is the one that actually binds, and it is not what it
+# looks like. pydantic-ai checks it against the run's accumulated
+# RunUsage, so it is a total across every model request in the run, not
+# a cap on one answer. At 1600 a run died as soon as it searched twice
+# or wrote a long reply: three requests of a few hundred tokens each
+# plus tool-call JSON and this model's reasoning field passed 1600
+# mid-answer, which surfaced as UsageLimitExceeded and a 503. Raising
+# MAX_TOOL_CALLS instead just moved the failure onto this stricter
+# limit -- 10 tool calls failed three runs in a row where 4 passed.
+#
+# Cost is 0 on these models, so tokens are the cheap thing to buy. The
+# no-tools fallback agent uses the same value as its per-response
+# max_tokens; a test pins that so the two cannot drift apart.
+MAX_OUTPUT_TOKENS = 8000
 NO_EVIDENCE_ANSWER = (
     "I could not find relevant information for that question."
 )
@@ -97,7 +112,7 @@ class AnswerHarness:
         ) -> ModelSettings:
             return {
                 "temperature": 0.2,
-                "max_tokens": 1600,
+                "max_tokens": MAX_OUTPUT_TOKENS,
                 "tool_choice": "auto" if ctx.deps.retrieved_chunk_ids else "required",
             }
 
