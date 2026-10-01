@@ -538,6 +538,149 @@ async def test_chunked_upload_limit_returns_413(
     assert object_storage.objects == {}
 
 
+# --- listing ------------------------------------------------------------
+#
+# GET /v1/documents had no coverage at all, so the list the dashboard
+# renders was unverified. These pin the parts the delete flow depends on.
+
+
+async def test_document_list_reports_derived_status_and_paginates(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    for name, text in (("first.pdf", "First"), ("second.pdf", "Second")):
+        created = await upload(
+            client, auth_headers, entities.finance.id, name, pdf_bytes(text)
+        )
+        assert created.status_code == 202
+
+    listed = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents", headers=auth_headers
+    )
+
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["total"] == 2
+    assert len(body["items"]) == 2
+    assert {item["original_filename"] for item in body["items"]} == {
+        "first.pdf",
+        "second.pdf",
+    }
+    # Status is derived from the queued run, not stored on the row, so a
+    # freshly accepted upload reports as still processing.
+    assert {item["status"] for item in body["items"]} == {"processing"}
+
+    page = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents?offset=1&limit=1",
+        headers=auth_headers,
+    )
+    assert page.status_code == 200
+    assert page.json()["total"] == 2, "total must describe the whole set, not the page"
+    assert len(page.json()["items"]) == 1
+
+
+async def test_document_list_excludes_a_document_being_deleted(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The row outlives the delete call on purpose, so it has to be
+    filtered out of the list explicitly.
+
+    Without the filter the document reappears on the next refresh --
+    undownloadable and already unsearchable -- and stays there for as
+    long as the worker is not running to remove it.
+    """
+    created = await upload(
+        client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes()
+    )
+    document_id = created.json()["id"]
+    url = f"/v1/workspaces/{entities.finance.id}/documents/{document_id}"
+
+    before = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents", headers=auth_headers
+    )
+    assert document_id in {item["id"] for item in before.json()["items"]}
+
+    assert (await client.delete(url, headers=auth_headers)).status_code == 204
+
+    # The row is still there for the worker to act on...
+    async with db_session_factory() as session:
+        stored = await session.get(Document, UUID(document_id))
+    assert stored is not None and stored.deleted_at is not None
+
+    # ...but the list must not report it as part of the workspace.
+    after = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents", headers=auth_headers
+    )
+    assert document_id not in {item["id"] for item in after.json()["items"]}
+    assert after.json()["total"] == 0
+
+    # The single-document route still explains what happened.
+    fetched = await client.get(url, headers=auth_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "deleting"
+
+
+async def test_document_list_is_scoped_to_one_workspace(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
+
+    other = await client.get(
+        f"/v1/workspaces/{entities.legal.id}/documents", headers=auth_headers
+    )
+
+    assert other.status_code == 200
+    assert other.json()["total"] == 0
+    assert other.json()["items"] == []
+
+
+async def test_viewer_can_list_documents_but_cannot_delete_one(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    """can_delete is false for a viewer, and the API agrees with it.
+
+    A client that ignored the capability and rendered the button anyway
+    would get this 403 rather than a partial success.
+    """
+    owner_login = await client.post(
+        "/v1/auth/token",
+        data={"username": "alice", "password": "correct-horse-battery-staple"},
+    )
+    owner_headers = {
+        "Authorization": f"Bearer {owner_login.json()['access_token']}"
+    }
+    viewer_login = await client.post(
+        "/v1/auth/token",
+        data={"username": "bob", "password": "another-correct-password"},
+    )
+    viewer_headers = {
+        "Authorization": f"Bearer {viewer_login.json()['access_token']}"
+    }
+
+    created = await upload(
+        client, owner_headers, entities.legal.id, "legal.pdf", pdf_bytes("Legal")
+    )
+    document_id = created.json()["id"]
+    url = f"/v1/workspaces/{entities.legal.id}/documents/{document_id}"
+
+    listed = await client.get(
+        f"/v1/workspaces/{entities.legal.id}/documents", headers=viewer_headers
+    )
+    assert listed.status_code == 200, "a viewer has read access and may list"
+    assert document_id in {item["id"] for item in listed.json()["items"]}
+
+    refused = await client.delete(url, headers=viewer_headers)
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "insufficient_workspace_permission"
+
+
 async def upload(
     client: httpx.AsyncClient,
     headers: dict[str, str],

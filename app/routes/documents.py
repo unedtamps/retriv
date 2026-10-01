@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from anyio import to_thread
 from fastapi import APIRouter, Depends, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -150,7 +150,14 @@ async def list_documents(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> DocumentListResponse:
-    condition = Document.workspace_id == workspace.id
+    # deleted_at is filtered here but not on the single-document route.
+    # Deletion is asynchronous: the row is kept until the worker removes
+    # the vectors, so listing it would show a document that cannot be
+    # downloaded and is already unsearchable, and a refresh straight
+    # after a delete would put it back. The single-document route still
+    # answers 200 with status "deleting" so a client holding the id can
+    # tell what happened.
+    condition = and_(Document.workspace_id == workspace.id, Document.deleted_at.is_(None))
     total = await session.scalar(
         select(func.count()).select_from(Document).where(condition)
     )

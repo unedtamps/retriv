@@ -36,6 +36,11 @@ class WorkspaceResponse(BaseModel):
     can_download: bool = False
     can_search_context: bool = False
     can_manage_members: bool = False
+    # Deleting a document is restricted to owners and editors, and the
+    # decision is the membership role alone: load_workspace_access has no
+    # platform-admin bypass, so a client that also allowed isAdmin here
+    # would offer a button the API answers with 404.
+    can_delete: bool = False
 
 
 class WorkspaceListResponse(BaseModel):

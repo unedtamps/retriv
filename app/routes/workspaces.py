@@ -204,6 +204,7 @@ def workspace_response(
         can_download="download" in permissions,
         can_search_context="search_context" in permissions,
         can_manage_members="manage_members" in permissions,
+        can_delete="delete" in permissions,
     )
 
 

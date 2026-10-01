@@ -47,6 +47,11 @@ async def test_workspace_list_reports_download_permission_for_each_role(
     assert owner_workspaces[str(entities.finance.id)]["can_download"] is True
     assert viewer_workspaces[str(entities.legal.id)]["can_search_context"] is True
     assert viewer_workspaces[str(entities.legal.id)]["can_download"] is False
+    # Deletion follows the role and nothing else. A client that also
+    # honoured isAdmin here would offer the button to a platform admin
+    # with no membership, which load_workspace_access answers with 404.
+    assert owner_workspaces[str(entities.finance.id)]["can_delete"] is True
+    assert viewer_workspaces[str(entities.legal.id)]["can_delete"] is False
 
 
 async def test_workspace_list_is_paginated(
