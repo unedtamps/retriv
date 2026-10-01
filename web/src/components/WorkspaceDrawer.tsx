@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import {
   CheckCircle2,
   CircleSlash2,
+  FileText,
   FileUp,
   Search,
   Sparkles,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import type {
+  DocumentUpload,
   MemberCandidate,
   Workspace,
   WorkspaceMember,
@@ -49,8 +51,35 @@ export function WorkspaceDrawer({
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
   const [removing, setRemoving] = useState(false)
+  const [documents, setDocuments] = useState<DocumentUpload[]>([])
+  const [loadingDocuments, setLoadingDocuments] = useState(true)
+  const [documentTotal, setDocumentTotal] = useState(0)
+  const [deleteTarget, setDeleteTarget] = useState<DocumentUpload | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const canManage = isAdmin || workspace.can_manage_members
+  // Membership role only. The API resolves document permissions through
+  // the caller's membership with no platform-admin bypass, so adding
+  // isAdmin here would render a button that answers 404.
+  const canDelete = workspace.can_delete
+
+  useEffect(() => {
+    const controller = new AbortController()
+    api
+      .listDocuments(token, workspace.id, { limit: 100, signal: controller.signal })
+      .then((result) => {
+        setDocuments(result.items)
+        setDocumentTotal(result.total)
+        setLoadingDocuments(false)
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof Error && caught.name === 'AbortError') return
+        if (isUnauthorized(caught)) onUnauthorized()
+        else setError(getErrorMessage(caught))
+        setLoadingDocuments(false)
+      })
+    return () => controller.abort()
+  }, [workspace, token, onUnauthorized])
 
   useEffect(() => {
     if (!canManage) return
@@ -169,6 +198,27 @@ export function WorkspaceDrawer({
     }
   }
 
+  async function deleteDocument() {
+    if (deleteTarget === null) return
+    setDeleting(true)
+    try {
+      await api.deleteDocument(token, workspace.id, deleteTarget.id)
+      // Dropped locally rather than left for a refresh: the API answers 204
+      // as soon as the delete is accepted, and the list no longer reports a
+      // document that is being deleted, so it will not come back.
+      setDocuments((current) => current.filter((item) => item.id !== deleteTarget.id))
+      setDocumentTotal((current) => Math.max(0, current - 1))
+      onNotice(`${deleteTarget.original_filename} deleted from ${workspace.name}.`)
+      setDeleteTarget(null)
+      await onChanged()
+    } catch (caught) {
+      if (isUnauthorized(caught)) onUnauthorized()
+      else onNotice(getErrorMessage(caught), 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <>
       <Dialog
@@ -180,7 +230,7 @@ export function WorkspaceDrawer({
         onClose={onClose}
       >
         <div className="drawer-scroll">
-          <section className="grid grid-cols-2 border-b border-stone-200 sm:grid-cols-3">
+          <section className="grid grid-cols-2 border-b border-stone-200 sm:grid-cols-4">
             <Capability
               icon={<FileUp aria-hidden="true" size={17} />}
               label="Upload"
@@ -195,6 +245,11 @@ export function WorkspaceDrawer({
               icon={<Users aria-hidden="true" size={17} />}
               label="Members"
               enabled={canManage}
+            />
+            <Capability
+              icon={<Trash2 aria-hidden="true" size={17} />}
+              label="Delete"
+              enabled={canDelete}
             />
           </section>
 
@@ -217,6 +272,66 @@ export function WorkspaceDrawer({
                   ? 'You can discover this workspace, but its documents and context remain inaccessible.'
                   : 'Capabilities are derived from your current workspace membership and update immediately when the policy changes.'}
             </p>
+          </section>
+
+          <section className="border-b border-stone-200 px-5 py-6 sm:px-7">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="section-eyebrow">Workspace content</p>
+                <h3 className="mt-1 text-lg font-semibold text-stone-950">Documents</h3>
+              </div>
+              <span className="font-mono text-xs text-stone-500">
+                {documentTotal} total
+              </span>
+            </div>
+            {loadingDocuments ? (
+              <div className="space-y-2" aria-label="Loading documents">
+                {Array.from({ length: 2 }, (_, index) => (
+                  <div key={index} className="h-14 animate-pulse bg-stone-100" />
+                ))}
+              </div>
+            ) : documents.length === 0 ? (
+              <div className="border border-dashed border-stone-300 px-5 py-8 text-center text-sm text-stone-500">
+                No documents in this workspace yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-stone-200 border-y border-stone-200">
+                {documents.map((document) => (
+                  <div
+                    key={document.id}
+                    className="flex items-center justify-between gap-3 py-3"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <FileText
+                        aria-hidden="true"
+                        className="shrink-0 text-stone-400"
+                        size={17}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-stone-950">
+                          {document.original_filename}
+                        </p>
+                        <p className="mt-0.5 font-mono text-[0.62rem] text-stone-500">
+                          {documentLabel(document.status)} ·{' '}
+                          {new Date(document.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        className="icon-button shrink-0 justify-self-end text-red-700 disabled:text-stone-300"
+                        aria-label={`Delete ${document.original_filename}`}
+                        disabled={deleting}
+                        onClick={() => setDeleteTarget(document)}
+                      >
+                        <Trash2 aria-hidden="true" size={16} />
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {canManage ? (
@@ -347,8 +462,31 @@ export function WorkspaceDrawer({
         onClose={() => setRemoveTarget(null)}
         onConfirm={removeMember}
       />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete this document?"
+        description={`${deleteTarget?.original_filename ?? 'This document'} and its indexed context will be permanently removed from ${workspace.name}. This cannot be undone.`}
+        confirmLabel="Delete document"
+        busy={deleting}
+        destructive
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={deleteDocument}
+      />
     </>
   )
+}
+
+const DOCUMENT_STATUS_LABELS: Record<string, string> = {
+  ready: 'Ready',
+  processing: 'Processing',
+  deleting: 'Deleting',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  unsupported_format: 'Unsupported format',
+}
+
+function documentLabel(status: string): string {
+  return DOCUMENT_STATUS_LABELS[status] ?? status.replaceAll('_', ' ')
 }
 
 interface CapabilityProps {

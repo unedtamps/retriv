@@ -8,6 +8,7 @@ import type {
   CreatedUser,
   CurrentUser,
   ContextAnswer,
+  DocumentList,
   DocumentUpload,
   GeneratedPassword,
   MemberCandidateList,
@@ -148,6 +149,34 @@ export const api = {
     return request<DocumentUpload>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents`,
       { token, method: 'POST', body: form, signal },
+    )
+  },
+
+  listDocuments(
+    token: string,
+    workspaceId: string,
+    options: PageOptions = {},
+  ): Promise<DocumentList> {
+    const { offset, limit, signal } = options
+    const query = new URLSearchParams()
+    if (offset !== undefined) query.set('offset', String(offset))
+    if (limit !== undefined) query.set('limit', String(limit))
+    const search = query.toString()
+    return request<DocumentList>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents${search === '' ? '' : `?${search}`}`,
+      { token, signal },
+    )
+  },
+
+  /**
+   * Returns 204 as soon as the delete is accepted; the worker removes the
+   * vectors and the row afterwards. Documents already being deleted are
+   * excluded from listDocuments, so a removed row does not come back.
+   */
+  deleteDocument(token: string, workspaceId: string, documentId: string): Promise<void> {
+    return request<void>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+      { token, method: 'DELETE' },
     )
   },
 

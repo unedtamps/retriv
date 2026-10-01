@@ -26,6 +26,13 @@ export interface Workspace {
   can_download: boolean
   can_search_context: boolean
   can_manage_members: boolean
+  /**
+   * Deleting a document is a membership decision only. Do not widen this
+   * with an isAdmin check: the API resolves document permissions through
+   * the caller's membership and has no platform-admin bypass, so an
+   * administrator without one would be offered a button that 404s.
+   */
+  can_delete: boolean
 }
 
 export interface WorkspaceList {
@@ -47,6 +54,13 @@ export interface DocumentUpload {
   created_by_user_id: string | null
   created_at: string
   duplicate: boolean
+}
+
+export interface DocumentList {
+  items: DocumentUpload[]
+  total: number
+  offset: number
+  limit: number
 }
 
 export interface ProcessingRun {

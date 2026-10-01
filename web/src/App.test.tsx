@@ -30,6 +30,7 @@ const workspace: Workspace = {
   can_download: true,
   can_search_context: true,
   can_manage_members: true,
+  can_delete: true,
 }
 
 function json(body: unknown, status = 200) {
@@ -45,6 +46,7 @@ function installApi(
   uploadResponse?: Response,
   answerResponse?: Response,
   processingResponses: { active?: unknown; recent?: unknown } = {},
+  documents: { list?: unknown; deleted?: string[] } = {},
 ) {
   const conversations: Array<{ id: string; title: string | null; created_at: string; updated_at: string }> = []
   const turns = new Map<string, Array<Record<string, unknown>>>()
@@ -57,6 +59,25 @@ function installApi(
     if (url === '/v1/auth/me') return json(user)
     if (url.startsWith('/v1/workspaces?')) {
       return json({ items: workspaces, total: workspaces.length, offset: 0, limit: 100 })
+    }
+    // GET only: the upload POST shares this exact path, and answering it
+    // from here silently broke the duplicate-upload and session tests.
+    const documentList = url.match(/^\/v1\/workspaces\/[^/]+\/documents(\?|$)/)
+    if (documentList !== null && (init?.method === undefined || init.method === 'GET')) {
+      return json(documents.list ?? { items: [], total: 0, offset: 0, limit: 50 })
+    }
+    const documentDelete = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)$/)
+    if (documentDelete !== null && init?.method === 'DELETE') {
+      documents.deleted?.push(documentDelete[1])
+      // The API stops reporting a document once its delete is accepted, so
+      // the mock has to as well. A stateless mock let the row reappear on
+      // the refetch that onChanged triggers, and the test only passed by
+      // timing.
+      if (documents.list !== undefined) {
+        const list = documents.list as { items: Array<{ id: string }> }
+        list.items = list.items.filter((item) => item.id !== documentDelete[1])
+      }
+      return new Response(null, { status: 204 })
     }
     if (url === '/v1/processing-runs/active') {
       return json(processingResponses.active ?? { item: null })
@@ -194,6 +215,7 @@ describe('dashboard application', () => {
         can_upload: false,
         can_download: false,
         can_manage_members: false,
+        can_delete: false,
       },
       {
         ...workspace,
@@ -205,6 +227,7 @@ describe('dashboard application', () => {
         can_download: false,
         can_search_context: false,
         can_manage_members: false,
+        can_delete: false,
       },
     ])
 
@@ -705,5 +728,101 @@ Use \`report.csv\` for details.
     await user.click(openNavigation)
     await user.click(screen.getByRole('button', { name: 'Close navigation' }))
     expect(screen.queryByRole('dialog', { name: 'Primary navigation' })).not.toBeInTheDocument()
+  })
+
+  it('lists workspace documents and deletes one after confirmation', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const deleted: string[] = []
+    const document = {
+      id: 'document-1',
+      workspace_id: workspace.id,
+      original_filename: 'launch-review.pdf',
+      detected_media_type: 'application/pdf',
+      size_bytes: 2048,
+      sha256: 'a'.repeat(64),
+      status: 'ready',
+      created_by_user_id: 'user-owner',
+      created_at: '2026-09-24T08:00:00Z',
+      duplicate: false,
+    }
+    installApi(owner, [workspace], undefined, undefined, {}, {
+      list: { items: [document], total: 1, offset: 0, limit: 50 },
+      deleted,
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    const row = await screen.findByRole('row', { name: /Launch notes/ })
+    await user.click(within(row).getByRole('button', { name: 'Open' }))
+
+    expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
+    expect(screen.getByText(/Ready/)).toBeInTheDocument()
+
+    // Deletion is permanent, so it goes through the confirmation dialog.
+    await user.click(screen.getByRole('button', { name: 'Delete launch-review.pdf' }))
+    expect(screen.getByRole('dialog', { name: /Delete this document/ })).toBeInTheDocument()
+
+    // Cancelling must not call the API.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(deleted).toEqual([])
+    expect(screen.getByText('launch-review.pdf')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Delete launch-review.pdf' }))
+    await user.click(screen.getByRole('button', { name: 'Delete document' }))
+
+    expect(deleted).toEqual(['document-1'])
+    await waitFor(() =>
+      expect(screen.queryByText('launch-review.pdf')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('withholds the delete control from a workspace the role cannot delete in', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const viewerWorkspace: Workspace = {
+      ...workspace,
+      id: 'workspace-viewer',
+      slug: 'shared-reference',
+      name: 'Shared reference',
+      membership_role: 'viewer',
+      can_upload: false,
+      can_download: false,
+      can_search_context: true,
+      can_manage_members: false,
+      can_delete: false,
+    }
+    // Deliberately a platform admin. An admin bypass is the exact mistake
+    // this guards: load_workspace_access has none, so the button would 404.
+    installApi(admin, [viewerWorkspace], undefined, undefined, {}, {
+      list: {
+        items: [{
+          id: 'document-viewer',
+          workspace_id: viewerWorkspace.id,
+          original_filename: 'shared-notes.pdf',
+          detected_media_type: 'application/pdf',
+          size_bytes: 1024,
+          sha256: 'b'.repeat(64),
+          status: 'ready',
+          created_by_user_id: 'user-owner',
+          created_at: '2026-09-24T08:00:00Z',
+          duplicate: false,
+        }],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    const row = await screen.findByRole('row', { name: /Shared reference/ })
+    await user.click(within(row).getByRole('button', { name: 'Open' }))
+
+    // A viewer may read the list; only the destructive control is withheld.
+    expect(await screen.findByText('shared-notes.pdf')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete shared-notes.pdf' })).toBeNull()
   })
 })
