@@ -33,17 +33,37 @@ logger = logging.getLogger(__name__)
 # numbers were also exactly tight even when nothing misbehaved: search,
 # search, answer is 3 requests against a cap of 3, so any extra retry
 # exhausted the loop and surfaced as a 503.
-MAX_TOOL_CALLS = 4
-MAX_MODEL_REQUESTS = 5
+#
+# These three are one budget, and the relationship between them is easy to
+# break silently. The evidence a turn can actually hold is:
+#
+#     min(MAX_CURRENT_SOURCES, MAX_TOOL_CALLS * max_context_chunks)
+#
+# The second term is the real ceiling. Raising MAX_CURRENT_SOURCES on its
+# own therefore does nothing at all -- no error, just a setting that cannot
+# be reached. max_context_chunks is RETRIV_MAX_CONTEXT_CHUNKS (4 in the
+# shipped configuration), so 10 tool calls can gather 40 and the 32 below
+# is what actually binds. A test asserts that inequality so the two cannot
+# drift apart.
+#
+# With 4 per search and a 32 ceiling that is 8 distinct query angles, up
+# from 2. The number of angles is what matters for recall: each search is
+# an independent query over the whole corpus, and Qdrant's limit is a
+# top-N, not a corpus restriction. Nothing here narrows what can be found.
+MAX_TOOL_CALLS = 10
+MAX_MODEL_REQUESTS = 10
 
 # MAX_CURRENT_SOURCES bounds the evidence a run can gather. It is
 # approximate rather than hard: each tool call works out its headroom
 # from the chunks held when it starts, and this model issues two
 # search_context calls in parallel, so both see the same headroom and
-# the total can overshoot by a call's worth. Observed at 18 against 16.
+# the total can overshoot by a call's worth. Observed at 18 against 16,
+# so expect a little over 32 here.
+#
 # Every source is still workspace-scoped and validated, so this is a
-# prompt-size and latency bound, not a correctness or access one.
-MAX_CURRENT_SOURCES = 16
+# prompt-size and latency bound, not a correctness or access one. The
+# model's context window is far larger than this can fill.
+MAX_CURRENT_SOURCES = 32
 
 # MAX_OUTPUT_TOKENS is the one that actually binds, and it is not what it
 # looks like. pydantic-ai checks it against the run's accumulated

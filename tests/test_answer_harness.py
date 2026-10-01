@@ -15,6 +15,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.agent.harness import (
+    MAX_CURRENT_SOURCES,
     MAX_MODEL_REQUESTS,
     MAX_OUTPUT_TOKENS,
     MAX_TOOL_CALLS,
@@ -84,6 +85,30 @@ def settings() -> Settings:
         chat_model="openai/test-chat-model",
         embedding_dimensions=2,
         max_context_chunks=3,
+    )
+
+
+# The value shipped in .env.example. The settings() fixture deliberately
+# uses a small 3 so tests stay cheap, which would not satisfy the
+# invariant below, so the production number is stated here instead.
+SHIPPED_MAX_CONTEXT_CHUNKS = 4
+
+
+def test_source_budget_is_actually_reachable() -> None:
+    """MAX_CURRENT_SOURCES cannot be reached on its own.
+
+    The evidence a turn can gather is
+    min(MAX_CURRENT_SOURCES, MAX_TOOL_CALLS * max_context_chunks), so
+    raising the ceiling without raising the tool-call budget produces a
+    setting that is simply unreachable -- no error, no warning, and no
+    change in behaviour. That is exactly what happened when the ceiling
+    went to 32 while the budget still allowed only 4 x 4 = 16.
+    """
+    reachable = MAX_TOOL_CALLS * SHIPPED_MAX_CONTEXT_CHUNKS
+    assert reachable >= MAX_CURRENT_SOURCES, (
+        f"MAX_CURRENT_SOURCES={MAX_CURRENT_SOURCES} is unreachable: "
+        f"{MAX_TOOL_CALLS} tool calls x {SHIPPED_MAX_CONTEXT_CHUNKS} per search "
+        f"tops out at {reachable}"
     )
 
 
