@@ -3,8 +3,10 @@ import hashlib
 import json
 import re
 import sys
+import traceback
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import unquote, urlsplit
 
 from pydantic import (
@@ -18,6 +20,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.models import User, Workspace
@@ -32,6 +35,15 @@ from provisioning.models import ProvisioningRun
 
 ROLE_PATTERN = re.compile(r"^[a-z][a-z0-9:_-]{1,63}$")
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+# How many problems a single report will carry. A manifest can be wrong in
+# a hundred ways at once; listing all of them buries the operator.
+MAX_REPORTED_PROBLEMS = 5
+MANIFEST_HINT = (
+    "fix the fields above and re-upload the manifest to the URI in "
+    "PROVISIONER_MANIFEST_URI"
+)
+SETTINGS_HINT = "set the variables above in .env; the example lists all of them"
 
 
 class ProvisionerSettings(BaseSettings):
@@ -56,29 +68,42 @@ class ProvisionerSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_required_values(self) -> "ProvisionerSettings":
+        # Collect everything wrong rather than raising on the first miss.
+        # A first run with nothing configured used to take six runs to
+        # discover six missing variables, one message at a time.
+        problems: list[str] = []
         if not self.database_url.strip():
-            raise ValueError("PROVISIONER_DATABASE_URL is required")
+            problems.append("PROVISIONER_DATABASE_URL is required")
         if not self.s3_endpoint_url.strip():
-            raise ValueError("PROVISIONER_S3_ENDPOINT_URL is required")
+            problems.append("PROVISIONER_S3_ENDPOINT_URL is required")
         if not self.s3_access_key.strip() or not self.s3_secret_key.get_secret_value():
-            raise ValueError("Provisioner object-store credentials are required")
+            problems.append(
+                "PROVISIONER_S3_ACCESS_KEY and PROVISIONER_S3_SECRET_KEY are required"
+            )
         if not self.raw_document_bucket.strip():
-            raise ValueError("PROVISIONER_RAW_DOCUMENT_BUCKET is required")
-        if self.raw_document_bucket == self.manifest_bucket:
-            raise ValueError("Manifest and raw-document buckets must be different")
+            problems.append("PROVISIONER_RAW_DOCUMENT_BUCKET is required")
+        elif self.raw_document_bucket == self.manifest_bucket:
+            problems.append(
+                "PROVISIONER_RAW_DOCUMENT_BUCKET must differ from "
+                "PROVISIONER_MANIFEST_BUCKET"
+            )
         if not self.manifest_prefix or self.manifest_prefix.startswith("/"):
-            raise ValueError("PROVISIONER_MANIFEST_PREFIX must be a relative prefix")
-        if ".." in self.manifest_prefix or not self.manifest_prefix.endswith("/"):
-            raise ValueError(
-                "PROVISIONER_MANIFEST_PREFIX must be a safe directory prefix"
+            problems.append("PROVISIONER_MANIFEST_PREFIX must be a relative prefix")
+        elif ".." in self.manifest_prefix or not self.manifest_prefix.endswith("/"):
+            problems.append(
+                "PROVISIONER_MANIFEST_PREFIX must be a safe directory prefix ending in /"
             )
         if not self.manifest_uri.strip():
-            raise ValueError("PROVISIONER_MANIFEST_URI is required")
-        self.manifest_uri = self.manifest_uri.strip()
-        if self.environment == "production" and not self.s3_endpoint_url.startswith(
-            "https://"
+            problems.append("PROVISIONER_MANIFEST_URI is required")
+        if self.environment == "production" and self.s3_endpoint_url.strip() and not (
+            self.s3_endpoint_url.startswith("https://")
         ):
-            raise ValueError("Provisioner object storage must use HTTPS in production")
+            problems.append(
+                "PROVISIONER_S3_ENDPOINT_URL must use https in production"
+            )
+        if problems:
+            raise ValueError("; ".join(problems))
+        self.manifest_uri = self.manifest_uri.strip()
         return self
 
 
@@ -184,15 +209,150 @@ class ProvisioningManifest(BaseModel):
 
 
 class ProvisioningError(Exception):
-    """A safe, operator-facing provisioning failure."""
+    """A safe, operator-facing provisioning failure.
+
+    ``hint`` is part of the contract, not decoration. This job is run by
+    hand, and a message an operator cannot act on is worth about the same
+    as no message: "the manifest could not be read" is equally true
+    whether the file was never uploaded, the reader's policy excludes the
+    prefix, the secret does not match, or MinIO is down.
+    """
+
+    def __init__(self, message: str, *, hint: str | None = None) -> None:
+        super().__init__(message)
+        self.hint = hint
+
+    def render(self) -> str:
+        return render_failure(self)
+
+
+class ManifestValidationError(ProvisioningError):
+    """The manifest is not a valid manifest.
+
+    Carries the individual problems, so somebody editing JSON by hand is
+    told which field is wrong instead of being told that something,
+    somewhere, is wrong.
+    """
+
+    def __init__(self, problems: Sequence[str], *, hint: str = MANIFEST_HINT) -> None:
+        super().__init__("the manifest failed validation", hint=hint)
+        self.problems: tuple[str, ...] = tuple(problems)
+
+
+class ManifestReadError(ProvisioningError):
+    """The manifest object could not be fetched from object storage."""
+
+    def __init__(self, message: str, *, s3_code: str | None, hint: str) -> None:
+        super().__init__(message, hint=hint)
+        self.s3_code = s3_code
 
 
 class ManifestConflictError(ProvisioningError):
     """The migration ID was previously used with a different manifest."""
 
+    def __init__(self, migration_id: str) -> None:
+        super().__init__(
+            f"migration_id '{migration_id}' was already used with a different manifest",
+            hint=(
+                "an applied manifest is immutable; give the new content a new "
+                "migration_id, or restore the original bytes"
+            ),
+        )
+        self.migration_id = migration_id
+
 
 class ManifestInProgressError(ProvisioningError):
     """Another provisioning transaction is using the migration ID."""
+
+    def __init__(self, migration_id: str) -> None:
+        super().__init__(
+            f"migration_id '{migration_id}' is already in progress",
+            hint="another run holds the advisory lock; wait for it to finish",
+        )
+        self.migration_id = migration_id
+
+
+class DatabaseUnreachableError(ProvisioningError):
+    """The database could not be opened, so nothing was written."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            "the database could not be reached",
+            hint=(
+                "check that postgres is up and that PROVISIONER_DATABASE_URL "
+                "names the same database as the app"
+            ),
+        )
+        self.detail = detail
+
+
+def _field_label(location: Sequence[Any]) -> str:
+    """Turn a pydantic error location into a readable path.
+
+    List indices are bracketed so ``users[0].password`` reads as a path
+    into the document rather than as the name of a key.
+    """
+    label = ""
+    for part in location:
+        if isinstance(part, int):
+            label += f"[{part}]"
+        else:
+            label += f".{part}" if label else str(part)
+    return label or "<root>"
+
+
+def describe_validation_error(exc: ValidationError) -> ManifestValidationError:
+    """Summarise a pydantic failure into lines an operator can act on.
+
+    Only ``loc`` and ``msg`` are read. ``input``, ``ctx`` and ``url`` are
+    not, because they carry the offending value and some of these fields
+    are passwords. That constraint is why this cannot just dump
+    ``exc.errors()``.
+    """
+    problems: list[str] = []
+    for error in exc.errors()[:MAX_REPORTED_PROBLEMS]:
+        message = error["msg"]
+        if message.startswith("Value error, "):
+            message = message.removeprefix("Value error, ")
+        problems.append(f"{_field_label(error['loc'])}\t{message}")
+    remaining = len(exc.errors()) - MAX_REPORTED_PROBLEMS
+    if remaining > 0:
+        problems.append(f"\t...and {remaining} more")
+    return ManifestValidationError(problems)
+
+
+def describe_settings_error(exc: ValidationError) -> ManifestValidationError:
+    """Turn a settings failure into the same shape as a manifest one.
+
+    ``validate_required_values`` now raises once with every problem
+    joined by semicolons, so one line of pydantic output holds several
+    independent problems; they are split back out here to keep the report
+    one item per line.
+    """
+    problems: list[str] = []
+    for error in exc.errors():
+        message = error["msg"]
+        if message.startswith("Value error, "):
+            message = message.removeprefix("Value error, ")
+        for part in message.split("; "):
+            problems.append(f"{_field_label(error['loc'])}\t{part}")
+    return ManifestValidationError(problems, hint=SETTINGS_HINT)
+
+
+def render_failure(exc: ProvisioningError) -> str:
+    """Render a failure as the block an operator reads."""
+    lines = [f"Provisioning failed: {exc}"]
+    if problems := getattr(exc, "problems", None):
+        pairs = [problem.split("\t", 1) for problem in problems]
+        width = max(len(label) for label, _ in pairs)
+        lines.extend(f"  {label.ljust(width)}  {detail}" for label, detail in pairs)
+    if (s3_code := getattr(exc, "s3_code", None)) is not None:
+        lines.append(f"  s3 code  {s3_code}")
+    if (detail := getattr(exc, "detail", None)) is not None:
+        lines.append(f"  detail   {detail}")
+    if exc.hint:
+        lines.append(f"  hint     {exc.hint}")
+    return "\n".join(lines)
 
 
 class ProvisioningResult(BaseModel):
@@ -210,8 +370,11 @@ def parse_manifest(payload: bytes) -> tuple[ProvisioningManifest, str]:
     digest = hashlib.sha256(payload).hexdigest()
     try:
         manifest = ProvisioningManifest.model_validate_json(payload)
-    except (ValidationError, ValueError):
-        raise ProvisioningError("Manifest JSON failed validation") from None
+    except ValidationError as exc:
+        # Malformed JSON and a schema violation both arrive here: pydantic
+        # raises json_invalid with a line and column for the first, which is
+        # already more useful than anything this function could add.
+        raise describe_validation_error(exc) from None
     return manifest, digest
 
 
@@ -220,20 +383,99 @@ def parse_manifest_uri(
 ) -> tuple[str, str]:
     parsed = urlsplit(uri)
     if parsed.scheme != "s3" or not parsed.netloc or not parsed.path.strip("/"):
-        raise ProvisioningError("Manifest URI must use the s3://bucket/key format")
+        raise ProvisioningError(
+            f"the manifest URI '{uri}' is not in s3://bucket/key form",
+            hint="PROVISIONER_MANIFEST_URI should look like s3://<bucket>/<key>",
+        )
     if parsed.query or parsed.fragment:
-        raise ProvisioningError("Manifest URI cannot contain a query or fragment")
+        raise ProvisioningError(
+            "the manifest URI contains a query or fragment",
+            hint="PROVISIONER_MANIFEST_URI must be a plain s3://bucket/key path",
+        )
     bucket = parsed.netloc
     key = unquote(parsed.path.lstrip("/"))
     if bucket != expected_bucket:
         raise ProvisioningError(
-            "Manifest URI bucket does not match the configured bucket"
+            f"the manifest URI names bucket '{bucket}' but "
+            f"PROVISIONER_MANIFEST_BUCKET is '{expected_bucket}'",
+            hint="point both at the same bucket, or fix the URI",
         )
     if not key.startswith(expected_prefix) or key == expected_prefix:
         raise ProvisioningError(
-            "Manifest URI is outside the configured manifest prefix"
+            f"the manifest key '{key}' is outside PROVISIONER_MANIFEST_PREFIX",
+            hint=(
+                f"migration-reader may only read under '{expected_prefix}'; "
+                "move the manifest there or widen the prefix and re-run "
+                "minio-init"
+            ),
         )
     return bucket, key
+
+
+# The S3 codes that each mean a different thing to whoever has to fix it.
+_S3_HINTS: dict[str, tuple[str, str]] = {
+    "NoSuchKey": (
+        "the object does not exist at that path",
+        "upload the manifest with the migration-writer identity, or correct "
+        "PROVISIONER_MANIFEST_URI",
+    ),
+    "NoSuchBucket": (
+        "the bucket does not exist",
+        "minio-init has not run, or the compose project was recreated without it; "
+        "run 'make infra'",
+    ),
+    "AccessDenied": (
+        "the read-only identity is not allowed to read that object",
+        "migration-reader may only read under PROVISIONER_MANIFEST_PREFIX; check "
+        "the prefix matches where you uploaded the file",
+    ),
+    "SignatureDoesNotMatch": (
+        "the secret does not match the access key",
+        "PROVISIONER_S3_SECRET_KEY must equal MINIO_MANIFEST_READER_PASSWORD; "
+        "nothing interpolates between them",
+    ),
+    "InvalidAccessKeyId": (
+        "the access key is unknown to MinIO",
+        "PROVISIONER_S3_ACCESS_KEY must equal MINIO_MANIFEST_READER_USER",
+    ),
+    "ExpiredToken": (
+        "the credentials expired before the request completed",
+        "this is a session-token store; check the system clock and re-run",
+    ),
+}
+
+
+def _first_line(exc: BaseException) -> str:
+    """The single most useful line of a driver or pool error.
+
+    SQLAlchemy renders a refused connection as several lines of chained
+    context ending in ``[Errno 111] Connect call failed``. Only the last
+    line carries the cause, so the report keeps that and drops the rest.
+    """
+    text = str(exc).strip()
+    if not text:
+        return type(exc).__name__
+    return text.splitlines()[-1][:200]
+
+
+def _s3_code_from(exc: BaseException) -> str | None:
+    """Recover the S3 error code from the wrapped ClientError.
+
+    The storage layer re-raises with ``from exc``, so botocore's code is
+    still reachable on ``__cause__``. Without it every object-store
+    failure collapses into one sentence.
+    """
+    cause: BaseException | None = exc
+    for _ in range(5):
+        if cause is None:
+            return None
+        response = getattr(cause, "response", None)
+        if isinstance(response, dict):
+            code = response.get("Error", {}).get("Code")
+            if isinstance(code, str):
+                return code
+        cause = cause.__cause__
+    return None
 
 
 def read_manifest_object(
@@ -242,8 +484,16 @@ def read_manifest_object(
     object_bucket, object_key = parse_manifest_uri(uri, bucket, prefix)
     try:
         stream = storage.open_object(bucket=object_bucket, key=object_key)
-    except (ObjectNotFoundError, StorageError):
-        raise ProvisioningError("Manifest object could not be read") from None
+    except (ObjectNotFoundError, StorageError) as exc:
+        code = _s3_code_from(exc)
+        message, hint = _S3_HINTS.get(
+            code or "",
+            (
+                "the object could not be read from object storage",
+                "check that MinIO is up and reachable at PROVISIONER_S3_ENDPOINT_URL",
+            ),
+        )
+        raise ManifestReadError(message, s3_code=code, hint=hint) from None
 
     payload = bytearray()
     try:
@@ -254,7 +504,8 @@ def read_manifest_object(
             payload.extend(chunk)
             if len(payload) > max_bytes:
                 raise ProvisioningError(
-                    "Manifest object exceeds the configured size limit"
+                    f"the manifest exceeds the {max_bytes} byte limit",
+                    hint="raise PROVISIONER_MAX_MANIFEST_BYTES, or split the manifest",
                 )
     finally:
         stream.close()
@@ -291,11 +542,9 @@ async def apply_manifest(
         )
         if existing is not None:
             if existing.manifest_sha256 != manifest_sha256:
-                raise ManifestConflictError(
-                    "migration_id was already used with a different manifest"
-                )
+                raise ManifestConflictError(manifest.migration_id)
             if existing.status != "completed":
-                raise ManifestInProgressError("migration_id is already in progress")
+                raise ManifestInProgressError(manifest.migration_id)
             result = ProvisioningResult.model_validate(existing.result)
             result.already_applied = True
             return result
@@ -367,6 +616,8 @@ async def apply_manifest(
 
 
 async def run_provisioning(settings: ProvisionerSettings) -> ProvisioningResult:
+    # The engine is lazy: creating it does not touch the network, so a
+    # dead database surfaces here rather than at engine construction.
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     storage = S3ObjectStorage(
@@ -383,27 +634,60 @@ async def run_provisioning(settings: ProvisionerSettings) -> ProvisioningResult:
             prefix=settings.manifest_prefix,
             max_bytes=settings.max_manifest_bytes,
         )
-        return await apply_manifest(
-            session_factory,
-            manifest_payload=manifest_payload,
-            source_uri=settings.manifest_uri,
-        )
     finally:
         await engine.dispose()
+
+    # The database is only touched here, so an unreachable server is
+    # reported as its own failure rather than as a generic crash. Nothing
+    # has been written at this point either way.
+    #
+    # OSError is caught alongside SQLAlchemyError because asyncpg surfaces
+    # a refused socket, an unknown host, or a failed TLS handshake as the
+    # underlying OSError rather than wrapping it. Catching only the
+    # SQLAlchemy type let all three reach the traceback handler, which
+    # answered "the database is not running" with sixty lines of pool
+    # internals.
+    async with session_factory() as probe:
+        try:
+            await probe.execute(text("SELECT 1"))
+        except (SQLAlchemyError, OSError) as exc:
+            raise DatabaseUnreachableError(_first_line(exc)) from None
+
+    return await apply_manifest(
+        session_factory,
+        manifest_payload=manifest_payload,
+        source_uri=settings.manifest_uri,
+    )
 
 
 def main() -> None:
     try:
         settings = ProvisionerSettings()
+    except ValidationError as exc:
+        # Settings problems get the same field-by-field treatment as the
+        # manifest. They are the most common failure on a first run and
+        # they are all the operator's own configuration.
+        print(describe_settings_error(exc).render(), file=sys.stderr)
+        raise SystemExit(2) from None
+
+    try:
         result = asyncio.run(run_provisioning(settings))
-    except (ValidationError, ProvisioningError) as exc:
-        print(f"Provisioning failed: {exc}", file=sys.stderr)
+    except ProvisioningError as exc:
+        # Exit 2: the operator's input was wrong, or the world was not in
+        # the state the job needs. Nothing was written.
+        print(exc.render(), file=sys.stderr)
         raise SystemExit(2) from None
     except Exception:
+        # Exit 1, and this time the traceback is printed. A hand-run job
+        # that fails unexpectedly should hand over the evidence; the old
+        # bare handler threw away a perfectly readable
+        # "ConnectionRefusedError: [Errno 111] Connect call failed".
         print(
-            "Provisioning failed due to an unexpected infrastructure error",
+            "Provisioning failed with an unexpected error. The traceback below is "
+            "the only record of what went wrong.",
             file=sys.stderr,
         )
+        traceback.print_exc()
         raise SystemExit(1) from None
     print(json.dumps(result.model_dump(mode="json"), sort_keys=True))
 

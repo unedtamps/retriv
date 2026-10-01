@@ -61,11 +61,17 @@ run: api
 #
 # --env-file is required. The job's settings set env_file=None and read the
 # environment only, so without it every PROVISIONER_* variable is missing and
-# it fails on the first one.
+# it fails on the first one. All the missing ones are listed at once now.
 #
 # The manifest has to be in MinIO already, under the prefix in
 # PROVISIONER_MANIFEST_PREFIX. Uploading it is a deliberate act: the job
 # trusts whatever it finds there, and migration-reader is read-only by design.
+#
+# Exit 2 means the operator's input was wrong: bad settings, an unreadable
+# manifest, a manifest that failed validation, or a migration id already
+# applied with different content. Each of those names the field or the s3
+# code and prints a hint. Exit 1 is reserved for a genuine bug and prints the
+# traceback.
 provision: migrate
 	$(UV_RUN) python -m provisioning
 
