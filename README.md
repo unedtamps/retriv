@@ -394,6 +394,19 @@ sequenceDiagram
     X-->>P: a JSON summary
 ```
 
+It reads the manifest over S3, using the read-only `migration-reader` identity that
+`minio-init` creates. That identity cannot reach `raw-documents` or
+`context-documents`, so a manifest you have not reviewed cannot read your documents.
+
+```bash
+uv run --env-file .env -- python -m provisioning
+```
+
+The `--env-file` is required and not optional politeness: the job's settings class sets
+`env_file=None`, so it reads the environment and nothing else. A one-shot with write
+access to every user row should not silently pick up credentials because it ran in this
+directory. Its variables carry a `PROVISIONER_` prefix and are in `.env.example`.
+
 Two things to know before you use it:
 
 - **It creates workspaces with no members.** Assigning the first owner is an admin API
