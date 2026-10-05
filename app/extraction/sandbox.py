@@ -145,8 +145,17 @@ class SandboxedDoclingExtractor:
             try:
                 result_payload = json.loads(chunks_payload)
                 extractor_version = result_payload["extractor_version"]
+                ocr_enabled = result_payload["ocr_enabled"]
+                source_text_chars = result_payload["source_text_chars"]
                 raw_chunks = result_payload["chunks"]
-                if not isinstance(extractor_version, str) or not isinstance(raw_chunks, list):
+                if (
+                    not isinstance(extractor_version, str)
+                    or not isinstance(ocr_enabled, bool)
+                    or not isinstance(source_text_chars, int)
+                    or isinstance(source_text_chars, bool)
+                    or source_text_chars < 0
+                    or not isinstance(raw_chunks, list)
+                ):
                     raise TypeError
                 chunks = [self._parse_chunk(item) for item in raw_chunks]
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -162,6 +171,8 @@ class SandboxedDoclingExtractor:
                 document_json=document_json,
                 chunks=chunks,
                 extractor_version=extractor_version,
+                ocr_enabled=ocr_enabled,
+                source_text_chars=source_text_chars,
             )
 
     @staticmethod

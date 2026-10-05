@@ -128,11 +128,108 @@ def test_sandboxed_extraction_returns_bounded_result(tmp_path: Path) -> None:
 
     assert "Sandboxed annual report context" in result.chunks[0].text
     assert result.chunks[0].page_numbers == [1]
+    assert result.source_text_chars > 0
 
 
-def simple_pdf(text: str) -> bytes:
-    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode("ascii")
+@pytest.mark.integration
+def test_ocr_stays_enabled_for_every_pdf(
+    tmp_path: Path, docling_extractor: DoclingExtractor
+) -> None:
+    """The OCR stage must not be gated off per file.
+
+    Docling's PDF_AWARE_LAYOUT_REGIONS mode already skips regions backed by the file's
+    own text layer, so a born-digital PDF never reaches Tesseract. Gating the stage off
+    by text density was measured to change nothing for those files, while a document
+    mixing born-digital and scanned pages averages out high enough to lose the scanned
+    pages entirely -- silently, with no chunk text and no error.
+    """
+    text_pdf = tmp_path / "born-digital.pdf"
+    text_pdf.write_bytes(
+        text_layer_pdf(
+            [
+                "Regulation 4.01 The Administrator shall ensure that project",
+                "documents are retained for a period of not less than three",
+                "years after the financial year in which they were created.",
+            ]
+        )
+    )
+
+    result = docling_extractor.extract(text_pdf, media_type=PDF_MEDIA_TYPE)
+
+    assert result.ocr_enabled is True
+    assert result.source_text_chars > 0
+    assert result.chunks
+
+    docx: Any = Document()
+    docx.add_heading("Annual Report", level=1)
+    docx.add_paragraph("Operating costs remained stable.")
+    docx_path = tmp_path / "report.docx"
+    docx.save(docx_path)
+
+    docx_result = docling_extractor.extract(docx_path, media_type=DOCX_MEDIA_TYPE)
+
+    assert docx_result.ocr_enabled is False, "DOCX is never an OCR candidate"
+    assert docx_result.source_text_chars == 0
+
+
+@pytest.mark.integration
+def test_ocr_runs_for_an_image_only_pdf(
+    tmp_path: Path, docling_extractor: DoclingExtractor
+) -> None:
+    """A scan has no text layer of its own, so it still gets OCR."""
+    image = Image.new("RGB", (1600, 1000), "white")
+    ImageDraw.Draw(image).multiline_text(
+        (80, 100),
+        "Scanned financial regulation\nThe Treasurer shall be duly appointed",
+        fill="black",
+        font=ImageFont.load_default(size=48),
+        spacing=28,
+    )
+    path = tmp_path / "scan.pdf"
+    image.save(path, "PDF", resolution=150)
+
+    result = docling_extractor.extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert result.source_text_chars == 0
+    assert result.ocr_enabled is True
+
+
+@pytest.mark.integration
+def test_a_heading_whose_section_is_empty_stays_searchable(
+    tmp_path: Path, docling_extractor: DoclingExtractor
+) -> None:
+    """A heading with no body text must still reach the index.
+
+    Without ``always_emit_headings`` the chunker consumes every heading as
+    context-only and drops it, so a heading whose section has no body item leaves
+    nothing searchable behind.
+    """
+    document: Any = Document()
+    document.add_heading("Regulation 9.09", level=1)
+    document.add_page_break()
+    document.add_paragraph("This section was left deliberately empty.")
+    path = tmp_path / "sparse-heading.docx"
+    document.save(path)
+
+    result = docling_extractor.extract(path, media_type=DOCX_MEDIA_TYPE)
+
+    joined = " ".join(chunk.text for chunk in result.chunks)
+    assert "Regulation 9.09" in joined
+
+
+def text_layer_pdf(lines: list[str]) -> bytes:
+    """A single born-digital page carrying ``lines`` of text.
+
+    ``simple_pdf`` puts everything in one Tj operator, so long strings run off the
+    page and come back truncated. This walks down the page instead, which is what a
+    real text-layer PDF looks like to the density check.
+    """
+    operators = ["BT /F1 12 Tf"]
+    for index, line in enumerate(lines):
+        escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        operators.append(f"1 0 0 1 72 {720 - index * 16} Tm ({escaped}) Tj")
+    operators.append("ET")
+    stream = "\n".join(operators).encode("ascii")
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -162,3 +259,7 @@ def simple_pdf(text: str) -> bytes:
         ).encode()
     )
     return bytes(output)
+
+
+def simple_pdf(text: str) -> bytes:
+    return text_layer_pdf([text])

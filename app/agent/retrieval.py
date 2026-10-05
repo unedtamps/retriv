@@ -5,12 +5,18 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import JSON, Uuid, bindparam, text
+from sqlalchemy import JSON, Uuid, and_, bindparam, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.agent.schemas import ContextSource
 from app.core.config import Settings
+from app.db.models import (
+    EMBEDDING_INDEXED,
+    ChunkEmbedding,
+    Document,
+    DocumentChunk,
+)
 
 PAYLOAD_FIELDS = (
     "workspace_id",
@@ -30,6 +36,7 @@ VALIDATE_CHUNKS = (
         chunk.processing_run_id,
         chunk.ordinal,
         chunk.text,
+        chunk.token_count,
         chunk.content_hash,
         chunk.section_path,
         chunk.page_numbers,
@@ -70,6 +77,56 @@ VALIDATE_CHUNKS = (
 )
 
 
+def neighbour_anchors(
+    sources: Sequence[ContextSource],
+    *,
+    max_tokens: int,
+    width: int,
+) -> list[tuple[UUID, int, int]]:
+    """Ordinal ranges to pull in after a heading-only chunk was retrieved.
+
+    A heading emitted as its own chunk is topically concentrated, so against a vague
+    query it outscores the substantive text belonging to it: on a 57-page regulation
+    document "Article 16: General framework" retrieved at 0.81 while Regulation
+    16.01-16.06 did not appear at all, and the agent reported the article's content as
+    absent from a document that contained it.
+
+    Following the anchor in reading order repairs that -- the heading keeps working as
+    a signpost but stops arriving empty-handed.
+    """
+    anchors: list[tuple[UUID, int, int]] = []
+    seen: set[tuple[UUID, int]] = set()
+    for source in sources:
+        if source.token_count > max_tokens or width <= 0:
+            continue
+        key = (source.document_id, source.ordinal)
+        if key in seen:
+            continue
+        seen.add(key)
+        anchors.append(
+            (source.processing_run_id, source.ordinal, source.ordinal + width)
+        )
+    return anchors
+
+
+def _neighbour_clause(anchors: Sequence[tuple[UUID, int, int]]) -> Any:
+    """Build ``(run, ordinal BETWEEN lo AND hi) OR ...`` for a bounded anchor set.
+
+    Kept as an expression rather than interpolated SQL text so the values stay bound
+    parameters and cannot carry identifiers out of the statement.
+    """
+    return or_(
+        *(
+            and_(
+                DocumentChunk.processing_run_id == run_id,
+                DocumentChunk.ordinal > low,
+                DocumentChunk.ordinal <= high,
+            )
+            for run_id, low, high in anchors
+        )
+    )
+
+
 class RetrievalUnavailable(RuntimeError):
     """Raised when embedding, vector search, or row validation cannot complete."""
 
@@ -108,8 +165,22 @@ class ContextRetriever:
         )
 
     async def retrieve(
-        self, query: str, workspace_ids: list[UUID], limit: int
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        budget: int | None = None,
     ) -> list[ContextSource]:
+        """Return up to ``limit`` vector matches, plus any expansion they justify.
+
+        ``budget`` is how many sources the caller can still accept overall. It is
+        distinct from ``limit`` because the two clamp different things: ``limit`` bounds
+        how many similarity matches one search may contribute, while ``budget`` bounds
+        the total. Without it, a full page of matches leaves no room to expand -- which
+        is exactly the case that matters, since a heading outranking its own prose is
+        only visible when the search returned its quota.
+        """
         if not workspace_ids:
             raise RetrievalUnavailable(
                 "A verified non-empty workspace scope is required"
@@ -117,10 +188,16 @@ class ContextRetriever:
         if len(workspace_ids) != len(set(workspace_ids)):
             raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
 
+        width = self._settings.heading_expand_chunks
+        cap = limit if budget is None else min(limit + width, budget)
+
         try:
             vector = await self._embed_query(query)
             matches = await self._query_qdrant(vector, workspace_ids, limit)
-            return await self._load_validated_chunks(matches, workspace_ids)
+            sources = await self._load_validated_chunks(matches, workspace_ids)
+            neighbours = await self._load_neighbour_chunks(sources, workspace_ids)
+            room = max(0, cap - len(sources))
+            return sources + neighbours[:room]
         except OutOfScopeSearchResult:
             raise
         except (
@@ -302,9 +379,112 @@ class ContextRetriever:
                     section_path=list(row["section_path"] or []),
                     page_numbers=list(row["page_numbers"] or []),
                     text=str(row["text"]),
+                    token_count=int(row["token_count"]),
                 )
             )
         return sources
+
+    async def _load_neighbour_chunks(
+        self,
+        sources: Sequence[ContextSource],
+        workspace_ids: list[UUID],
+    ) -> list[ContextSource]:
+        """Load the chunks that follow heading-only anchors, under the same validation.
+
+        Every condition ``VALIDATE_CHUNKS`` enforces is repeated here -- workspace scope,
+        non-deleted document, active processing run, indexed embedding, matching content
+        hash -- because these rows are not backed by a Qdrant match in this search and
+        would otherwise reach the model unvetted.
+        """
+        anchors = neighbour_anchors(
+            sources,
+            max_tokens=self._settings.heading_chunk_max_tokens,
+            width=self._settings.heading_expand_chunks,
+        )
+        if not anchors:
+            return []
+
+        existing = {source.chunk_id for source in sources}
+        statement = (
+            select(
+                DocumentChunk.id,
+                DocumentChunk.workspace_id,
+                DocumentChunk.document_id,
+                DocumentChunk.processing_run_id,
+                DocumentChunk.ordinal,
+                DocumentChunk.text,
+                DocumentChunk.token_count,
+                DocumentChunk.content_hash,
+                DocumentChunk.section_path,
+                DocumentChunk.page_numbers,
+                Document.original_filename,
+            )
+            .join(
+                ChunkEmbedding,
+                and_(
+                    ChunkEmbedding.chunk_id == DocumentChunk.id,
+                    ChunkEmbedding.workspace_id == DocumentChunk.workspace_id,
+                    ChunkEmbedding.document_id == DocumentChunk.document_id,
+                    ChunkEmbedding.processing_run_id
+                    == DocumentChunk.processing_run_id,
+                ),
+            )
+            .join(
+                Document,
+                and_(
+                    Document.workspace_id == DocumentChunk.workspace_id,
+                    Document.id == DocumentChunk.document_id,
+                ),
+            )
+            .where(
+                _neighbour_clause(anchors),
+                DocumentChunk.workspace_id.in_(workspace_ids),
+                Document.deleted_at.is_(None),
+                Document.active_processing_run_id == DocumentChunk.processing_run_id,
+                ChunkEmbedding.embedding_profile == self._settings.embedding_profile,
+                ChunkEmbedding.model == self._settings.embedding_model,
+                ChunkEmbedding.dimensions == self._settings.embedding_dimensions,
+                ChunkEmbedding.status == EMBEDDING_INDEXED,
+                ChunkEmbedding.content_hash == DocumentChunk.content_hash,
+            )
+            .order_by(DocumentChunk.ordinal)
+        )
+
+        async with self._sessions() as session:
+            result = await session.execute(statement)
+            rows = result.all()
+
+        added: list[ContextSource] = []
+        for row in rows:
+            chunk_id = row[0]
+            if chunk_id in existing:
+                continue
+            text_value = str(row[5])
+            if hashlib.sha256(text_value.encode()).hexdigest() != row[7]:
+                raise RetrievalUnavailable(
+                    "PostgreSQL neighbour chunk text does not match its content hash"
+                )
+            added.append(
+                ContextSource(
+                    workspace_id=row[1],
+                    document_id=row[2],
+                    processing_run_id=row[3],
+                    chunk_id=chunk_id,
+                    ordinal=int(row[4]),
+                    # Neighbours were not matched on similarity, so they inherit the
+                    # anchor's score: attributed, not ranked. A low value keeps them from
+                    # outranking genuine vector matches in anything downstream.
+                    score=self._settings.min_relevance_score,
+                    content_hash=str(row[7]),
+                    filename=row[10],
+                    section_path=list(row[8] or []),
+                    page_numbers=list(row[9] or []),
+                    text=text_value,
+                    token_count=int(row[6]),
+                )
+            )
+            existing.add(chunk_id)
+        return added
 
     async def aclose(self) -> None:
         await self._embedding_client.aclose()

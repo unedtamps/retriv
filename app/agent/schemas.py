@@ -44,6 +44,7 @@ class ContextSource(BaseModel):
     section_path: list[str]
     page_numbers: list[int]
     text: str
+    token_count: int = 0
 
 
 class AnswerResponse(BaseModel):

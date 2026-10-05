@@ -11,3 +11,6 @@ htmlcov/
 migration-manifests/
 *.migration.json
 users-v*.json
+
+# local model/tessdata caches used by offline diagnostics
+.cache/

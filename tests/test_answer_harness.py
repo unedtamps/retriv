@@ -38,7 +38,12 @@ class StubRetriever:
         self.calls: list[tuple[str, list[UUID], int]] = []
 
     async def retrieve(
-        self, query: str, workspace_ids: list[UUID], limit: int
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        budget: int | None = None,
     ) -> list[ContextSource]:
         self.calls.append((query, workspace_ids, limit))
         result = self.results.pop(0) if self.results else []

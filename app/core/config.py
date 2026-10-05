@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     max_chunk_payload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     pipeline_version: str = "2026.1"
     ocr_languages: list[str] = ["ind", "eng"]
+    min_extraction_coverage: float = Field(default=0.6, gt=0, le=2)
     chunk_max_tokens: int = Field(default=700, ge=100, le=8192)
     chunk_tokenizer: str = "cl100k_base"
     docling_artifacts_path: Path | None = None
@@ -139,6 +140,8 @@ class Settings(BaseSettings):
     answer_stale_after_seconds: int = Field(default=660, ge=60, le=7200)
     max_context_chunks: int = Field(default=8, ge=1, le=20)
     min_relevance_score: float = Field(default=0.25, ge=-1.0, le=1.0)
+    heading_expand_chunks: int = Field(default=4, ge=0, le=20)
+    heading_chunk_max_tokens: int = Field(default=12, ge=0, le=64)
 
     @field_validator("jwt_secret")
     @classmethod

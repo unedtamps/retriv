@@ -46,6 +46,11 @@ class DoclingExtractor:
             mode=TableFormerMode.ACCURATE,
             do_cell_matching=True,
         )
+        # OCR stays enabled for every PDF. Docling's PDF_AWARE_LAYOUT_REGIONS mode
+        # already skips regions backed by the file's own text layer, so born-digital
+        # PDFs do not reach Tesseract anyway -- and gating the stage off per file was
+        # measured to change nothing while risking the scanned pages inside a mixed
+        # document, where those pages have no text layer of their own.
         self._converter = DocumentConverter(
             allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
             format_options={
@@ -56,15 +61,50 @@ class DoclingExtractor:
             tokenizer=tiktoken.get_encoding(tokenizer_name),
             max_tokens=chunk_max_tokens,
         )
-        self._chunker = HybridChunker(tokenizer=self._tokenizer, merge_peers=True)
+        # always_emit_headings: without it the chunker consumes every heading as
+        # context-only and drops it, so a heading whose section body is empty or
+        # absent leaves no searchable text at all. contextualize() renders these
+        # chunks with the heading text itself, so they are not empty and the
+        # extractor's empty-chunk guard stays satisfied.
+        self._chunker = HybridChunker(
+            tokenizer=self._tokenizer,
+            merge_peers=True,
+            always_emit_headings=True,
+        )
         try:
             self._version = version("docling")
         except PackageNotFoundError:
             self._version = "unknown"
 
+    @staticmethod
+    def measure_pdf_text_layer(path: Path) -> tuple[int, int]:
+        """Return ``(total_text_chars, page_count)`` for a PDF's own text layer.
+
+        Reads the embedded text directly, without Docling, so the number stays
+        independent of whatever the parser later does with the file. The worker's
+        coverage guardrail needs that independence to tell "this file had no text"
+        apart from "the parser lost the text".
+        """
+        import pymupdf
+
+        with pymupdf.open(path) as document:
+            pages = document.page_count
+            characters = 0
+            for page in document:
+                characters += len(page.get_text().strip())
+        return characters, pages
+
     def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
         if media_type not in {PDF_MEDIA_TYPE, DOCX_MEDIA_TYPE}:
             raise ExtractionError(f"Unsupported media type: {media_type}")
+        source_text_chars = 0
+        if media_type == PDF_MEDIA_TYPE:
+            try:
+                source_text_chars, _pages = self.measure_pdf_text_layer(path)
+            except Exception:
+                # The guardrail treats zero as "no comparable text layer", which is the
+                # safe reading: it declines to judge rather than guessing.
+                source_text_chars = 0
         try:
             conversion = self._converter.convert(path)
             document = conversion.document
@@ -86,6 +126,8 @@ class DoclingExtractor:
             document_json=document_json,
             chunks=chunks,
             extractor_version=self._version,
+            ocr_enabled=media_type == PDF_MEDIA_TYPE,
+            source_text_chars=source_text_chars,
         )
 
     def _convert_chunk(self, chunk: Any) -> ExtractedChunk:

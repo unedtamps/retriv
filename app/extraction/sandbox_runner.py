@@ -63,6 +63,8 @@ def run(args: argparse.Namespace) -> None:
     chunks_payload = json.dumps(
         {
             "extractor_version": result.extractor_version,
+            "ocr_enabled": result.ocr_enabled,
+            "source_text_chars": result.source_text_chars,
             "chunks": [asdict(chunk) for chunk in result.chunks],
         },
         ensure_ascii=False,

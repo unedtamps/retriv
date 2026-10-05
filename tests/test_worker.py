@@ -106,10 +106,18 @@ class FakeStorage(ArtifactStorage):
 
 
 class FakeExtractor:
-    def __init__(self, chunk_texts: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        chunk_texts: list[str] | None = None,
+        *,
+        ocr_enabled: bool = False,
+        source_text_chars: int = 0,
+    ) -> None:
         self.chunk_texts = chunk_texts or ["Extracted paragraph one."]
         self.calls = 0
         self.media_types: list[str] = []
+        self.ocr_enabled = ocr_enabled
+        self.source_text_chars = source_text_chars
 
     def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
         self.calls += 1
@@ -127,6 +135,8 @@ class FakeExtractor:
                 for text in self.chunk_texts
             ],
             extractor_version="test-extractor-1",
+            ocr_enabled=self.ocr_enabled,
+            source_text_chars=self.source_text_chars,
         )
 
 
@@ -430,6 +440,69 @@ async def test_a_permanently_missing_object_fails_without_retry(
         run = await session.scalar(select(ProcessingRun))
     assert run is not None
     assert run.status == RUN_FAILED
+
+
+async def test_a_lossy_extraction_fails_instead_of_indexing_a_partial_document(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A parse that silently drops most of the text must not be indexed.
+
+    Nothing downstream can distinguish a partially parsed document from a genuinely
+    short one, so without an explicit check a parser regression turns into a quietly
+    incomplete index instead of a failed run.
+    """
+    storage = FakeStorage()
+    _, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=["Only a fraction of the document survived."],
+        source_text_chars=100_000,
+    )
+    vectors = FakeVectorStore()
+
+    worker = build_worker(
+        db_session_factory, settings, storage=storage, extractor=extractor, vectors=vectors
+    )
+    assert await worker.run_once() is True, "the run advances, then fails validation"
+
+    async with db_session_factory() as session:
+        failed = await session.get(ProcessingRun, run.id)
+    assert failed is not None
+    assert failed.status == RUN_FAILED
+    assert "of the text in this document" in (failed.last_error or "")
+    assert vectors.points == {}, "no vectors may be written for a lossy extraction"
+
+
+async def test_extraction_coverage_is_not_enforced_without_a_text_layer(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Image-only PDFs have no text layer to compare against, so they are not judged.
+
+    Rejecting them would mean refusing every scan, which is the opposite of what the
+    guardrail is for.
+    """
+    storage = FakeStorage()
+    _, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=["Short scanned note."], ocr_enabled=True, source_text_chars=0
+    )
+
+    worker = build_worker(
+        db_session_factory, settings, storage=storage, extractor=extractor
+    )
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        finished = await session.get(ProcessingRun, run.id)
+    assert finished is not None
+    assert finished.status == RUN_READY
 
 
 async def test_an_embedding_error_schedules_a_backoff(

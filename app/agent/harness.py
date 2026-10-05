@@ -88,7 +88,12 @@ CITATION_PATTERN = re.compile(r"\[(\d+)\]")
 
 class ScopedRetriever(Protocol):
     async def retrieve(
-        self, query: str, workspace_ids: list[UUID], limit: int
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        budget: int | None = None,
     ) -> list[ContextSource]: ...
 
 
@@ -177,7 +182,7 @@ class AnswerHarness:
             limit = min(dependencies.max_context_chunks, remaining)
             try:
                 results = await dependencies.retriever.retrieve(
-                    query, list(dependencies.workspace_ids), limit
+                    query, list(dependencies.workspace_ids), limit, budget=remaining
                 )
             except (OutOfScopeSearchResult, RetrievalUnavailable) as exc:
                 dependencies.retrieval_failure = exc

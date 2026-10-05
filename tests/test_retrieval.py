@@ -1,6 +1,6 @@
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from uuid import UUID, uuid4
 
 import httpx
@@ -64,6 +64,7 @@ def tables() -> tuple[MetaData, Table, Table, Table]:
         Column("processing_run_id", Uuid(as_uuid=True)),
         Column("ordinal", Integer),
         Column("text", Text),
+        Column("token_count", Integer),
         Column("content_hash", String(64)),
         Column("section_path", JSON),
         Column("page_numbers", JSON),
@@ -83,6 +84,84 @@ def tables() -> tuple[MetaData, Table, Table, Table]:
         Column("qdrant_point_id", Uuid(as_uuid=True)),
     )
     return metadata, documents, chunks, embeddings
+
+
+async def seed_section(
+    engine: AsyncEngine,
+    documents: Table,
+    chunks: Table,
+    embeddings: Table,
+    workspace_id: UUID,
+    entries: list[tuple[int, str]],
+    *,
+    first_ordinal: int = 10,
+    deleted_at: object = None,
+) -> list[dict[str, UUID | str | int]]:
+    """Seed one document holding an ordered run of chunks.
+
+    ``entries`` is ``(ordinal, text)`` in reading order, so a heading chunk can be
+    followed by the body chunks it introduces -- the shape that makes heading-only
+    retrieval a problem.
+    """
+    document_id = uuid4()
+    processing_run_id = uuid4()
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(documents).values(
+                id=document_id,
+                workspace_id=workspace_id,
+                active_processing_run_id=processing_run_id,
+                deleted_at=deleted_at,
+                original_filename="regulations.pdf",
+            )
+        )
+        seeded: list[dict[str, UUID | str | int]] = []
+        for ordinal, text in entries:
+            chunk_id = uuid4()
+            point_id = uuid4()
+            content_hash = hashlib.sha256(text.encode()).hexdigest()
+            await connection.execute(
+                insert(chunks).values(
+                    id=chunk_id,
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    processing_run_id=processing_run_id,
+                    ordinal=ordinal,
+                    text=text,
+                    token_count=len(text.split()),
+                    content_hash=content_hash,
+                    section_path=["Article 16: General framework"],
+                    page_numbers=[23],
+                )
+            )
+            await connection.execute(
+                insert(embeddings).values(
+                    chunk_id=chunk_id,
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    processing_run_id=processing_run_id,
+                    embedding_profile="test-profile",
+                    model="test-embedding-model",
+                    dimensions=2,
+                    status="indexed",
+                    content_hash=content_hash,
+                    qdrant_point_id=point_id,
+                )
+            )
+            seeded.append(
+                {
+                    "workspace_id": workspace_id,
+                    "document_id": document_id,
+                    "processing_run_id": processing_run_id,
+                    "chunk_id": chunk_id,
+                    "qdrant_point_id": point_id,
+                    "content_hash": content_hash,
+                    "ordinal": ordinal,
+                }
+            )
+    assert seeded, "a section needs at least one chunk"
+    assert seeded[0]["ordinal"] == first_ordinal
+    return seeded
 
 
 async def seed_active_chunk(
@@ -116,6 +195,7 @@ async def seed_active_chunk(
                 processing_run_id=processing_run_id,
                 ordinal=2,
                 text=chunk_text,
+                token_count=len(chunk_text.split()),
                 content_hash=content_hash,
                 section_path=["Summary"],
                 page_numbers=[3],
@@ -145,7 +225,7 @@ async def seed_active_chunk(
     }
 
 
-def qdrant_payload(row: dict[str, UUID | str]) -> dict[str, str]:
+def qdrant_payload(row: Mapping[str, UUID | str | int]) -> dict[str, str]:
     return {
         "workspace_id": str(row["workspace_id"]),
         "document_id": str(row["document_id"]),
@@ -159,7 +239,7 @@ def qdrant_payload(row: dict[str, UUID | str]) -> dict[str, str]:
 async def make_retriever(
     settings: Settings,
     engine: AsyncEngine,
-    qdrant_point: dict[str, object],
+    qdrant_point: dict[str, object] | None,
     *,
     qdrant_handler: Callable[[httpx.Request], httpx.Response] | None = None,
 ) -> tuple[ContextRetriever, list[httpx.Request], list[httpx.Request]]:
@@ -433,3 +513,293 @@ async def test_an_empty_or_duplicated_scope_is_refused() -> None:
             await retriever.retrieve("question", [workspace_id, workspace_id], 4)
     finally:
         await retriever.aclose()
+
+
+async def test_a_heading_only_match_pulls_in_the_section_that_follows_it() -> None:
+    """The failure this exists for: a heading retrieved, its content did not.
+
+    A heading emitted as its own chunk is short and topically concentrated, so it wins
+    the similarity comparison against the prose it introduces. On the UNDP regulations
+    this produced an answer asserting the article's content was absent from a document
+    that contained it.
+    """
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "qdrant_collection": "test-chunks",
+            "heading_expand_chunks": 4,
+            "heading_chunk_max_tokens": 12,
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    seeded = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        workspace_id,
+        [
+            (10, "Article 16: General framework"),
+            (11, "Regulation 16.01: The Executive Board shall have sole authority."),
+            (12, "Regulation 16.02: The Administrator is authorized to approve."),
+        ],
+    )
+    heading = seeded[0]
+    point = {
+        "id": str(heading["qdrant_point_id"]),
+        "score": 0.81,
+        "payload": qdrant_payload(heading),
+    }
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
+        settings, engine, point
+    )
+    try:
+        sources = await retriever.retrieve("details about article 16", [workspace_id], 4)
+    finally:
+        await retriever.aclose()
+
+    texts = [source.text for source in sources]
+    assert "Article 16: General framework" in texts
+    assert "Regulation 16.01: The Executive Board shall have sole authority." in texts
+    assert "Regulation 16.02: The Administrator is authorized to approve." in texts
+    # Reading order is preserved so the model sees the section as written.
+    assert texts[0] == "Article 16: General framework"
+    assert sources[0].score == pytest.approx(0.81), "the match keeps its own score"
+    assert sources[1].score < sources[0].score, "expansion never outranks the match"
+    assert sources[1].page_numbers == [23]
+    assert sources[1].section_path == ["Article 16: General framework"]
+
+
+async def test_heading_expansion_never_exceeds_the_callers_budget() -> None:
+    """Expansion is bounded by the caller's overall budget, not merely by ``limit``.
+
+    ``limit`` bounds similarity matches; ``budget`` bounds the total. Expansion uses
+    the difference, and must still never push the caller past ``budget``.
+    """
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "qdrant_collection": "test-chunks",
+            "heading_expand_chunks": 10,
+            "heading_chunk_max_tokens": 12,
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    seeded = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        workspace_id,
+        [
+            (10, "Article 16: General framework"),
+            (11, "Regulation 16.01 body one with plenty of words to pass the filter."),
+            (12, "Regulation 16.02 body two with plenty of words to pass the filter."),
+            (13, "Regulation 16.03 body three with plenty of words to pass it."),
+            (14, "Regulation 16.04 body four with plenty of words to pass it."),
+        ],
+    )
+    point = {
+        "id": str(seeded[0]["qdrant_point_id"]),
+        "score": 0.81,
+        "payload": qdrant_payload(seeded[0]),
+    }
+    # Both retrievers share one engine: the test database is in-memory SQLite, so a
+    # second engine would be a second, empty database.
+    generous, _e, _q = await make_retriever(settings, engine, point)
+    tight, _e, _q = await make_retriever(settings, engine, point)
+    try:
+        sources = await generous.retrieve(
+            "details about article 16", [workspace_id], 2, budget=3
+        )
+        capped = await tight.retrieve(
+            "details about article 16", [workspace_id], 2, budget=2
+        )
+    finally:
+        await generous.aclose()
+
+    assert len(sources) == 3, "budget=3 caps matches plus expansion at three"
+    assert sources[0].text == "Article 16: General framework"
+    assert len(capped) == 2, "a budget equal to limit leaves no expansion room"
+
+
+async def test_a_substantive_chunk_does_not_trigger_expansion() -> None:
+    """Only heading-sized anchors pull neighbours in; real prose stands alone."""
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "qdrant_collection": "test-chunks",
+            "heading_expand_chunks": 4,
+            "heading_chunk_max_tokens": 12,
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    seeded = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        workspace_id,
+        [
+            (
+                10,
+                "Regulation 16.01 body text that is plainly longer than the heading "
+                "token ceiling used to identify anchors.",
+            ),
+            (11, "Regulation 16.02 another body paragraph of ordinary length."),
+        ],
+    )
+    point = {
+        "id": str(seeded[0]["qdrant_point_id"]),
+        "score": 0.81,
+        "payload": qdrant_payload(seeded[0]),
+    }
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
+        settings, engine, point
+    )
+    try:
+        sources = await retriever.retrieve("executive board authority", [workspace_id], 4)
+    finally:
+        await retriever.aclose()
+
+    assert len(sources) == 1
+    assert sources[0].text.startswith("Regulation 16.01 body text")
+
+
+async def test_expansion_never_reaches_outside_the_signed_scope() -> None:
+    """Neighbours are not backed by a Qdrant match, so scope must be re-checked.
+
+    These rows are loaded without a vector match in this search; if the scope filter
+    were skipped, a heading in an authorised document could pull in text from a
+    workspace the caller never signed for.
+    """
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "qdrant_collection": "test-chunks",
+            "heading_expand_chunks": 4,
+            "heading_chunk_max_tokens": 12,
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    other_workspace_id = uuid4()
+    seeded = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        workspace_id,
+        [
+            (10, "Article 16: General framework"),
+            (11, "Regulation 16.01 in the signed scope."),
+        ],
+    )
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        other_workspace_id,
+        [(10, "Article 16: General framework"), (11, "SECRET other workspace text.")],
+    )
+    point = {
+        "id": str(seeded[0]["qdrant_point_id"]),
+        "score": 0.81,
+        "payload": qdrant_payload(seeded[0]),
+    }
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
+        settings, engine, point
+    )
+    try:
+        sources = await retriever.retrieve("details about article 16", [workspace_id], 6)
+    finally:
+        await retriever.aclose()
+
+    joined = " ".join(source.text for source in sources)
+    assert "Regulation 16.01 in the signed scope." in joined
+    assert "SECRET" not in joined
+    assert all(
+        source.workspace_id == workspace_id for source in sources
+    ), "every source stays inside the requested scope"
+
+
+async def test_expansion_still_fires_when_qdrant_fills_its_quota() -> None:
+    """The realistic case: a full page of matches must still leave room to expand.
+
+    ``limit`` bounds similarity matches, so when Qdrant returns its whole quota there
+    is nothing left over under a naive reading -- yet that is precisely the situation
+    that produced the empty Article 16 answer. ``budget`` is what separates the two.
+    """
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "qdrant_collection": "test-chunks",
+            "heading_expand_chunks": 3,
+            "heading_chunk_max_tokens": 12,
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    seeded = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        workspace_id,
+        [
+            (10, "Article 16: General framework"),
+            (11, "Regulation 16.01: The Executive Board shall have sole authority."),
+            (12, "Regulation 16.02: The Administrator is authorized to approve."),
+            (13, "Regulation 16.03: Programme activities are subject to arrangements."),
+        ],
+    )
+    # Qdrant returns the heading plus unrelated matches, filling the limit exactly.
+    points = [
+        {
+            "id": str(seeded[index]["qdrant_point_id"]),
+            "score": score,
+            "payload": qdrant_payload(seeded[index]),
+        }
+        for index, score in ((0, 0.81), (1, 0.79))
+    ]
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"result": {"points": points}})
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
+        settings, engine, None, qdrant_handler=handler
+    )
+    try:
+        sources = await retriever.retrieve(
+            "details about article 16", [workspace_id], 2, budget=5
+        )
+    finally:
+        await retriever.aclose()
+
+    texts = [source.text for source in sources]
+    assert len(sources) == 4, "two matches plus two expanded, within budget=5"
+    assert "Regulation 16.01: The Executive Board shall have sole authority." in texts
+    assert "Regulation 16.02: The Administrator is authorized to approve." in texts

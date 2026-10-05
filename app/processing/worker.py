@@ -559,6 +559,32 @@ class ProcessingWorker:
         )
         if extracted_text_bytes > self._settings.max_extracted_text_bytes:
             raise PermanentProcessingError("Extracted text exceeds the processing limit")
+        self._validate_extraction_coverage(extraction)
+
+    def _validate_extraction_coverage(self, extraction: ExtractionResult) -> None:
+        """Reject an extraction that kept far less text than the file actually holds.
+
+        Compares chunk text against the source file's own text layer, which is read
+        independently of the parser. Without this, a parser regression that silently
+        drops half a document still reports success and gets indexed: the vector store
+        ends up with an arbitrary subset and nothing downstream can tell, because a
+        half-parsed document is indistinguishable from a short one.
+        """
+        minimum = self._settings.min_extraction_coverage
+        source_chars = extraction.source_text_chars
+        if source_chars <= 0:
+            # No text layer to compare against: an image-only PDF, or a format whose
+            # text only exists after OCR. There is no signal here, and inventing one
+            # would reject legitimately short documents.
+            return
+        extracted_chars = sum(len(chunk.text) for chunk in extraction.chunks)
+        ratio = extracted_chars / source_chars
+        if ratio < minimum:
+            raise PermanentProcessingError(
+                f"Extraction kept only {ratio:.0%} of the text in this document "
+                f"({extracted_chars} of {source_chars} characters); "
+                f"at least {minimum:.0%} is required"
+            )
 
     def _build_manifest(
         self,
@@ -587,9 +613,15 @@ class ProcessingWorker:
                 "name": "retriv-context-pipeline",
                 "version": self._settings.pipeline_version,
                 "docling_version": extraction.extractor_version,
-                "ocr_enabled": document.detected_media_type == "application/pdf",
+                # The stage decision the extractor actually made. Previously this was
+                # derived from the media type, which claimed OCR ran for every PDF.
+                "ocr_enabled": extraction.ocr_enabled,
                 "ocr_languages": self._settings.ocr_languages,
                 "chunk_max_tokens": self._settings.chunk_max_tokens,
+                "source_text_chars": extraction.source_text_chars,
+                "extracted_text_chars": sum(
+                    len(chunk.text) for chunk in extraction.chunks
+                ),
             },
             "artifact": {
                 "bucket": self._settings.s3_artifact_bucket,
