@@ -5,7 +5,7 @@ from secrets import token_urlsafe
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     max_archive_compression_ratio: float = Field(default=100.0, gt=1)
     max_archive_entry_compression_ratio: float = Field(default=100.0, gt=1)
     max_office_xml_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+    # CSV rows are stored verbatim for SQL and never embedded, so these caps
+    # bound ingest cost, not context. 100k rows is ~20MB of JSONB and parses
+    # in seconds with the stdlib reader.
+    max_csv_rows: int = Field(default=100_000, gt=0)
+    max_csv_columns: int = Field(default=512, ge=1, le=4096)
+    max_csv_field_bytes: int = Field(default=64 * 1024, gt=0)
     max_concurrent_uploads: int = Field(default=2, ge=1, le=16)
     request_read_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     upload_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs
@@ -142,6 +148,12 @@ class Settings(BaseSettings):
     min_relevance_score: float = Field(default=0.25, ge=-1.0, le=1.0)
     heading_expand_chunks: int = Field(default=4, ge=0, le=20)
     heading_chunk_max_tokens: int = Field(default=12, ge=0, le=64)
+    # No DSN means the tool is never registered, so the model cannot reach a
+    # table at all. Pointing this at the primary application DSN would work
+    # but is a full-privilege connection -- the opposite of the design.
+    sql_database_url: str | None = None
+    sql_statement_timeout_ms: int = Field(default=5_000, ge=100, le=60_000)
+    sql_max_result_rows: int = Field(default=200, ge=1, le=5_000)
 
     @field_validator("jwt_secret")
     @classmethod
@@ -184,12 +196,17 @@ class Settings(BaseSettings):
 
     @field_validator("chat_model")
     @classmethod
-    def validate_chat_model(cls, value: str) -> str:
+    def validate_chat_model(cls, value: str, info: ValidationInfo) -> str:
         if not value.strip() or any(character.isspace() for character in value):
             raise ValueError("RETRIV_CHAT_MODEL must be a non-empty model identifier")
-        if "/" not in value:
+        # "provider/model" is an OpenRouter convention. Enforcing it for any
+        # endpoint rejected valid IDs on the OpenAI-compatible services this
+        # also supports, stopping a correct deployment from starting.
+        base_url = str(info.data.get("chat_base_url", "")).lower()
+        if "/" not in value and "openrouter.ai" in base_url:
             raise ValueError(
-                "RETRIV_CHAT_MODEL must be an OpenRouter model ID such as provider/model"
+                "RETRIV_CHAT_MODEL must be an OpenRouter model ID such as "
+                "provider/model when RETRIV_CHAT_BASE_URL points at OpenRouter"
             )
         return value
 

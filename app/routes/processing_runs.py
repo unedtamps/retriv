@@ -124,6 +124,7 @@ def processing_run_summary(
         attempts=run.attempts,
         chunk_count=run.chunk_count,
         embedded_chunk_count=run.embedded_chunk_count,
+        row_count=run.row_count,
         created_at=run.created_at,
         started_at=run.started_at,
         completed_at=run.completed_at,

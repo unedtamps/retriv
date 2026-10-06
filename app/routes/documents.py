@@ -330,6 +330,7 @@ def document_response(
         size_bytes=document.size_bytes,
         sha256=document.sha256,
         status=derived_document_status(document, run),
+        row_count=run.row_count if run is not None else 0,
         created_by_user_id=document.created_by_user_id,
         created_at=document.created_at,
         duplicate=duplicate,

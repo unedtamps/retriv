@@ -165,10 +165,8 @@ class Document(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Deliberately not a foreign key: processing_runs.document_id already
-    # points back here, so a constraint would make the pair circular. The
-    # worker flushes the document before the run, so the reference is
-    # always resolvable when it is read.
+    # Not a foreign key: processing_runs.document_id already points back
+    # here, so a constraint would make the pair circular.
     active_processing_run_id: Mapped[UUID | None] = mapped_column(nullable=True)
 
 
@@ -224,6 +222,10 @@ class ProcessingRun(Base):
     embedded_chunk_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0"
     )
+    # A CSV run's progress and provenance. csv_columns labels each returned
+    # cell, so it lives on the run rather than on all 100k rows.
+    row_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    csv_columns: Mapped[list[str] | None] = mapped_column(JSON_TYPE, nullable=True)
     embedding_profile: Mapped[str | None] = mapped_column(String(255), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -261,6 +263,47 @@ class DocumentChunk(Base):
     page_numbers: Mapped[list[int]] = mapped_column(JSON_TYPE, default=list)
     provenance: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class DocumentRow(Base):
+    """One CSV row, stored for SQL rather than for search.
+
+    Rows deliberately have no foreign key into ``document_chunks``. A CSV is
+    all numeric or identifier columns, so embedding each row buys noise at
+    16KB of vector storage per row and finds nothing a filter would not;
+    the rows are the queryable form and Qdrant stays empty for these
+    documents by design.
+
+    The id is derived from ``(run_id, row_number)`` so it is stable across a
+    re-upload of identical content, and it doubles as the ``chunk_id`` the
+    agent's citation plumbing expects. Nothing needs it to resolve inside
+    ``document_chunks``: the citation gate checks label membership in the
+    turn's own source set, which this row is registered into.
+    """
+
+    __tablename__ = "document_rows"
+    __table_args__ = (
+        UniqueConstraint(
+            "processing_run_id", "row_number", name="uq_document_rows_run_row"
+        ),
+        Index("ix_document_rows_active_lookup", "workspace_id", "processing_run_id"),
+        # The model writes filter predicates into JSONB keys, so a GIN index
+        # is what makes `data->>'status' = 'OPEN'` an index lookup rather than
+        # a scan across every workspace's rows.
+        Index("ix_document_rows_data", "data", postgresql_using="gin"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(nullable=False)
+    document_id: Mapped[UUID] = mapped_column(nullable=False)
+    processing_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

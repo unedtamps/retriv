@@ -444,14 +444,19 @@ export function AskContext({ token, workspaces, onUnauthorized }: AskContextProp
                             <ul className="mt-2 space-y-2">
                               {turn.sources.map((source, index) => {
                                 const workspace = workspaces.find((item) => item.id === source.workspace_id)
-                                const pages = source.page_numbers.length === 0
-                                  ? 'Page unavailable'
-                                  : `Page${source.page_numbers.length > 1 ? 's' : ''} ${source.page_numbers.join(', ')}`
+                                // A CSV row, a computed aggregate and a DOCX chunk all lack pages by
+                                // design, so the old "Page unavailable" named a
+                                // document kind rather than a fault.
+                                const locator = source.page_numbers.length > 0
+                                  ? `Page${source.page_numbers.length > 1 ? 's' : ''} ${source.page_numbers.join(', ')}`
+                                  : source.ordinal > 0
+                                    ? `Row ${source.ordinal}`
+                                    : null
                                 return (
                                   <li key={source.chunk_id} className="border-l-2 border-stone-300 pl-3 text-xs leading-5 text-stone-600">
                                     <span className="mr-2 font-mono text-emerald-800">[{index + 1}]</span>
                                     <span className="font-medium text-stone-800">{source.filename ?? 'Workspace document'}</span>
-                                    <span className="ml-2">{workspace?.name ?? 'Workspace'} · {pages}</span>
+                                    <span className="ml-2">{workspace?.name ?? 'Workspace'}{locator ? ` · ${locator}` : ''}</span>
                                     {source.section_path.length === 0 ? null : (
                                       <span className="block">{source.section_path.join(' / ')}</span>
                                     )}

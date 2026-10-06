@@ -32,6 +32,7 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentRow,
     ProcessingRun,
 )
 from app.embeddings.base import (
@@ -48,8 +49,13 @@ from app.infrastructure.storage import (
     ObjectNotFoundError,
     ObjectTooLargeError,
 )
-from app.processing.worker import ProcessingWorker
+from app.processing.worker import ProcessingWorker, utcnow
 from tests.conftest import SeededEntities
+from tests.document_samples import (
+    csv_bytes,
+    csv_semicolon_bytes,
+    csv_with_bom_bytes,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -224,6 +230,8 @@ async def seed_document(
     *,
     storage: FakeStorage | None = None,
     content: bytes = b"a representative PDF",
+    media_type: str = "application/pdf",
+    filename: str = "report.pdf",
 ) -> tuple[Document, ProcessingRun]:
     """Insert the document and its extract run the way the upload route does."""
     document_id = uuid4()
@@ -232,8 +240,8 @@ async def seed_document(
     document = Document(
         id=document_id,
         workspace_id=workspace_id,
-        original_filename="report.pdf",
-        detected_media_type="application/pdf",
+        original_filename=filename,
+        detected_media_type=media_type,
         size_bytes=len(content),
         sha256=hashlib.sha256(content).hexdigest(),
         bucket="raw-documents",
@@ -566,6 +574,7 @@ async def test_delete_removes_vectors_before_the_document_row(
     async with db_session_factory() as session, session.begin():
         stored = await session.get(Document, document.id)
         assert stored is not None
+        assert stored is not None
         await enqueue_delete(session, stored, settings)
 
     async with db_session_factory() as session:
@@ -622,6 +631,7 @@ async def test_delete_cancels_an_extraction_still_in_flight(
     async with db_session_factory() as session, session.begin():
         stored = await session.get(Document, document.id)
         assert stored is not None
+        assert stored is not None
         await enqueue_delete(session, stored, settings)
 
     async with db_session_factory() as session:
@@ -657,6 +667,7 @@ async def test_a_delete_run_is_never_cancelled_by_its_own_enqueue(
         async with db_session_factory() as session, session.begin():
             stored = await session.get(Document, document.id)
             assert stored is not None
+            assert stored is not None
             await enqueue_delete(session, stored, settings)
 
     async with db_session_factory() as session:
@@ -688,6 +699,7 @@ async def test_a_tombstone_sweep_removes_leaked_artifacts(
     ] = b"{}"
     async with db_session_factory() as session, session.begin():
         stored = await session.get(Document, document.id)
+        assert stored is not None
         assert stored is not None
         stored.deleted_at = datetime.now(UTC)
 
@@ -753,3 +765,316 @@ async def test_embedding_backfill_requeues_a_run_left_half_indexed(
             )
         ).all()
     assert [embedding.status for embedding in embeddings] == [EMBEDDING_INDEXED]
+
+
+# -- CSV -----------------------------------------------------------------
+#
+# A CSV is stored as rows and deliberately never embedded. These tests pin
+# that: the columns these files carry are numeric, so a vector per row buys
+# noise at 16KB each and finds nothing a filter would not. The load-bearing
+# part is the activation gate, which used to reject these documents twice
+# over -- rows with no vectors failed `indexed_count != chunk_count`, and a
+# run with no chunks at all failed `not chunk_count` -- and reported both as
+# a missing embedding, naming neither cause.
+
+
+async def test_worker_stores_csv_rows_and_never_embeds_them(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_bytes(),
+        media_type="text/csv",
+        filename="sales.csv",
+    )
+    embeddings = FakeEmbeddingProvider()
+    vectors = FakeVectorStore()
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        embeddings=embeddings,
+        vectors=vectors,
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        stored = await session.get(ProcessingRun, run.id)
+        assert stored is not None
+        rows = (
+            await session.execute(
+                select(DocumentRow).where(DocumentRow.document_id == document.id)
+            )
+        ).scalars().all()
+
+    assert stored.status == RUN_READY
+    assert stored.row_count == 3
+    assert stored.chunk_count == 0
+    assert stored.embedded_chunk_count == 0
+    # The header is what labels each cell when a query comes back, so it has
+    # to be on the run rather than repeated across every row.
+    assert stored.csv_columns == ["id", "status", "amount", "currency"]
+    assert embeddings.embedded == []
+    assert vectors.points == {}
+
+    assert sorted(row.row_number for row in rows) == [1, 2, 3]
+    first = next(row for row in rows if row.row_number == 1)
+    assert first.data == {
+        "id": "1001",
+        "status": "OPEN",
+        "amount": "1500.00",
+        "currency": "USD",
+    }
+
+
+async def test_a_csv_run_completes_while_the_activation_gate_would_have_failed_it(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """No chunks and no vectors is the correct end state, not a failure.
+
+    Pins the observable contract: the document becomes active with rows as
+    its only product. Note the CSV path never enters the embedding stage, so
+    this is not exercising `_activate_embedded_run` -- that gate carries a
+    `run.row_count` branch as depth, and mutating it changes nothing here.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_bytes(),
+        media_type="text/csv",
+        filename="sales.csv",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        stored_document = await session.get(Document, document.id)
+        assert stored_document is not None
+    assert stored_document is not None
+    assert stored_document.active_processing_run_id == run.id
+    assert stored_document.deleted_at is None
+
+
+async def test_a_reingest_removes_the_superseded_rows(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A re-uploaded CSV must not leave the old version's rows queryable.
+
+    Row-level security is scoped by workspace and nothing else, so there is
+    no equivalent of the active-processing-run recheck that keeps superseded
+    document chunks out of retrieval results. Without an explicit delete a
+    count or sum would silently span both versions of the file.
+    """
+    storage = FakeStorage()
+    document, _ = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_bytes(),
+        media_type="text/csv",
+        filename="sales.csv",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    assert await worker.run_once() is True
+
+    # A second run over the same document, as a superseding upload makes.
+    second = ProcessingRun(
+        id=uuid4(),
+        document_id=document.id,
+        workspace_id=document.workspace_id,
+        job_kind=JOB_EXTRACT,
+        pipeline_version="2026.1",
+        status=RUN_QUEUED,
+    )
+    async with db_session_factory() as session, session.begin():
+        session.add(second)
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(DocumentRow).where(DocumentRow.document_id == document.id)
+            )
+        ).scalars().all()
+
+    assert [row.processing_run_id for row in rows] == [second.id] * 3
+
+
+async def test_a_retry_of_the_same_run_reuses_row_ids(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A retried run replaces its rows with identical ids.
+
+    Ids derive from (run_id, row_number), so re-running the same run is
+    idempotent. That matters for a turn still holding a source list from
+    between the two attempts: the ids it recorded resolve to the same rows
+    afterwards. A *new* run gets a new run_id and therefore new ids, which is
+    why this is scoped to a retry rather than to a re-upload.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_bytes(),
+        media_type="text/csv",
+        filename="sales.csv",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        before = sorted(
+            row.id
+            for row in (
+                await session.execute(
+                    select(DocumentRow).where(DocumentRow.processing_run_id == run.id)
+                )
+            ).scalars()
+        )
+
+    # Put the same run back in the queue, as a retry does.
+    async with db_session_factory() as session, session.begin():
+        stored = await session.get(ProcessingRun, run.id)
+        assert stored is not None
+        stored.status = RUN_QUEUED
+        stored.lease_token = None
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        after = sorted(
+            row.id
+            for row in (
+                await session.execute(
+                    select(DocumentRow).where(DocumentRow.processing_run_id == run.id)
+                )
+            ).scalars()
+        )
+
+    assert after == before
+    assert len(after) == 3
+
+
+async def test_a_semicolon_csv_ingests_with_its_columns_intact(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """The worker must sniff the delimiter the same way validation did.
+
+    If the two disagreed, this file would be one column wide here and two
+    columns wide there, and every cell would carry the wrong label.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_semicolon_bytes(),
+        media_type="text/csv",
+        filename="euro.csv",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        stored = await session.get(ProcessingRun, run.id)
+        assert stored is not None
+        rows = (
+            await session.execute(
+                select(DocumentRow)
+                .where(DocumentRow.document_id == document.id)
+                .order_by(DocumentRow.row_number)
+            )
+        ).scalars().all()
+
+    assert stored.csv_columns == ["id", "status", "amount"]
+    assert rows[0].data == {"id": "1", "status": "OPEN", "amount": "10"}
+
+
+async def test_a_utf8_bom_does_not_become_the_first_column_name(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Excel writes a BOM; it must not end up glued to the first header."""
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_with_bom_bytes(),
+        media_type="text/csv",
+        filename="excel.csv",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        stored = await session.get(ProcessingRun, run.id)
+        assert stored is not None
+    assert stored.csv_columns == ["id", "status", "amount", "currency"]
+
+
+async def test_deleting_a_csv_document_removes_its_rows(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Rows cascade with the document, so no orphan rows outlive a delete."""
+    storage = FakeStorage()
+    document, _ = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_bytes(),
+        media_type="text/csv",
+        filename="sales.csv",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session, session.begin():
+        stored = await session.get(Document, document.id)
+        assert stored is not None
+        stored.deleted_at = utcnow()
+    async with db_session_factory() as session, session.begin():
+        session.add(
+            ProcessingRun(
+                id=uuid4(),
+                document_id=document.id,
+                workspace_id=document.workspace_id,
+                job_kind=JOB_DELETE,
+                pipeline_version="2026.1",
+                status=RUN_QUEUED,
+            )
+        )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        remaining = (
+            await session.execute(
+                select(DocumentRow).where(DocumentRow.document_id == document.id)
+            )
+        ).scalars().all()
+    assert remaining == []

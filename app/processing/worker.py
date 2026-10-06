@@ -1,10 +1,13 @@
 import asyncio
+import csv
 import gzip
 import hashlib
+import io
 import json
 import logging
 import os
 import tempfile
+from collections.abc import Iterator
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -12,7 +15,7 @@ from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 
 from anyio import to_thread
-from sqlalchemy import and_, delete, func, select, update
+from sqlalchemy import and_, delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
@@ -39,7 +42,16 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentRow,
     ProcessingRun,
+)
+from app.documents.validation import (
+    CSV_ENCODINGS,
+    CSV_MEDIA_TYPE,
+    DOCX_MEDIA_TYPE,
+    PDF_MEDIA_TYPE,
+    sniff_delimiter,
+    uniquify_columns,
 )
 from app.embeddings.base import (
     EmbeddingProvider,
@@ -57,6 +69,20 @@ from app.infrastructure.storage import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The temporary-file suffix a media type is downloaded under. Explicit rather
+# than inferred, because the parser is chosen by the extension and an
+# inferred suffix silently feeds the wrong parser the wrong bytes.
+_SOURCE_SUFFIX = {
+    PDF_MEDIA_TYPE: ".pdf",
+    DOCX_MEDIA_TYPE: ".docx",
+    CSV_MEDIA_TYPE: ".csv",
+}
+
+# Rows are inserted with a core insert rather than ORM objects: at the 100k
+# cap, building identity-mapped instances for the whole file costs far more
+# memory than the transaction does, and nothing here needs an ORM identity.
+_ROW_INSERT_BATCH = 1_000
 
 
 class PermanentProcessingError(Exception):
@@ -379,8 +405,19 @@ class ProcessingWorker:
         if document.size_bytes > self._settings.max_source_bytes:
             raise PermanentProcessingError("Document exceeds the processing size limit")
 
+        if document.detected_media_type == CSV_MEDIA_TYPE:
+            await self._process_csv_extract(claimed_run, lease_token, document)
+            return
+
         self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
-        suffix = ".pdf" if document.detected_media_type == "application/pdf" else ".docx"
+        suffix = _SOURCE_SUFFIX.get(document.detected_media_type)
+        if suffix is None:
+            # Was `".pdf" if pdf else ".docx"`, naming every non-PDF .docx.
+            # Harmless while XLSX was the only other type because the
+            # extractor rejected it first -- until CSV needed its own suffix.
+            raise PermanentProcessingError(
+                f"No source suffix for media type: {document.detected_media_type}"
+            )
         descriptor, temporary_name = tempfile.mkstemp(
             prefix="context-source-",
             suffix=suffix,
@@ -493,6 +530,270 @@ class ProcessingWorker:
         if chunks_persisted:
             await self._process_embeddings(claimed_run, lease_token)
 
+    async def _process_csv_extract(
+        self, claimed_run: ProcessingRun, lease_token: UUID, document: Document
+    ) -> None:
+        """Store a CSV as queryable rows instead of embedded chunks.
+
+        This deliberately does not go through ``_extract_document``. The
+        extraction contract carries a serialized parser artifact plus
+        chunk text, and neither is wanted here: rows go to
+        ``document_rows`` and Qdrant stays empty for this document. Handing
+        100k rows through a JSON contract to then discard them would cost
+        more than the parse itself.
+
+        The parser is the stdlib csv module, which is why it runs in-process
+        rather than in the extraction sandbox. The sandbox exists because
+        Docling loads third-party native parsers; plain delimited text has no
+        such surface, and the caps in the validator bound it instead.
+        """
+        if document.bucket != self._settings.s3_raw_bucket:
+            raise PermanentProcessingError("Document references an unapproved raw bucket")
+        expected_key = (
+            f"workspaces/{document.workspace_id}/objects/"
+            f"{document.sha256}/{document.id}"
+        )
+        if document.object_key != expected_key:
+            raise PermanentProcessingError("Object key does not match document identity")
+        if document.size_bytes > self._settings.max_source_bytes:
+            raise PermanentProcessingError("Document exceeds the processing size limit")
+
+        self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix="context-source-",
+            suffix=".csv",
+            dir=self._settings.processing_temp_dir,
+        )
+        os.close(descriptor)
+        temporary_path = Path(temporary_name)
+        manifest_key: str | None = None
+        rows_persisted = False
+        try:
+            downloaded = await to_thread.run_sync(
+                partial(
+                    self._storage.download_file,
+                    temporary_path,
+                    bucket=document.bucket,
+                    key=document.object_key,
+                    max_bytes=self._settings.max_source_bytes,
+                )
+            )
+            if downloaded.size_bytes != document.size_bytes:
+                raise PermanentProcessingError("Downloaded object size does not match the event")
+            if downloaded.sha256 != document.sha256:
+                raise PermanentProcessingError("Downloaded object hash does not match the event")
+
+            await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
+            # Read and decode once, off the event loop, then parse from the
+            # string. Reading inside the transaction would block the loop on
+            # file I/O, and reading twice would double that for no reason.
+            csv_text = await to_thread.run_sync(
+                partial(self._decode_csv, temporary_path)
+            )
+            columns, delimiter = await to_thread.run_sync(
+                partial(self._inspect_csv, csv_text)
+            )
+
+            artifact_prefix = (
+                f"workspaces/{document.workspace_id}/documents/{document.id}/"
+                f"runs/{claimed_run.id}/attempts/{lease_token}"
+            )
+            manifest_key = f"{artifact_prefix}/manifest.json"
+            manifest_bytes = (
+                json.dumps(
+                    {
+                        "columns": columns,
+                        "delimiter": delimiter,
+                        "encoding": CSV_ENCODINGS[0],
+                        "media_type": document.detected_media_type,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+            )
+            await self._set_artifact_keys(
+                claimed_run.id,
+                lease_token,
+                artifact_key=None,
+                manifest_key=manifest_key,
+            )
+            await self._set_phase(
+                claimed_run.id, lease_token, RUN_STORING_ARTIFACT
+            )
+            await to_thread.run_sync(
+                partial(
+                    self._storage.put_bytes,
+                    manifest_bytes,
+                    bucket=self._settings.s3_artifact_bucket,
+                    key=manifest_key,
+                    content_type="application/json",
+                    content_encoding=None,
+                    sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+                )
+            )
+
+            await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
+            rows_persisted = await self._persist_rows(
+                claimed_run.id,
+                lease_token,
+                document,
+                csv_text,
+                columns,
+                delimiter,
+                manifest_key=manifest_key,
+            )
+            if not rows_persisted:
+                await self._delete_artifacts(None, manifest_key)
+        except Exception:
+            if manifest_key is not None:
+                await self._delete_artifacts(None, manifest_key)
+            raise
+        finally:
+            await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
+
+    def _decode_csv(self, path: Path) -> str:
+        """Decode the file to text using the same encodings the validator tried.
+
+        Running the decode separately keeps the file read off the event loop,
+        and sharing ``CSV_ENCODINGS`` keeps the worker from disagreeing with
+        validation about what the file contains.
+        """
+        raw = path.read_bytes()
+        for encoding in CSV_ENCODINGS:
+            try:
+                return raw.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        raise PermanentProcessingError("CSV could not be decoded as UTF-8 text")
+
+    def _inspect_csv(self, text: str) -> tuple[list[str], str]:
+        """Return the uniquified header and the delimiter both sides agreed on.
+
+        Reusing ``sniff_delimiter`` matters: if the worker sniffed a
+        different separator than the validator did, a file that passed the
+        field-count check would fail here with a row-count error naming
+        neither cause.
+        """
+        delimiter = sniff_delimiter(text)
+        try:
+            header = next(csv.reader(io.StringIO(text, newline=""), delimiter=delimiter))
+        except (StopIteration, csv.Error) as exc:
+            raise PermanentProcessingError("CSV header could not be read") from exc
+        return uniquify_columns([name.strip() for name in header]), delimiter
+
+    def _iter_csv_rows(
+        self, text: str, columns: list[str], delimiter: str
+    ) -> Iterator[dict[str, str]]:
+        reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
+        next(reader, None)
+        for row in reader:
+            if not row:
+                continue
+            yield dict(zip(columns, row, strict=False))
+
+    async def _persist_rows(
+        self,
+        run_id: UUID,
+        lease_token: UUID,
+        document: Document,
+        text: str,
+        columns: list[str],
+        delimiter: str,
+        *,
+        manifest_key: str,
+    ) -> bool:
+        stop_event = asyncio.Event()
+        heartbeat = asyncio.create_task(
+            self._heartbeat_lease(run_id, lease_token, stop_event)
+        )
+        try:
+            now = utcnow()
+            async with self._session_factory() as session, session.begin():
+                run = await session.get(ProcessingRun, run_id)
+                if run is None or run.lease_token != lease_token:
+                    raise LeaseLostError()
+                stored_document = await session.scalar(
+                    select(Document)
+                    .where(Document.id == document.id)
+                    .with_for_update()
+                )
+                if stored_document is None:
+                    raise PermanentProcessingError("Processing document disappeared")
+                if stored_document.deleted_at is not None or run.status == RUN_CANCELLED:
+                    run.status = RUN_CANCELLED
+                    run.lease_until = None
+                    run.lease_token = None
+                    run.completed_at = now
+                    return False
+
+                await session.execute(
+                    delete(DocumentRow).where(
+                        DocumentRow.processing_run_id == run_id
+                    )
+                )
+                inserted = 0
+                batch: list[dict[str, object]] = []
+                for row_number, row in enumerate(
+                    self._iter_csv_rows(text, columns, delimiter), start=1
+                ):
+                    batch.append(
+                        {
+                            "id": uuid5(run_id, str(row_number)),
+                            "workspace_id": stored_document.workspace_id,
+                            "document_id": stored_document.id,
+                            "processing_run_id": run_id,
+                            "row_number": row_number,
+                            "data": row,
+                        }
+                    )
+                    if len(batch) >= _ROW_INSERT_BATCH:
+                        await session.execute(insert(DocumentRow), batch)
+                        inserted += len(batch)
+                        batch.clear()
+                        # Yield between batches so the heartbeat task and any
+                        # cancellation can run; parsing the whole file in one
+                        # pass would hold the loop for the whole transaction.
+                        await asyncio.sleep(0)
+                if batch:
+                    await session.execute(insert(DocumentRow), batch)
+                    inserted += len(batch)
+
+                # Deleted here rather than at persist time, so a re-upload
+                # cannot leave both versions queryable at once -- workspace
+                # scope is the SQL tool's only isolation, and documents dodge
+                # this because retrieval re-checks the active run. Doing it
+                # inside the activation transaction means a run that dies
+                # partway rolls this back and keeps the working rows.
+                await session.execute(
+                    delete(DocumentRow).where(
+                        DocumentRow.document_id == stored_document.id,
+                        DocumentRow.processing_run_id != run_id,
+                    )
+                )
+
+                # Rows are the whole product, so the run is already usable.
+                # chunk_count stays 0 and no embedding records exist for it.
+                run.status = RUN_READY
+                run.lease_until = None
+                run.lease_token = None
+                run.artifact_bucket = self._settings.s3_artifact_bucket
+                run.artifact_key = None
+                run.manifest_key = manifest_key
+                run.chunk_count = 0
+                run.embedded_chunk_count = 0
+                run.row_count = inserted
+                run.csv_columns = columns
+                run.embedding_profile = None
+                run.embedding_model = None
+                run.embedding_dimensions = None
+                run.completed_at = now
+                stored_document.active_processing_run_id = run_id
+                return True
+        finally:
+            stop_event.set()
+            await heartbeat
+
     async def _process_delete(self, claimed_run: ProcessingRun) -> None:
         lease_token = self._require_lease_token(claimed_run)
         await self._vector_store.delete_document(
@@ -511,15 +812,10 @@ class ProcessingWorker:
         )
         await self._set_phase(claimed_run.id, lease_token, RUN_DELETING)
 
-        # The Qdrant points are gone and the artifacts are gone, so the
-        # rows that recorded where they lived are no longer needed. The
-        # document row goes last, and its cascade takes the chunks and the
-        # embedding ledger with it. Deleting it earlier would have
-        # orphaned the vectors, because the point IDs live in those rows.
-        #
-        # The run is marked terminal before the document is removed and
-        # nothing is written to it afterwards: the cascade takes this run
-        # too, so an UPDATE after the DELETE would match no row.
+        # The document row goes last: its cascade takes the chunks, the
+        # embedding ledger and this run, and the point IDs live in the rows
+        # being deleted, so removing it earlier would orphan the vectors.
+        # Hence no UPDATE on the run after the DELETE.
         async with self._session_factory() as session, session.begin():
             run = await session.get(ProcessingRun, claimed_run.id)
             if run is None or run.lease_token != lease_token:
@@ -843,14 +1139,20 @@ class ProcessingWorker:
                     ChunkEmbedding.content_hash == DocumentChunk.content_hash,
                 )
             )
-            if not chunk_count or indexed_count != chunk_count:
+            if not run.row_count and (not chunk_count or indexed_count != chunk_count):
+                # row_count marks a row-bearing run, which has nothing in
+                # Qdrant to compare. Such runs do not actually reach here --
+                # _process_csv_extract sets RUN_READY directly -- but without
+                # the guard they would fail twice, on indexed_count !=
+                # chunk_count and on not chunk_count, both reported as a
+                # missing embedding.
                 raise PermanentProcessingError(
                     "Not every document chunk has a matching Qdrant embedding"
                 )
             run.status = RUN_READY
             run.lease_until = None
             run.lease_token = None
-            run.chunk_count = int(chunk_count)
+            run.chunk_count = int(chunk_count or 0)
             run.embedded_chunk_count = int(indexed_count or 0)
             run.completed_at = now
             document.active_processing_run_id = run.id
@@ -969,7 +1271,7 @@ class ProcessingWorker:
         run_id: UUID,
         lease_token: UUID,
         *,
-        artifact_key: str,
+        artifact_key: str | None,
         manifest_key: str,
     ) -> None:
         async with self._session_factory() as session:
@@ -1159,8 +1461,12 @@ class ProcessingWorker:
             raise LeaseLostError()
         return run.lease_token
 
-    async def _delete_artifacts(self, artifact_key: str, manifest_key: str) -> None:
+    async def _delete_artifacts(
+        self, artifact_key: str | None, manifest_key: str | None
+    ) -> None:
         for key in (artifact_key, manifest_key):
+            if key is None:
+                continue
             with suppress(StorageError):
                 await to_thread.run_sync(
                     partial(

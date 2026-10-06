@@ -23,7 +23,7 @@ interface UploadConfirmation {
   workspaceName: string
 }
 
-const supportedFile = /\.(pdf|docx)$/i
+const supportedFile = /\.(pdf|docx|csv)$/i
 
 export function UploadContext({ token, workspaces, onUnauthorized }: UploadContextProps) {
   const availableWorkspaces = workspaces.filter((workspace) => workspace.can_upload)
@@ -45,7 +45,7 @@ export function UploadContext({ token, workspaces, onUnauthorized }: UploadConte
     setFile(chosen)
     setError(
       chosen !== null && !supportedFile.test(chosen.name)
-        ? 'Only PDF and DOCX files can be processed as context.'
+        ? 'Only PDF, DOCX and CSV files can be processed as context.'
         : chosen !== null && chosen.size === 0
           ? 'Choose a non-empty file to upload.'
           : null,
@@ -60,11 +60,11 @@ export function UploadContext({ token, workspaces, onUnauthorized }: UploadConte
       return
     }
     if (file === null) {
-      setError('Choose a PDF or DOCX file to upload.')
+      setError('Choose a PDF, DOCX or CSV file to upload.')
       return
     }
     if (!supportedFile.test(file.name)) {
-      setError('Only PDF and DOCX files can be processed as context.')
+      setError('Only PDF, DOCX and CSV files can be processed as context.')
       return
     }
     if (file.size === 0) {
@@ -156,13 +156,13 @@ export function UploadContext({ token, workspaces, onUnauthorized }: UploadConte
                   ref={fileInput}
                   className="field-input cursor-pointer text-sm file:mr-4 file:cursor-pointer file:border-0 file:border-r file:border-stone-200 file:bg-stone-50 file:px-3 file:py-1 file:text-sm file:font-medium file:text-stone-800"
                   type="file"
-                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  accept=".pdf,.docx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv"
                   aria-describedby="upload-file-help"
                   disabled={uploading}
                   onChange={chooseFile}
                 />
                 <p id="upload-file-help" className="mt-2 text-xs leading-5 text-stone-600">
-                  PDF or DOCX. The server validates the file and enforces its size limit. Spreadsheets are not yet indexed as context.
+                  PDF, DOCX or CSV. The server validates the file and enforces its size limit. A CSV is stored as rows and queried with SQL rather than indexed for meaning, so the agent can count, total and group its lines but not search their wording.
                 </p>
                 {file === null ? null : (
                   <div className="mt-4 flex items-center gap-3 border border-stone-200 bg-stone-50 px-4 py-3 text-sm">
@@ -211,7 +211,7 @@ export function UploadContext({ token, workspaces, onUnauthorized }: UploadConte
               <p className="mt-1 text-sm leading-6 text-emerald-950">
                 {confirmation.document.duplicate
                   ? 'An identical document already exists in this workspace; no new upload was created.'
-                  : 'The file is stored. Context extraction and indexing happen asynchronously.'}
+                  : 'The file is stored. Extraction and indexing happen asynchronously.'}
               </p>
               <p className="mt-3 break-all font-mono text-xs text-emerald-900">
                 {confirmation.document.original_filename} · {confirmation.workspaceName} · ID {confirmation.document.id}

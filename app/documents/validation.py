@@ -1,4 +1,6 @@
+import csv
 import hashlib
+import io
 import os
 import struct
 import tempfile
@@ -21,9 +23,11 @@ PDF_MEDIA_TYPE = "application/pdf"
 DOCX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
-XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx"}
+CSV_MEDIA_TYPE = "text/csv"
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".csv"}
 OFFICE_CFB_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+CSV_ENCODINGS = ("utf-8-sig", "utf-8")
+CSV_DELIMITERS = (",", ";", "\t", "|")
 
 
 @dataclass(frozen=True)
@@ -49,7 +53,7 @@ async def stage_upload(upload: UploadFile, settings: Settings) -> StagedUpload:
             status_code=415,
             code="unsupported_file_type",
             title="Unsupported file type",
-            detail="Only PDF, DOCX, and XLSX files are accepted.",
+            detail="Only PDF, DOCX, and CSV files are accepted.",
         )
     if upload.size is not None and upload.size > settings.max_upload_bytes:
         raise file_too_large_error(settings.max_upload_bytes)
@@ -119,7 +123,144 @@ def sanitize_filename(filename: str | None) -> str:
 def validate_document(staged: StagedUpload, settings: Settings) -> ValidationResult:
     if staged.extension == ".pdf":
         return validate_pdf(staged.path, settings.max_pdf_pages)
+    if staged.extension == ".csv":
+        return validate_csv(staged.path, settings)
     return validate_ooxml(staged.path, staged.extension, settings)
+
+
+def validate_csv(path: Path, settings: Settings) -> ValidationResult:
+    """Accept a CSV only if it is text we can actually parse into rows.
+
+    CSV replaces XLSX here, and that is a net removal: the OOXML path needed
+    zip-bomb, compression-ratio, CFB-encryption and macro checks because a
+    spreadsheet is a hostile archive. Plain text needs none of that, so
+    these guards are about staying bounded rather than staying safe.
+
+    The file is re-read at parse time in the worker, so what is proven here
+    is that the shape is one the worker can handle: decodable, a header we
+    can name columns after, a single consistent field count, and a row count
+    inside the ingest cap.
+    """
+    raw = path.read_bytes()
+    if b"\x00" in raw:
+        raise invalid_document_error(
+            "The CSV contains NUL bytes and is not a text file."
+        )
+
+    decoded: str | None = None
+    for encoding in CSV_ENCODINGS:
+        try:
+            decoded = raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        break
+    if decoded is None:
+        raise invalid_document_error(
+            "The CSV must be UTF-8 encoded text."
+        )
+
+    previous_limit = csv.field_size_limit()
+    csv.field_size_limit(settings.max_csv_field_bytes)
+    try:
+        reader = csv.reader(
+            io.StringIO(decoded, newline=""), delimiter=sniff_delimiter(decoded)
+        )
+        try:
+            header = next(reader)
+        except StopIteration:
+            raise invalid_document_error("The CSV has no header row.") from None
+        except csv.Error as exc:
+            raise invalid_document_error("The CSV could not be parsed.") from exc
+
+        header = [name.strip() for name in header]
+        if not header or not any(header):
+            raise invalid_document_error("The CSV has no header row.")
+        if len(header) > settings.max_csv_columns:
+            raise AppError(
+                status_code=422,
+                code="too_many_columns",
+                title="CSV column limit exceeded",
+                detail=(
+                    f"A CSV cannot contain more than "
+                    f"{settings.max_csv_columns} columns."
+                ),
+            )
+        # Duplicate names would collapse into one JSONB key, losing rows'
+        # values without any error at insert time. Suffix them instead so the
+        # loss is visible in the stored data rather than silent.
+        names = uniquify_columns(header)
+
+        rows = 0
+        for row in reader:
+            rows += 1
+            if rows > settings.max_csv_rows:
+                raise AppError(
+                    status_code=422,
+                    code="too_many_rows",
+                    title="CSV row limit exceeded",
+                    detail=f"A CSV cannot contain more than {settings.max_csv_rows} rows.",
+                )
+            if len(row) != len(names):
+                raise invalid_document_error(
+                    "The CSV has a row whose field count differs from the header."
+                )
+    except csv.Error as exc:
+        raise invalid_document_error("The CSV could not be parsed.") from exc
+    finally:
+        csv.field_size_limit(previous_limit)
+
+    if rows == 0:
+        raise invalid_document_error("The CSV has a header but no data rows.")
+
+    return ValidationResult(media_type=CSV_MEDIA_TYPE)
+
+
+def sniff_delimiter(text: str, *, sample_lines: int = 20) -> str:
+    """Pick the delimiter that splits a sample of the file most consistently.
+
+    Shared with the worker on purpose. If validation and the worker each
+    sniffed independently they could disagree, and a file that validated as
+    uniform would then fail at insert time with a field-count error that
+    names neither cause.
+
+    ``csv.Sniffer`` is not used because it is free to return different
+    delimiters for equivalent input, which is the same hazard by another
+    route. This takes the first candidate in ``CSV_DELIMITERS`` whose field
+    count is constant across the sample and greater than one, so the answer
+    is a pure function of the input.
+    """
+    sample = "\n".join(text.splitlines()[:sample_lines])
+    for delimiter in CSV_DELIMITERS:
+        try:
+            rows = [
+                row
+                for row in csv.reader(io.StringIO(sample, newline=""), delimiter=delimiter)
+            ]
+        except csv.Error:
+            continue
+        widths = {len(row) for row in rows if row}
+        if len(widths) == 1 and next(iter(widths), 0) > 1:
+            return delimiter
+    # A single-column file has no delimiter to find. Commas are what a
+    # reader will assume, so the parser must assume the same.
+    return ","
+
+
+def uniquify_columns(names: list[str]) -> list[str]:
+    """Give every column a distinct key so no value is silently dropped.
+
+    ``csv`` happily returns repeated header cells, and ``jsonb`` would keep
+    only the last value for a repeated key. Appending the occurrence index
+    turns that collision into something the caller can see.
+    """
+    seen: dict[str, int] = {}
+    resolved: list[str] = []
+    for name in names:
+        label = name or "column"
+        count = seen.get(label, 0)
+        seen[label] = count + 1
+        resolved.append(label if count == 0 else f"{label}_{count}")
+    return resolved
 
 
 def validate_pdf(path: Path, max_pages: int) -> ValidationResult:
@@ -170,11 +311,6 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
             "word/document.xml",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
             DOCX_MEDIA_TYPE,
-        ),
-        ".xlsx": (
-            "xl/workbook.xml",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
-            XLSX_MEDIA_TYPE,
         ),
     }
     main_part, main_content_type, media_type = expected[extension]

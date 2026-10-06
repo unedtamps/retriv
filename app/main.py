@@ -13,8 +13,9 @@ from app.agent.harness import AnswerHarness
 from app.agent.retrieval import ContextRetriever
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
-from app.db.session import engine
+from app.db.session import engine, session_factory
 from app.http.middleware import UploadSizeLimitMiddleware
+from app.retrieval.sql import CatalogueReader, RowQuery, RowQueryError
 from app.routes import (
     admin,
     agent,
@@ -39,13 +40,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # request would pay for a handshake on every question.
         retriever = ContextRetriever(settings, engine)
         application.state.context_retriever = retriever
-        harness = AnswerHarness(settings, retriever)
+        # A reader DSN is what enables row queries. With none configured the
+        # tool is simply absent from the agent, which is the safe default: an
+        # unset DSN cannot be misread as "no restriction".
+        rows: RowQuery | None = None
+        if settings.sql_database_url:
+            rows = RowQuery.from_url(
+                settings.sql_database_url,
+                statement_timeout_ms=settings.sql_statement_timeout_ms,
+                max_result_rows=settings.sql_max_result_rows,
+            )
+            try:
+                await rows.verify_reader()
+            except RowQueryError as exc:
+                await rows.aclose()
+                raise RuntimeError(
+                    "RETRIV_SQL_DATABASE_URL is configured but unusable"
+                ) from exc
+        application.state.row_query = rows
+        # Reading through the app's own session lets a deployment without a
+        # reader DSN still tell the model a CSV exists, rather than have it
+        # report the data as missing when only the tool is off. The names are
+        # not privileged: the document list already returns them.
+        catalogue_reader = CatalogueReader(session_factory)
+        harness = AnswerHarness(
+            settings, retriever, rows=rows, catalogue_reader=catalogue_reader
+        )
         application.state.answer_harness = harness
         try:
             yield
         finally:
             await harness.aclose()
             await retriever.aclose()
+            if rows is not None:
+                await rows.aclose()
 
     application = FastAPI(
         title=settings.app_name,

@@ -169,6 +169,10 @@ class DocumentResponse(BaseModel):
     created_by_user_id: UUID | None
     created_at: datetime
     duplicate: bool = False
+    # Zero for anything that is not a CSV. Present so a CSV's size is visible
+    # in the document list instead of reporting a bare "Ready" with nothing
+    # behind it.
+    row_count: int = 0
 
 
 class DocumentListResponse(BaseModel):
@@ -293,6 +297,10 @@ class ProcessingRunSummary(BaseModel):
     attempts: int
     chunk_count: int
     embedded_chunk_count: int
+    # A CSV is its rows rather than embedded chunks, so its progress is here
+    # and chunk_count stays zero by design. Exposed because otherwise a CSV
+    # reports progress as nothing at all, which reads as a stalled upload.
+    row_count: int
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None

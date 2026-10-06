@@ -54,6 +54,8 @@ export interface DocumentUpload {
   created_by_user_id: string | null
   created_at: string
   duplicate: boolean
+  /** Zero unless this is a CSV, whose content is rows rather than chunks. */
+  row_count: number
 }
 
 export interface DocumentList {
@@ -73,6 +75,7 @@ export interface ProcessingRun {
   attempts: number
   chunk_count: number
   embedded_chunk_count: number
+  row_count: number
   created_at: string
   started_at: string | null
   completed_at: string | null

@@ -23,9 +23,9 @@ from app.db.models import (
     Document,
     ProcessingRun,
 )
-from app.documents.validation import DOCX_MEDIA_TYPE, PDF_MEDIA_TYPE
+from app.documents.validation import CSV_MEDIA_TYPE, DOCX_MEDIA_TYPE, PDF_MEDIA_TYPE
 
-SUPPORTED_MEDIA_TYPES = frozenset({PDF_MEDIA_TYPE, DOCX_MEDIA_TYPE})
+SUPPORTED_MEDIA_TYPES = frozenset({PDF_MEDIA_TYPE, DOCX_MEDIA_TYPE, CSV_MEDIA_TYPE})
 
 
 def initial_extract_status(media_type: str) -> str:

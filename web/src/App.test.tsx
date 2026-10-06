@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -289,7 +289,7 @@ describe('dashboard application', () => {
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/v1/workspaces/workspace-1/documents')).toHaveLength(1)
 
     expect(await screen.findByRole('heading', { name: 'Document accepted' })).toBeInTheDocument()
-    expect(screen.getByText(/Context extraction and indexing happen asynchronously/)).toBeInTheDocument()
+    expect(screen.getByText(/Extraction and indexing happen asynchronously/)).toBeInTheDocument()
     expect(window.location.pathname).toBe('/upload-context')
     const uploadCall = fetchMock.mock.calls.find(([input]) => String(input) === '/v1/workspaces/workspace-1/documents')
     if (uploadCall === undefined) throw new Error('Expected an upload request')
@@ -300,6 +300,126 @@ describe('dashboard application', () => {
     const body = uploadCall[1]?.body
     if (!(body instanceof FormData)) throw new Error('Expected multipart form data')
     expect((body.get('file') as File).name).toBe('context.pdf')
+  })
+
+  it('accepts a CSV for upload, which is stored as rows rather than indexed', async () => {
+    // CSV replaced XLSX. A spreadsheet was accepted by the form and then
+    // rejected by the extractor, so the picker must not offer a type the
+    // pipeline cannot read, and must offer the one it now can.
+    const user = userEvent.setup()
+    const fetchMock = installApi(owner, [workspace])
+
+    // Navigate explicitly rather than inheriting the path a previous test
+    // happened to leave behind.
+    window.history.pushState({}, '', '/upload-context')
+    render(<App />)
+    await user.type(screen.getByLabelText('Username'), 'maya')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
+
+    const file = new File(['id,amount\n1,10\n'], 'sales.csv', { type: 'text/csv' })
+    await user.upload(screen.getByLabelText('Document'), file)
+    expect(screen.getByRole('button', { name: 'Upload document' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+    expect(await screen.findByRole('heading', { name: 'Document accepted' })).toBeInTheDocument()
+    const uploadCall = fetchMock.mock.calls.find(([input]) => String(input) === '/v1/workspaces/workspace-1/documents')
+    if (uploadCall === undefined) throw new Error('Expected an upload request')
+    const body = uploadCall[1]?.body
+    if (!(body instanceof FormData)) throw new Error('Expected multipart form data')
+    expect((body.get('file') as File).name).toBe('sales.csv')
+  })
+
+  it('rejects a spreadsheet extension the pipeline cannot read', async () => {
+    const user = userEvent.setup()
+    // The stub is needed for its side effect; nothing here inspects the calls.
+    installApi(owner, [workspace])
+
+    // Navigate explicitly rather than inheriting the path a previous test
+    // happened to leave behind.
+    window.history.pushState({}, '', '/upload-context')
+    render(<App />)
+    await user.type(screen.getByLabelText('Username'), 'maya')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
+
+    // userEvent.upload honours the input's accept attribute and silently
+    // drops a file it excludes, so the change is fired directly to reach the
+    // application's own check.
+    fireEvent.change(screen.getByLabelText('Document'), {
+      target: { files: [new File(['x'], 'budget.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })] },
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only PDF, DOCX and CSV')
+    expect(screen.getByRole('button', { name: 'Upload document' })).toBeDisabled()
+  })
+
+  it('shows how many rows a CSV holds, and says plainly how a CSV is used', async () => {
+    // A CSV's content is rows, not chunks, so the run reports row_count and
+    // the list shows it. Without this a CSV reads as a bare "Ready" with
+    // nothing behind it, which looks like an upload that did nothing.
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const base = {
+      workspace_id: workspace.id,
+      size_bytes: 10,
+      sha256: 'a'.repeat(64),
+      status: 'ready',
+      created_by_user_id: admin.id,
+      created_at: '2026-01-01T00:00:00Z',
+      duplicate: false,
+    }
+    installApi(owner, [workspace], undefined, undefined, {}, {
+      list: {
+        items: [
+          { ...base, id: 'doc-1', original_filename: 'sales.csv', detected_media_type: 'text/csv', row_count: 900 },
+          { ...base, id: 'doc-2', original_filename: 'UNDP.pdf', detected_media_type: 'application/pdf', row_count: 0 },
+        ],
+        total: 2,
+        offset: 0,
+        limit: 50,
+      },
+    })
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    const row = await screen.findByRole('row', { name: /Launch notes/ })
+    await user.click(within(row).getByRole('button', { name: 'Open' }))
+
+    expect(await screen.findByText('sales.csv')).toBeInTheDocument()
+    expect(screen.getByText(/900 rows/)).toBeInTheDocument()
+    // A document that is not a CSV has no rows to report, and must not be
+    // given a "0 rows" label that reads as a broken counter.
+    expect(screen.getByText('UNDP.pdf')).toBeInTheDocument()
+    // Exactly one row label, because a document that is not a CSV has no
+    // rows to report. Matching on a bare "0 rows" would also match "900
+    // rows", so the count is what actually pins this.
+    expect(screen.getAllByText(/rows/)).toHaveLength(1)
+  })
+
+  it('no longer tells the user spreadsheets are unsupported', async () => {
+    // The old copy said spreadsheets were not yet indexed, which was both
+    // stale and now wrong in a second way: a CSV is not indexed on purpose.
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+    window.history.pushState({}, '', '/upload-context')
+    render(<App />)
+    await user.type(screen.getByLabelText('Username'), 'maya')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Upload context', level: 1 })
+    ).toBeInTheDocument()
+    const help = screen.getByText(/PDF, DOCX or CSV/)
+    expect(help).toBeInTheDocument()
+    expect(help).toHaveTextContent(/queried with SQL/)
+    expect(screen.queryByText(/not yet indexed/)).not.toBeInTheDocument()
   })
 
   it('navigates to the upload route from the dashboard and follows browser history', async () => {
@@ -522,6 +642,85 @@ Use \`report.csv\` for details.
     const body = JSON.parse(String(askCall[1]?.body)) as { request_id: string; question: string }
     expect(body.question).toBe('What changed in revenue?')
     expect(body.request_id).toBeTruthy()
+  })
+
+  it('locates a source by row or page instead of reporting one unavailable', async () => {
+    // A CSV row has no pages by design and a computed aggregate has neither
+    // pages nor a row, so the old message named a document kind rather than a
+    // fault. Every CSV entry in a list carried it.
+    const source = {
+      workspace_id: workspace.id,
+      document_id: 'document-1',
+      processing_run_id: 'run-1',
+      chunk_id: 'chunk-1',
+      ordinal: 0,
+      score: 1,
+      content_hash: 'a'.repeat(64),
+      filename: 'sales.csv',
+      section_path: [],
+      page_numbers: [],
+    }
+    const turn = json({
+      answer: 'Total 12,120,733.41 [1]',
+      status: 'completed',
+      failure_code: null,
+      created_at: '2026-09-24T08:00:00Z',
+      completed_at: '2026-09-24T08:00:01Z',
+      context_available: true,
+      sources: [
+        source,
+        {
+          ...source,
+          chunk_id: 'chunk-2',
+          ordinal: 5,
+          filename: 'inventory.csv',
+        },
+        {
+          ...source,
+          chunk_id: 'chunk-3',
+          ordinal: 5,
+          filename: 'page.pdf',
+          section_path: ['Results'],
+          page_numbers: [3],
+        },
+      ],
+    })
+    installApi(owner, [workspace], undefined, turn)
+    const user = userEvent.setup()
+
+    window.history.replaceState(null, '', '/ask-context')
+    writeSessionToken('member-token')
+    render(<App />)
+
+    await screen.findByRole('region', { name: 'Conversation' })
+    await user.click(await screen.findByRole('button', { name: 'New conversation' }))
+    await user.type(await screen.findByLabelText('Your message'), 'total revenue?')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    await screen.findByRole('heading', { name: 'Answer' })
+    await user.click(screen.getByText(/Sources \(3\)/))
+
+    expect(screen.queryByText(/Page unavailable/)).not.toBeInTheDocument()
+
+    // The citation list is the only one whose items are prefixed "[N]"; the
+    // transcript also has a plain list of the documents involved.
+    const entries = screen.getAllByRole('listitem').filter((item) =>
+      /^\[\d+\]/.test(item.textContent ?? '')
+    )
+    expect(entries).toHaveLength(3)
+    const aggregate = entries.find((item) => item.textContent?.includes('sales.csv'))
+    const row = entries.find((item) => item.textContent?.includes('inventory.csv'))
+    const page = entries.find((item) => item.textContent?.includes('page.pdf'))
+
+    // No pages and no row, so only the file and its workspace are worth
+    // showing. Asserting the whole string catches a separator left hanging
+    // with nothing after it, which a looser check would wave through.
+    expect(aggregate?.textContent).toBe('[1]sales.csvLaunch notes')
+    expect(aggregate?.textContent).not.toMatch(/Page|Row/)
+    // A row is a location, and a better one than a missing page.
+    expect(row?.textContent).toMatch(/Row 5/)
+    // A paginated document is unaffected, and keeps its heading breadcrumb.
+    expect(page?.textContent).toMatch(/Page 3/)
+    expect(page?.textContent).toContain('Results')
   })
 
   it('keeps source citations visible but hides downloads from workspace viewers', async () => {

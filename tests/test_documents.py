@@ -16,12 +16,12 @@ from app.db.models import (
 from app.infrastructure.scanner import MalwareDetectedError, ScannerUnavailableError
 from tests.conftest import CleanScanner, InMemoryObjectStorage, SeededEntities
 from tests.document_samples import (
+    csv_bytes,
     docx_bytes,
     encrypted_pdf_bytes,
     macro_default_docx_bytes,
     malformed_docx_bytes,
     pdf_bytes,
-    xlsx_bytes,
 )
 
 
@@ -34,11 +34,7 @@ from tests.document_samples import (
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             docx_bytes(),
         ),
-        (
-            "budget.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            xlsx_bytes(),
-        ),
+        ("sales.csv", "text/csv", csv_bytes()),
     ],
 )
 async def test_upload_supported_documents(
@@ -696,9 +692,11 @@ async def upload(
     )
 
 
-# What the extraction pipeline can actually read. A spreadsheet is stored
-# but never indexed, so its run is terminal from the start.
+# What the extraction pipeline can actually read, so a run starts queued
+# rather than terminal. CSV is included: it is read as rows, not indexed as
+# chunks, but the worker does parse it.
 EXPECTED_INDEXABLE = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/csv",
 }

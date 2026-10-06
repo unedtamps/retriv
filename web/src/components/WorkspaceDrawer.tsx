@@ -312,7 +312,10 @@ export function WorkspaceDrawer({
                           {document.original_filename}
                         </p>
                         <p className="mt-0.5 font-mono text-[0.62rem] text-stone-500">
-                          {documentLabel(document.status)} ·{' '}
+                          {documentLabel(document.status)}
+                          {/* A CSV is rows, not chunks. Without this it reads as
+                              a bare "Ready" with nothing to show for it. */}
+                          {document.row_count > 0 ? ` · ${document.row_count} rows` : ''} ·{' '}
                           {new Date(document.created_at).toLocaleString()}
                         </p>
                       </div>
