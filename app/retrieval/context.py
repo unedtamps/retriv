@@ -9,7 +9,6 @@ from sqlalchemy import JSON, Uuid, and_, bindparam, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from app.agent.schemas import ContextSource
 from app.core.config import Settings
 from app.db.models import (
     EMBEDDING_INDEXED,
@@ -17,6 +16,7 @@ from app.db.models import (
     Document,
     DocumentChunk,
 )
+from app.retrieval.schemas import ContextSource
 
 PAYLOAD_FIELDS = (
     "workspace_id",

@@ -51,6 +51,8 @@ class ObjectStorage(Protocol):
 
     def open_object(self, *, bucket: str, key: str) -> ReadableObject: ...
 
+    def presign_get(self, *, bucket: str, key: str, expires_in: int) -> str: ...
+
     def delete_object(self, *, bucket: str, key: str) -> None: ...
 
     def check_health(self, *, bucket: str) -> None: ...
@@ -199,6 +201,24 @@ class S3ObjectStorage(_S3Client):
         except BotoCoreError as exc:
             raise StorageError("Object download failed") from exc
         return response["Body"]
+
+    def presign_get(self, *, bucket: str, key: str, expires_in: int) -> str:
+        """Sign a time-limited GET for one object.
+
+        Nothing is sent to the object store: the URL carries an HMAC the store
+        checks when it is used. That makes it cheap to issue and impossible to
+        revoke -- ``expires_in`` is the whole of the access control, and the
+        caller is responsible for having already decided this caller may have
+        the file.
+        """
+        try:
+            return self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=expires_in,
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise StorageError("Object could not be signed") from exc
 
     def delete_object(self, *, bucket: str, key: str) -> None:
         try:

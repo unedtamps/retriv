@@ -13,9 +13,8 @@ interface ReadyState {
 
 function currentRoute(): AppRoute {
   if (window.location.pathname === '/upload-context') return '/upload-context'
-  if (window.location.pathname === '/ask-context') return '/ask-context'
   if (window.location.pathname === '/dashboard') return '/dashboard'
-  return '/ask-context'
+  return '/dashboard'
 }
 
 function App() {
@@ -30,9 +29,8 @@ function App() {
     if (
       window.location.pathname !== '/dashboard'
       && window.location.pathname !== '/upload-context'
-      && window.location.pathname !== '/ask-context'
     ) {
-      window.history.replaceState(null, '', '/ask-context')
+      window.history.replaceState(null, '', '/dashboard')
     }
     const syncRoute = () => setRoute(currentRoute())
     window.addEventListener('popstate', syncRoute)

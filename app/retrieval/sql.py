@@ -34,7 +34,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 if TYPE_CHECKING:  # avoids a cycle: the agent imports this module
-    from app.agent.schemas import ContextSource
+    from app.retrieval.schemas import ContextSource
 
 # The columns a returned row is built from. A row that does not carry all of
 # them is dropped: an aggregate projects a count and no id, so there is
@@ -86,7 +86,7 @@ class RowResult:
         a header. Column names come from the run, which is why they are on
         the result: a row alone cannot say what its keys mean.
         """
-        from app.agent.schemas import ContextSource
+        from app.retrieval.schemas import ContextSource
 
         rendered = " | ".join(f"{column}={self.data.get(column, '')}" for column in self.columns)
         return ContextSource(
@@ -145,6 +145,28 @@ class RowQueryResult:
 
     def __bool__(self) -> bool:
         return bool(self.sources or self.values)
+
+
+def _require_one_document(result: RowQueryResult) -> None:
+    """Refuse a result whose rows came from more than one file.
+
+    This lives here rather than in each caller so that no tool can forget it.
+    Row-level security narrows a statement to a workspace, not to a file, and
+    a result spanning two files is a number computed over data the question
+    never asked about -- reported with a confidence no part of it deserves.
+
+    The statement's own text is not enough: a ``document_id`` that appears
+    without narrowing the read passes any presence test. The rows are the
+    only honest witness, so they are the thing checked.
+    """
+    documents = {source.document_id for source in result.sources}
+    if len(documents) <= 1:
+        return
+    listed = ", ".join(str(value) for value in sorted(documents, key=str))
+    raise RowQueryError(
+        f"rows came from {len(documents)} files ({listed}); query one file at "
+        "a time by filtering on document_id"
+    )
 
 
 class CatalogueReader:
@@ -351,11 +373,15 @@ class RowQuery:
                     columns=[str(key) for key in data],
                 )
             )
-        return RowQueryResult(
+        outcome = RowQueryResult(
             sources=sources,
             values=values,
             columns=[str(key) for key in keys],
         )
+        # Checked here rather than by the callers: this is the one place a
+        # result is assembled, so every tool is covered by construction.
+        _require_one_document(outcome)
+        return outcome
 
     async def queryable_files(
         self,
@@ -535,4 +561,4 @@ def _sorted_names() -> str:
 # Re-exported for the annotation on RowResult.as_source without importing the
 # agent package at module load, which would be a cycle.
 if False:  # pragma: no cover
-    from app.agent.schemas import ContextSource
+    from app.retrieval.schemas import ContextSource

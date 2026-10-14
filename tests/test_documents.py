@@ -14,6 +14,7 @@ from app.db.models import (
     ProcessingRun,
 )
 from app.infrastructure.scanner import MalwareDetectedError, ScannerUnavailableError
+from app.security.api_keys import mint_api_key, revoke_api_key
 from tests.conftest import CleanScanner, InMemoryObjectStorage, SeededEntities
 from tests.document_samples import (
     csv_bytes,
@@ -212,6 +213,102 @@ async def test_workspace_viewer_cannot_download_original_document(
 
     assert response.status_code == 403
     assert response.json()["code"] == "insufficient_workspace_permission"
+
+
+async def test_download_accepts_an_api_key(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The URL a download_document tool hands out is fetched with the same key.
+
+    This is the one route where an MCP credential is honoured, and it exists
+    so the agent can retrieve the bytes the tool pointed it at without the
+    file passing through the model.
+    """
+    content = pdf_bytes()
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", content)
+    async with db_session_factory() as session:
+        key = await mint_api_key(session, user_id=entities.user.id, name="agent")
+        await session.commit()
+
+    response = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents/{created.json()['id']}/download",
+        headers={"Authorization": f"Bearer {key.plaintext}"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == content
+
+
+async def test_download_rejects_a_revoked_api_key(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
+    async with db_session_factory() as session:
+        key = await mint_api_key(session, user_id=entities.user.id, name="agent")
+        await revoke_api_key(
+            session, key_id=key.record.id, user_id=entities.user.id
+        )
+        await session.commit()
+
+    response = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents/{created.json()['id']}/download",
+        headers={"Authorization": f"Bearer {key.plaintext}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_credentials"
+
+
+async def test_an_api_key_reaches_nothing_but_the_download(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Widening one route must not widen the others.
+
+    The write endpoints stay JWT-only, so an agent key cannot upload or
+    delete even inside a workspace the same key can read from.
+    """
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
+    async with db_session_factory() as session:
+        key = await mint_api_key(session, user_id=entities.user.id, name="agent")
+        await session.commit()
+    headers = {"Authorization": f"Bearer {key.plaintext}"}
+
+    delete = await client.delete(
+        f"/v1/workspaces/{entities.finance.id}/documents/{created.json()['id']}",
+        headers=headers,
+    )
+    upload_response = await client.post(
+        f"/v1/workspaces/{entities.finance.id}/documents",
+        headers=headers,
+        files={"file": ("report.pdf", pdf_bytes(), "application/pdf")},
+    )
+
+    assert delete.status_code == 401
+    assert upload_response.status_code == 401
+
+
+async def test_download_without_any_credential_is_refused(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
+
+    response = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents/{created.json()['id']}/download"
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 async def test_delete_marks_the_document_and_queues_the_cleanup(

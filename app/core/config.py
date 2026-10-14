@@ -1,12 +1,14 @@
+import hmac
 import re
 from functools import lru_cache
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
-from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -66,6 +68,10 @@ class Settings(BaseSettings):
 
     # -- upload validation ----------------------------------------------
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    # How long the download_document tool's signed link stays usable. It is a
+    # bearer credential that cannot be revoked once issued, so the window is
+    # deliberately short and the upper bound is an hour rather than a day.
+    mcp_download_link_ttl_seconds: int = Field(default=300, ge=30, le=3600)
     max_pdf_pages: int = Field(default=500, gt=0)
     max_archive_entries: int = Field(default=10_000, gt=0)
     max_archive_central_directory_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
@@ -135,15 +141,7 @@ class Settings(BaseSettings):
     qdrant_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     qdrant_vectors_on_disk: bool = True
 
-    # -- answer harness -------------------------------------------------
-    chat_base_url: str = "https://openrouter.ai/api/v1"
-    chat_api_key: SecretStr = SecretStr("development-chat-api-key-change-this")
-    chat_model: str = "replace-with/chat-model"
-    chat_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
-    # A turn is held as "processing" until it completes; the conversation
-    # route treats a turn older than this as abandoned and lets the caller
-    # retry. It has to outlast the model call, not bound it.
-    answer_stale_after_seconds: int = Field(default=660, ge=60, le=7200)
+    # -- retrieval --------------------------------------------------------
     max_context_chunks: int = Field(default=8, ge=1, le=20)
     min_relevance_score: float = Field(default=0.25, ge=-1.0, le=1.0)
     heading_expand_chunks: int = Field(default=4, ge=0, le=20)
@@ -229,7 +227,7 @@ class Settings(BaseSettings):
                 normalized_origins.append(origin)
         return normalized_origins
 
-    @field_validator("embedding_base_url", "qdrant_url", "chat_base_url")
+    @field_validator("embedding_base_url", "qdrant_url")
     @classmethod
     def validate_service_url(cls, value: str) -> str:
         parsed = urlsplit(value)
@@ -239,29 +237,12 @@ class Settings(BaseSettings):
             raise ValueError("Service URLs must not contain credentials or query data")
         return value.rstrip("/")
 
-    @field_validator("chat_model")
-    @classmethod
-    def validate_chat_model(cls, value: str, info: ValidationInfo) -> str:
-        if not value.strip() or any(character.isspace() for character in value):
-            raise ValueError("RETRIV_CHAT_MODEL must be a non-empty model identifier")
-        # "provider/model" is an OpenRouter convention. Enforcing it for any
-        # endpoint rejected valid IDs on the OpenAI-compatible services this
-        # also supports, stopping a correct deployment from starting.
-        base_url = str(info.data.get("chat_base_url", "")).lower()
-        if "/" not in value and "openrouter.ai" in base_url:
-            raise ValueError(
-                "RETRIV_CHAT_MODEL must be an OpenRouter model ID such as "
-                "provider/model when RETRIV_CHAT_BASE_URL points at OpenRouter"
-            )
-        return value
-
     @field_validator(
         "s3_secret_key",
         "s3_artifact_secret_key",
         "embedding_api_key",
         "qdrant_api_key",
         "qdrant_read_only_api_key",
-        "chat_api_key",
     )
     @classmethod
     def validate_secret_length(cls, value: SecretStr) -> SecretStr:
@@ -308,7 +289,6 @@ class Settings(BaseSettings):
         if self.component == "api":
             secrets = (
                 self.jwt_secret.get_secret_value(),
-                self.chat_api_key.get_secret_value(),
                 self.qdrant_read_only_api_key.get_secret_value(),
                 self.s3_secret_key.get_secret_value(),
             )
@@ -338,9 +318,9 @@ class Settings(BaseSettings):
             raise ValueError("Production object storage must use HTTPS")
         if any(
             urlsplit(url).scheme != "https"
-            for url in (self.embedding_base_url, self.qdrant_url, self.chat_base_url)
+            for url in (self.embedding_base_url, self.qdrant_url)
         ):
-            raise ValueError("Production embedding, Qdrant, and chat endpoints must use HTTPS")
+            raise ValueError("Production embedding and Qdrant endpoints must use HTTPS")
         if self.component == "worker" and self.docling_artifacts_path is None:
             raise ValueError("Production workers require baked Docling artifacts")
         if self.component == "api" and not self.antivirus_enabled:

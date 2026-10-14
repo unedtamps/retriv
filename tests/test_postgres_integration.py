@@ -13,6 +13,7 @@ import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
@@ -1201,3 +1202,149 @@ async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
         async with factory() as session:
             await clear_database(session)
         await engine.dispose()
+
+
+async def test_a_row_query_is_served_by_the_document_index() -> None:
+    """A statement naming one document must not scan every row in the table.
+
+    ``RowQuery`` rejects any statement that does not name a ``document_id``,
+    so this predicate is in every statement the tool will ever run. When the
+    column carried no index, each of those statements started with a
+    sequential scan whose cost grew with the whole workspace; the test below
+    fails if the index is dropped, because the plan goes back to a scan.
+
+    The seeding is deliberately lopsided in the direction a real workspace
+    grows in: the file being queried holds a small share of the table, and
+    most rows belong to other files. That is what makes an index worth
+    reaching for. An earlier version of this test did the opposite -- 2,000 of
+    2,005 rows in the queried file -- and correctly failed: when one file is
+    99% of the table, reading the whole table in order really is the cheaper
+    plan, and the planner is right to choose it. Protecting the index means
+    testing the case it exists for, not forcing it on a case it does not.
+
+    The assertion is on the plan rather than on a timing: a timing would pass
+    on a small table and fail on a loaded CI machine, and the thing being
+    protected is the access path, not the clock.
+    """
+    engine = create_async_engine(database_url())
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            await clear_database(session)
+            workspace, _ = await seed_owner(
+                session, slug="indexprobe", username="indexprobe-user"
+            )
+            target = Document(
+                workspace_id=workspace,
+                original_filename="target.csv",
+                detected_media_type="text/csv",
+                size_bytes=10,
+                sha256="1" * 64,
+                bucket="raw",
+                object_key="target",
+            )
+            session.add(target)
+            await session.flush()
+            target_run = ProcessingRun(
+                document_id=target.id,
+                workspace_id=workspace,
+                job_kind="extract",
+                pipeline_version="2026.1",
+                status="ready",
+                csv_columns=["region", "amount"],
+            )
+            session.add(target_run)
+            await session.flush()
+
+            for row_number in range(1, 21):
+                session.add(
+                    DocumentRow(
+                        workspace_id=workspace,
+                        document_id=target.id,
+                        processing_run_id=target_run.id,
+                        row_number=row_number,
+                        data={"region": f"r{row_number % 7}", "amount": row_number},
+                    )
+                )
+
+            # The rest of the table: "read the whole table" and "read one
+            # file" have to look different for the plan to mean anything.
+            for index in range(5):
+                other = Document(
+                    workspace_id=workspace,
+                    original_filename=f"other-{index}.csv",
+                    detected_media_type="text/csv",
+                    size_bytes=10,
+                    sha256=str(index + 2) * 64,
+                    bucket="raw",
+                    object_key=f"other-{index}",
+                )
+                session.add(other)
+                await session.flush()
+                other_run = ProcessingRun(
+                    document_id=other.id,
+                    workspace_id=workspace,
+                    job_kind="extract",
+                    pipeline_version="2026.1",
+                    status="ready",
+                    csv_columns=["region", "amount"],
+                )
+                session.add(other_run)
+                await session.flush()
+                session.add_all(
+                    DocumentRow(
+                        workspace_id=workspace,
+                        document_id=other.id,
+                        processing_run_id=other_run.id,
+                        row_number=row_number,
+                        data={"region": "noise", "amount": row_number},
+                    )
+                    for row_number in range(1, 1_001)
+                )
+            await session.commit()
+
+        async with engine.begin() as conn:
+            # Statistics first: without them the planner has no basis for
+            # choosing an index over a scan and would reach the right answer
+            # for the wrong reason.
+            await conn.execute(text("ANALYZE document_rows"))
+            plan = await conn.execute(
+                text(
+                    "EXPLAIN (FORMAT JSON) SELECT count(*) FROM document_rows "
+                    "WHERE document_id = :document_id AND data->>'region' = 'r1'"
+                ),
+                {"document_id": target.id},
+            )
+            node = plan.scalar_one()[0]["Plan"]
+            methods = _plan_methods(node)
+
+        assert "ix_document_rows_document" in methods, (
+            "the document_id index is no longer part of the plan; a per-file "
+            f"row query has fallen back to a scan ({methods})"
+        )
+    finally:
+        async with factory() as session:
+            await clear_database(session)
+        await engine.dispose()
+
+
+def _plan_methods(node: Any) -> set[str]:
+    """Every index name and scan node mentioned anywhere in a query plan.
+
+    The plan arrives as nested JSON whose shape depends on which plan nodes
+    the planner chose, so it is walked as plain data rather than typed.
+    """
+    found: set[str] = set()
+    pending: list[Any] = [node]
+    while pending:
+        current = pending.pop()
+        if not isinstance(current, dict):
+            continue
+        for key in ("Index Name", "Node Type"):
+            value = current.get(key)
+            if isinstance(value, str):
+                found.add(value)
+        children = current.get("Plans")
+        if isinstance(children, list):
+            pending.extend(children)
+    return found

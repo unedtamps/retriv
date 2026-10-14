@@ -1,6 +1,6 @@
 export type PlatformRole = 'admin' | 'user' | string
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
-export type AppRoute = '/dashboard' | '/upload-context' | '/ask-context'
+export type AppRoute = '/dashboard' | '/upload-context'
 
 export interface SessionToken {
   access_token: string
@@ -91,73 +91,6 @@ export interface ProcessingRunList {
   since: string
 }
 
-export interface ContextSource {
-  workspace_id: string
-  document_id: string
-  processing_run_id: string
-  chunk_id: string
-  ordinal: number
-  score: number
-  content_hash: string
-  filename: string | null
-  section_path: string[]
-  page_numbers: number[]
-  text: string
-}
-
-export interface ContextAnswer {
-  answer: string
-  sources: ContextSource[]
-}
-
-export interface ConversationSourceReference {
-  workspace_id: string
-  document_id: string
-  processing_run_id: string
-  chunk_id: string
-  ordinal: number
-  score: number
-  content_hash: string
-  filename: string | null
-  section_path: string[]
-  page_numbers: number[]
-}
-
-export interface AgentConversation {
-  id: string
-  title: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface AgentConversationList {
-  items: AgentConversation[]
-  total: number
-  offset: number
-  limit: number
-}
-
-export interface AgentConversationTurn {
-  id: string
-  request_id: string
-  sequence: number
-  question: string
-  answer: string | null
-  status: 'processing' | 'completed' | 'failed'
-  failure_code: string | null
-  created_at: string
-  completed_at: string | null
-  context_available: boolean
-  sources: ConversationSourceReference[]
-}
-
-export interface AgentConversationTurnList {
-  items: AgentConversationTurn[]
-  total: number
-  offset: number
-  limit: number
-}
-
 export interface AdminUser {
   id: string
   username: string
@@ -224,4 +157,24 @@ export interface OneTimeCredential {
   username: string
   password: string
   reason: 'created' | 'reset'
+}
+
+export interface ApiKeySummary {
+  id: string
+  name: string
+  /** Display-only fragment; never enough to reconstruct the key. */
+  key_prefix: string
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+export interface ApiKeyList {
+  items: ApiKeySummary[]
+}
+
+export interface CreatedApiKey extends ApiKeySummary {
+  /** Plaintext credential, present only in the creation response. */
+  key: string
+  warning: string
 }

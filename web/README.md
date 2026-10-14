@@ -37,8 +37,8 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 ```
 
 The URL must not end in `/v1`; requests append `/v1/...` themselves. Configure the backend CORS
-allowlist with the dashboard's exact HTTPS origin. The static host must rewrite `/dashboard`,
-`/upload-context`, and `/ask-context` to `/index.html` so direct browser visits can boot the client.
+allowlist with the dashboard's exact HTTPS origin. The static host must rewrite `/dashboard` and
+`/upload-context` to `/index.html` so direct browser visits can boot the client.
 
 ## Commands
 
@@ -56,8 +56,8 @@ npm run preview
 - Platform admins can create users and workspaces and assign owner, editor, or viewer roles.
 - A platform admin does not receive workspace document access without a workspace membership.
 - Workspace owners can add, change, and remove editors and viewers, but cannot modify owners.
-- Editors can upload and use context. Viewers can use context. Unassigned users see catalog
-  metadata only.
+- Editors can upload, download, and delete documents. Viewers can read them but cannot download
+  or delete. Unassigned users see catalog metadata only.
 - Uploading stores the file in the source service and queues background context processing. The
   success message confirms acceptance, not completion of extraction and vector indexing.
 - The API remains authoritative for every permission check; hiding a frontend control is not an

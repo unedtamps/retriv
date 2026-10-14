@@ -1,16 +1,13 @@
 import logging
 import re
 from functools import partial
-from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
-from uuid import UUID, uuid4
 
 from anyio import to_thread
 from fastapi import APIRouter, Depends, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -27,15 +24,14 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.models import Document, ProcessingRun
 from app.db.session import get_session
-from app.documents.validation import StagedUpload, stage_upload, validate_document
-from app.infrastructure.scanner import MalwareDetectedError, ScannerUnavailableError
-from app.infrastructure.storage import ObjectNotFoundError, StorageError, iter_object
-from app.processing.service import (
-    derived_document_status,
-    enqueue_delete,
-    enqueue_extract,
-    load_active_run,
+from app.documents.service import (
+    accept_document_delete,
+    ingest_staged_upload,
+    storage_unavailable_error,
 )
+from app.documents.validation import stage_upload
+from app.infrastructure.storage import ObjectNotFoundError, StorageError, iter_object
+from app.processing.service import derived_document_status, load_active_run
 from app.security.auth import CurrentUser
 
 logger = logging.getLogger(__name__)
@@ -53,93 +49,27 @@ async def upload_document(
     storage: StorageDependency,
     scanner: ScannerDependency,
 ) -> DocumentResponse:
-    staged: StagedUpload | None = None
+    staged = None
     try:
         staged = await stage_upload(file, settings)
-        await scan_upload(scanner, staged.path)
-        validation = await to_thread.run_sync(validate_document, staged, settings)
-
-        existing = await find_duplicate(session, workspace.id, staged.sha256)
-        if existing is not None:
-            existing_run = await load_active_run(session, existing)
-            # Only a document on its way out blocks a re-upload. One that
-            # is still being indexed is a perfectly good duplicate: the
-            # run is already queued, so returning it is the honest answer.
-            if existing.deleted_at is not None:
-                raise AppError(
-                    status_code=409,
-                    code="document_deletion_in_progress",
-                    title="Document deletion in progress",
-                    detail="An identical document is currently being deleted.",
-                )
-            response.status_code = status.HTTP_200_OK
-            return document_response(existing, existing_run, duplicate=True)
-
-        document_id = uuid4()
-        object_key = f"workspaces/{workspace.id}/objects/{staged.sha256}/{document_id}"
-        try:
-            await to_thread.run_sync(
-                partial(
-                    storage.upload_file,
-                    staged.path,
-                    bucket=settings.s3_raw_bucket,
-                    key=object_key,
-                    content_type=validation.media_type,
-                    sha256=staged.sha256,
-                )
-            )
-        except StorageError as exc:
-            raise storage_unavailable_error(
-                "The document could not be stored."
-            ) from exc
-
-        document = Document(
-            id=document_id,
+        result = await ingest_staged_upload(
+            session=session,
+            settings=settings,
+            storage=storage,
+            scanner=scanner,
             workspace_id=workspace.id,
-            original_filename=staged.original_filename,
-            detected_media_type=validation.media_type,
-            size_bytes=staged.size_bytes,
-            sha256=staged.sha256,
-            bucket=settings.s3_raw_bucket,
-            object_key=object_key,
-            created_by_user_id=current_user.id,
+            uploader_id=current_user.id,
+            staged=staged,
         )
-        try:
-            session.add(document)
-            # Flush before enqueueing so the run's foreign key resolves.
-            # Both rows commit together: a document cannot exist without a
-            # way to be processed.
-            await session.flush()
-            run = await enqueue_extract(session, document, settings)
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            concurrent_document = await find_duplicate(
-                session, workspace.id, staged.sha256
-            )
-            if concurrent_document is not None:
-                await delete_uploaded_object(storage, settings.s3_raw_bucket, object_key)
-                response.status_code = status.HTTP_200_OK
-                return document_response(
-                    concurrent_document,
-                    await load_active_run(session, concurrent_document),
-                    duplicate=True,
-                )
-            await delete_uploaded_object(storage, settings.s3_raw_bucket, object_key)
-            raise
-        except Exception:
-            await session.rollback()
-            await delete_uploaded_object(storage, settings.s3_raw_bucket, object_key)
-            raise
-
-        # Accepted, not created: the pipeline has the document and will
-        # report progress through /v1/processing-runs.
-        response.status_code = status.HTTP_202_ACCEPTED
-        return document_response(document, run)
     finally:
         await file.close()
         if staged is not None:
             await to_thread.run_sync(partial(staged.path.unlink, missing_ok=True))
+    if result.duplicate:
+        response.status_code = status.HTTP_200_OK
+    else:
+        response.status_code = status.HTTP_202_ACCEPTED
+    return document_response(result.document, result.run, duplicate=result.duplicate)
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -241,79 +171,17 @@ async def delete_document(
 ) -> Response:
     """Accept a delete and let the worker finish it.
 
-    The row is marked deleted and a delete run is queued; the worker
-    clears the Qdrant points and the artifacts, then removes the row.
-    It cannot be removed here: the Qdrant point IDs live in the
-    embedding ledger, so deleting the document first would orphan every
-    vector it ever produced. The raw object is removed immediately
-    because nothing downstream needs it.
+    The permission check happened in the dependency; this only queues the
+    work and removes the raw object.
     """
-    locked_document = await session.scalar(
-        select(Document)
-        .where(Document.id == document.id, Document.workspace_id == document.workspace_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
+    await accept_document_delete(
+        session=session,
+        storage=storage,
+        settings=settings,
+        document_id=document.id,
+        workspace_id=document.workspace_id,
     )
-    if locked_document is None:
-        await session.rollback()
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-    document = locked_document
-
-    await enqueue_delete(session, document, settings)
-    await session.commit()
-
-    try:
-        await to_thread.run_sync(
-            partial(
-                storage.delete_object, bucket=document.bucket, key=document.object_key
-            )
-        )
-    except StorageError as exc:
-        raise storage_unavailable_error("The document could not be deleted.") from exc
-
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-async def scan_upload(scanner: ScannerDependency, path: Path) -> None:
-    try:
-        await to_thread.run_sync(scanner.scan_file, path)
-    except MalwareDetectedError as exc:
-        raise AppError(
-            status_code=422,
-            code="malware_detected",
-            title="Malware detected",
-            detail="The uploaded file was rejected by the malware scanner.",
-        ) from exc
-    except ScannerUnavailableError as exc:
-        raise AppError(
-            status_code=503,
-            code="malware_scanner_unavailable",
-            title="Malware scanner unavailable",
-            detail="The document cannot be accepted while malware scanning is unavailable.",
-        ) from exc
-
-
-async def find_duplicate(
-    session: AsyncSession, workspace_id: UUID, sha256: str
-) -> Document | None:
-    return await session.scalar(
-        select(Document).where(
-            Document.workspace_id == workspace_id,
-            Document.sha256 == sha256,
-        )
-    )
-
-
-async def delete_uploaded_object(
-    storage: StorageDependency, bucket: str, key: str
-) -> None:
-    try:
-        await to_thread.run_sync(partial(storage.delete_object, bucket=bucket, key=key))
-    except StorageError:
-        # A reconciliation task can remove the orphan if compensating deletion fails.
-        logger.exception(
-            "Failed to remove orphaned object", extra={"bucket": bucket, "key": key}
-        )
 
 
 def document_response(
@@ -341,12 +209,3 @@ def content_disposition(filename: str) -> str:
     ascii_fallback = re.sub(r"[^A-Za-z0-9._-]", "_", filename).strip("._") or "document"
     encoded_filename = quote(filename, safe="")
     return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
-
-
-def storage_unavailable_error(detail: str) -> AppError:
-    return AppError(
-        status_code=503,
-        code="object_storage_unavailable",
-        title="Object storage unavailable",
-        detail=detail,
-    )

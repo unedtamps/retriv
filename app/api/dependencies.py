@@ -1,17 +1,66 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.models import Document, User, Workspace
 from app.db.session import get_session
 from app.infrastructure.scanner import MalwareScanner, get_malware_scanner
 from app.infrastructure.storage import ObjectStorage, get_object_storage
-from app.security.auth import CurrentUser
+from app.security.api_keys import (
+    authenticate_api_key,
+    bearer_api_key,
+    looks_like_api_key,
+)
+from app.security.auth import CurrentUser, authentication_error, decode_access_token
 from app.security.authorization import load_workspace_access, require_platform_admin
+
+
+async def get_bearer_user(
+    authorization: Annotated[str | None, Header()] = None,
+    *,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> User:
+    """Resolve either credential kind to the user behind it.
+
+    Two credentials exist and both are bearer tokens in one header: the
+    dashboard's short-lived JWT, and the long-lived ``rk_`` API key an MCP
+    client holds. They are told apart by shape -- ``looks_like_api_key`` is a
+    prefix and length check, so no JWT can be mistaken for a key -- and both
+    paths end at the same 401, so a caller cannot use the response to learn
+    which one was wrong.
+
+    This is deliberately narrower than ``get_current_user``. Only the document
+    download route accepts both, because it is the one operation a tool hands
+    out as a URL for the agent to fetch with the same header. Every other
+    route stays JWT-only, so an API key cannot reach the write endpoints.
+    """
+    if not authorization:
+        raise authentication_error()
+    try:
+        token = bearer_api_key(authorization)
+    except AppError:
+        raise authentication_error() from None
+
+    if looks_like_api_key(token):
+        user = await authenticate_api_key(session, token)
+        if user is None:
+            raise authentication_error()
+        return user
+
+    claims = decode_access_token(token, settings)
+    user = await session.get(User, claims.sub)
+    if user is None or not user.is_active or user.auth_version != claims.auth_version:
+        raise authentication_error()
+    return user
+
+
+BearerUser = Annotated[User, Depends(get_bearer_user)]
 
 
 async def get_workspace(
@@ -44,7 +93,7 @@ async def get_upload_workspace(
 
 async def get_download_workspace(
     workspace_id: UUID,
-    current_user: CurrentUser,
+    current_user: BearerUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Workspace:
     access = await load_workspace_access(

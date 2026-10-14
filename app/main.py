@@ -9,18 +9,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
-from app.agent.harness import AnswerHarness
-from app.agent.retrieval import ContextRetriever
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.session import engine, session_factory
 from app.http.middleware import UploadSizeLimitMiddleware
+from app.infrastructure.storage import get_object_storage
+from app.mcp.endpoint import McpEndpointMiddleware
+from app.mcp.runtime import McpRuntime, McpRuntimeBox
+from app.mcp.server import build_mcp_server
+from app.retrieval.context import ContextRetriever
 from app.retrieval.sql import CatalogueReader, RowQuery, RowQueryError
 from app.routes import (
     admin,
-    agent,
+    api_keys,
     auth,
-    conversations,
     documents,
     health,
     processing_runs,
@@ -32,17 +34,18 @@ logger = logging.getLogger(__name__)
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    mcp_box = McpRuntimeBox()
+    mcp_server, mcp_app = build_mcp_server(settings, mcp_box)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        # The retriever and harness are process-wide: the Qdrant and
-        # embedding clients hold connection pools, and building them per
-        # request would pay for a handshake on every question.
+        # The retriever is process-wide: the Qdrant and embedding clients hold
+        # connection pools, and building them per request would pay for a
+        # handshake on every search.
         retriever = ContextRetriever(settings, engine)
-        application.state.context_retriever = retriever
         # A reader DSN is what enables row queries. With none configured the
-        # tool is simply absent from the agent, which is the safe default: an
-        # unset DSN cannot be misread as "no restriction".
+        # tool is simply absent, which is the safe default: an unset DSN
+        # cannot be misread as "no restriction".
         rows: RowQuery | None = None
         if settings.sql_database_url:
             rows = RowQuery.from_url(
@@ -57,20 +60,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise RuntimeError(
                     "RETRIV_SQL_DATABASE_URL is configured but unusable"
                 ) from exc
-        application.state.row_query = rows
         # Reading through the app's own session lets a deployment without a
-        # reader DSN still tell the model a CSV exists, rather than have it
-        # report the data as missing when only the tool is off. The names are
-        # not privileged: the document list already returns them.
+        # reader DSN still tell the client which CSVs exist, rather than have
+        # it report the data as missing when only the tool is off. The names
+        # are not privileged: the document list already returns them.
         catalogue_reader = CatalogueReader(session_factory)
-        harness = AnswerHarness(
-            settings, retriever, rows=rows, catalogue_reader=catalogue_reader
+        # The MCP tools cannot reach this container through Depends: they run
+        # in the session manager's task group. The box is how they get the
+        # objects the lifespan just built, and clearing it stops the server
+        # accepting new work before the objects it borrows are torn down.
+        application.state.mcp.set(
+            McpRuntime(
+                settings=settings,
+                session_factory=session_factory,
+                retriever=retriever,
+                row_query=rows,
+                catalogue_reader=catalogue_reader,
+                storage=get_object_storage(),
+            )
         )
-        application.state.answer_harness = harness
         try:
-            yield
+            # The mounted MCP application has no lifespan of its own -- Starlette
+            # does not run a sub-application's lifespan -- so the session
+            # manager the transport depends on is started here instead.
+            async with application.state.mcp_server.session_manager.run():
+                yield
         finally:
-            await harness.aclose()
+            application.state.mcp.set(None)
             await retriever.aclose()
             if rows is not None:
                 await rows.aclose()
@@ -83,11 +99,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+    application.state.mcp = mcp_box
+    application.state.mcp_server = mcp_server
     if settings is not None:
         application.dependency_overrides[get_settings] = lambda: settings
     application.add_middleware(
         UploadSizeLimitMiddleware,
         settings=settings,
+    )
+    # Added after the size limiter so an unauthenticated call is rejected
+    # before any of its body is read. The limiter passes /mcp through anyway:
+    # the transport applies its own body cap, and buffering a response here
+    # would stall the long-lived GET stream.
+    application.add_middleware(
+        McpEndpointMiddleware,
+        mcp_app=mcp_app,
+        box=mcp_box,
     )
     if settings.cors_allowed_origins:
         application.add_middleware(
@@ -104,8 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(admin.router)
     application.include_router(workspaces.router)
     application.include_router(documents.router)
-    application.include_router(agent.router)
-    application.include_router(conversations.router)
+    application.include_router(api_keys.router)
     application.include_router(processing_runs.router)
 
     @application.middleware("http")

@@ -21,12 +21,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from app.agent.retrieval import (
+from app.core.config import Settings
+from app.retrieval.context import (
     ContextRetriever,
     OutOfScopeSearchResult,
     RetrievalUnavailable,
 )
-from app.core.config import Settings
 
 
 def make_settings() -> Settings:
@@ -38,8 +38,6 @@ def make_settings() -> Settings:
         database_url="sqlite+aiosqlite://",
         qdrant_read_only_api_key=SecretStr("qdrant-readonly-key-for-tests-0123456789"),
         embedding_api_key=SecretStr("embedding-api-key-for-tests-0123456789"),
-        chat_api_key=SecretStr("chat-api-key-for-tests-0123456789"),
-        chat_model="test-provider/test-model",
         embedding_dimensions=2,
     )
 
@@ -486,7 +484,7 @@ async def test_an_empty_or_duplicated_scope_is_refused() -> None:
     settings_ = make_settings()
     engine = create_async_engine(settings_.database_url)
 
-    from app.agent.retrieval import ContextRetriever as _ContextRetriever
+    from app.retrieval.context import ContextRetriever as _ContextRetriever
 
     retriever = _ContextRetriever(
         settings_,

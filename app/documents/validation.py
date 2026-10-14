@@ -6,6 +6,7 @@ import struct
 import tempfile
 import unicodedata
 import zipfile
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path, PurePosixPath
@@ -47,17 +48,23 @@ class ValidationResult:
 
 async def stage_upload(upload: UploadFile, settings: Settings) -> StagedUpload:
     filename = sanitize_filename(upload.filename)
-    extension = Path(filename).suffix.lower()
-    if extension not in ALLOWED_EXTENSIONS:
-        raise AppError(
-            status_code=415,
-            code="unsupported_file_type",
-            title="Unsupported file type",
-            detail="Only PDF, DOCX, and CSV files are accepted.",
-        )
-    if upload.size is not None and upload.size > settings.max_upload_bytes:
-        raise file_too_large_error(settings.max_upload_bytes)
+    check_size_hint(upload.size, settings.max_upload_bytes)
+    return await stage_chunks(
+        filename,
+        upload_chunks(upload),
+        settings=settings,
+        max_bytes=settings.max_upload_bytes,
+    )
 
+
+async def stage_chunks(
+    filename: str,
+    chunks: AsyncIterator[bytes],
+    *,
+    settings: Settings,
+    max_bytes: int,
+) -> StagedUpload:
+    extension = supported_extension(filename)
     settings.upload_temp_dir.mkdir(parents=True, exist_ok=True)
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix="document-", suffix=extension, dir=settings.upload_temp_dir
@@ -68,19 +75,19 @@ async def stage_upload(upload: UploadFile, settings: Settings) -> StagedUpload:
 
     try:
         with os.fdopen(file_descriptor, "wb") as destination:
-            while chunk := await upload.read(1024 * 1024):
+            async for chunk in chunks:
                 total_bytes += len(chunk)
-                if total_bytes > settings.max_upload_bytes:
-                    raise file_too_large_error(settings.max_upload_bytes)
+                if total_bytes > max_bytes:
+                    raise file_too_large_error(max_bytes)
                 digest.update(chunk)
                 destination.write(chunk)
-        if total_bytes == 0:
-            raise AppError(
-                status_code=422,
-                code="empty_file",
-                title="Empty file",
-                detail="The uploaded file is empty.",
-            )
+            if total_bytes == 0:
+                raise AppError(
+                    status_code=422,
+                    code="empty_file",
+                    title="Empty file",
+                    detail="The uploaded file is empty.",
+                )
         return StagedUpload(
             path=temporary_path,
             original_filename=filename,
@@ -91,6 +98,28 @@ async def stage_upload(upload: UploadFile, settings: Settings) -> StagedUpload:
     except Exception:
         await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
         raise
+
+
+async def upload_chunks(upload: UploadFile) -> AsyncIterator[bytes]:
+    while chunk := await upload.read(1024 * 1024):
+        yield chunk
+
+
+def supported_extension(filename: str) -> str:
+    extension = Path(filename).suffix.lower()
+    if extension not in ALLOWED_EXTENSIONS:
+        raise AppError(
+            status_code=415,
+            code="unsupported_file_type",
+            title="Unsupported file type",
+            detail="Only PDF, DOCX, and CSV files are accepted.",
+        )
+    return extension
+
+
+def check_size_hint(declared: int | None, max_bytes: int) -> None:
+    if declared is not None and declared > max_bytes:
+        raise file_too_large_error(max_bytes)
 
 
 def sanitize_filename(filename: str | None) -> str:

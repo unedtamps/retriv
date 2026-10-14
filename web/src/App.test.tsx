@@ -44,12 +44,9 @@ function installApi(
   user: CurrentUser = admin,
   workspaces: Workspace[] = [workspace],
   uploadResponse?: Response,
-  answerResponse?: Response,
   processingResponses: { active?: unknown; recent?: unknown } = {},
   documents: { list?: unknown; deleted?: string[] } = {},
 ) {
-  const conversations: Array<{ id: string; title: string | null; created_at: string; updated_at: string }> = []
-  const turns = new Map<string, Array<Record<string, unknown>>>()
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url === '/v1/auth/token') {
@@ -89,54 +86,6 @@ function installApi(
         since: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       })
     }
-    if (url.startsWith('/v1/agent/conversations?')) {
-      return json({ items: conversations, total: conversations.length, offset: 0, limit: 50 })
-    }
-    if (url === '/v1/agent/conversations' && init?.method === 'POST') {
-      const conversation = {
-        id: `conversation-${conversations.length + 1}`,
-        title: null,
-        created_at: '2026-09-24T08:00:00Z',
-        updated_at: '2026-09-24T08:00:00Z',
-      }
-      conversations.unshift(conversation)
-      turns.set(conversation.id, [])
-      return json(conversation, 201)
-    }
-    const conversationTurnsPath = url.match(/^\/v1\/agent\/conversations\/([^/?]+)\/turns/)
-    if (conversationTurnsPath !== null && (init?.method === undefined || init.method === 'GET')) {
-      const items = turns.get(conversationTurnsPath[1]) ?? []
-      return json({ items, total: items.length, offset: 0, limit: 100 })
-    }
-    if (conversationTurnsPath !== null && init?.method === 'POST') {
-      const request = JSON.parse(String(init.body)) as { question: string; request_id: string }
-      const responseTurn = answerResponse === undefined
-        ? {
-            question: request.question,
-            answer: 'Revenue increased. [1]',
-            status: 'completed',
-            failure_code: null,
-            created_at: '2026-09-24T08:00:00Z',
-            completed_at: '2026-09-24T08:00:01Z',
-            context_available: true,
-            sources: [],
-          }
-        : await answerResponse.clone().json()
-      const conversationTurns = turns.get(conversationTurnsPath[1]) ?? []
-      const turn = {
-        ...responseTurn,
-        id: `turn-${conversationTurns.length + 1}`,
-        request_id: request.request_id,
-        sequence: conversationTurns.length + 1,
-        question: request.question,
-      }
-      conversationTurns.push(turn)
-      turns.set(conversationTurnsPath[1], conversationTurns)
-      return json(turn)
-    }
-    if (conversationTurnsPath !== null && init?.method === 'DELETE') {
-      return new Response(null, { status: 204 })
-    }
     if (url === '/v1/workspaces/workspace-1/documents' && init?.method === 'POST') {
       return uploadResponse ?? json({
         id: 'document-1',
@@ -157,9 +106,6 @@ function installApi(
         headers: { 'Content-Type': 'application/pdf' },
       })
     }
-    if (url === '/v1/agent/ask' && init?.method === 'POST') {
-      return answerResponse ?? json({ answer: 'Revenue increased. [1]', sources: [] })
-    }
     if (url === '/v1/workspaces/workspace-1/members') return json({ items: [] })
     if (url.startsWith('/v1/admin/users')) return json({ items: [], total: 0, offset: 0, limit: 50 })
     throw new Error(`Unexpected request: ${url}`)
@@ -169,7 +115,7 @@ function installApi(
 }
 
 describe('dashboard application', () => {
-  it('opens chat after login and keeps the dashboard available from the drawer', async () => {
+  it('lands on the governance dashboard after login and sends the session token', async () => {
     window.history.replaceState(null, '', '/')
     const fetchMock = installApi()
     const user = userEvent.setup()
@@ -180,19 +126,10 @@ describe('dashboard application', () => {
     await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
-    expect(await screen.findByRole('region', { name: 'Conversation' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Ask your context' })).not.toBeInTheDocument()
-    expect(window.location.pathname).toBe('/ask-context')
-    const openNavigation = screen.getByRole('button', { name: 'Open navigation' })
-    await user.click(openNavigation)
-    expect(openNavigation).toHaveAttribute('aria-expanded', 'true')
-    await user.click(screen.getByRole('link', { name: 'Dashboard' }))
-
     expect(await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })).toBeInTheDocument()
     expect(window.location.pathname).toBe('/dashboard')
     expect(screen.getByRole('button', { name: 'New workspace' })).toBeInTheDocument()
     expect(screen.getByText('User directory')).toBeInTheDocument()
-    expect(openNavigation).toHaveAttribute('aria-expanded', 'false')
     expect(readSessionToken()).toBe('signed-token')
     const meCall = fetchMock.mock.calls.find(([input]) => String(input) === '/v1/auth/me')
     if (meCall === undefined) throw new Error('Expected a current-user request')
@@ -373,7 +310,7 @@ describe('dashboard application', () => {
       created_at: '2026-01-01T00:00:00Z',
       duplicate: false,
     }
-    installApi(owner, [workspace], undefined, undefined, {}, {
+    installApi(owner, [workspace], undefined, {}, {
       list: {
         items: [
           { ...base, id: 'doc-1', original_filename: 'sales.csv', detected_media_type: 'text/csv', row_count: 900 },
@@ -495,283 +432,8 @@ describe('dashboard application', () => {
     expect(window.location.pathname).toBe('/upload-context')
   })
 
-  it('creates a private conversation and renders saved source references', async () => {
-    window.history.replaceState(null, '', '/ask-context')
-    writeSessionToken('member-token')
-    const turn = json({
-      id: 'turn-1',
-      request_id: 'request-1',
-      sequence: 1,
-      question: 'What changed in revenue?',
-      answer: `## Revenue summary
-
-Revenue increased in the launch period. [1]
-
-- Growth was strongest in Q3.
-- **Margin** remained stable.
-
-| Quarter | Change |
-| --- | ---: |
-| Q3 | 20% |
-
-Use \`report.csv\` for details.
-
-![external image](https://example.test/image.png)
-
-<script>window.alert('unsafe')</script>`,
-      status: 'completed',
-      failure_code: null,
-      created_at: '2026-09-24T08:00:00Z',
-      completed_at: '2026-09-24T08:00:01Z',
-      context_available: true,
-      sources: [
-        {
-          workspace_id: workspace.id,
-          document_id: 'document-1',
-          processing_run_id: 'run-1',
-          chunk_id: 'chunk-1',
-          ordinal: 4,
-          score: 0.91,
-          content_hash: 'a'.repeat(64),
-          filename: 'launch-review.pdf',
-          section_path: ['Results'],
-          page_numbers: [3],
-        },
-        {
-          workspace_id: workspace.id,
-          document_id: 'document-1',
-          processing_run_id: 'run-1',
-          chunk_id: 'chunk-2',
-          ordinal: 5,
-          score: 0.88,
-          content_hash: 'b'.repeat(64),
-          filename: 'launch-review.pdf',
-          section_path: ['Results'],
-          page_numbers: [4],
-        },
-      ],
-    })
-    const fetchMock = installApi(owner, [workspace], undefined, turn)
-    const user = userEvent.setup()
-
-    render(<App />)
-
-    expect(await screen.findByRole('region', { name: 'Conversation' })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'New conversation' })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: 'New conversation' }))
-    await screen.findByLabelText('Your message')
-    await waitFor(() => expect(screen.getByLabelText('Your message')).toBeEnabled())
-    await user.type(screen.getByLabelText('Your message'), 'What changed in revenue?')
-    await user.click(screen.getByRole('button', { name: 'Send message' }))
-    expect(await screen.findByRole('heading', { name: 'Answer' })).toBeInTheDocument()
-    expect(screen.getByText('Revenue increased in the launch period. [1]')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Revenue summary', level: 2 })).toBeInTheDocument()
-    expect(screen.getByRole('table')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Quarter' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: 'Q3' })).toBeInTheDocument()
-    expect(screen.getByText('report.csv')).toBeInTheDocument()
-    expect(screen.queryByRole('img', { name: 'external image' })).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Conversation transcript' }).querySelector('script')).toBeNull()
-    await user.click(screen.getByText(/Sources \(2\)/))
-    expect(screen.getAllByText('launch-review.pdf')).toHaveLength(3)
-    expect(screen.getByText(/Page 3/)).toBeInTheDocument()
-    expect(screen.getByText('Documents in this conversation (1)')).toBeInTheDocument()
-    const conversationPane = screen.getByRole('region', { name: 'Conversation' })
-    const transcript = within(conversationPane).getByRole('region', { name: 'Conversation transcript' })
-    const conversationTitle = within(conversationPane).getByText('New conversation')
-    const documentPanel = screen.getByText('Documents in this conversation (1)').closest('details')
-    const composer = screen.getByLabelText('Your message').closest('form')
-    expect(transcript).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto')
-    expect(transcript).not.toContainElement(conversationTitle)
-    expect(transcript).not.toContainElement(documentPanel)
-    expect(transcript).not.toContainElement(composer)
-    await user.click(screen.getByText('Documents in this conversation (1)'))
-    const createObjectURL = vi.fn((_blob: Blob) => 'blob:document-download')
-    const revokeObjectURL = vi.fn()
-    const createObjectURLDescriptor = Object.getOwnPropertyDescriptor(window.URL, 'createObjectURL')
-    const revokeObjectURLDescriptor = Object.getOwnPropertyDescriptor(window.URL, 'revokeObjectURL')
-    Object.defineProperty(window.URL, 'createObjectURL', { configurable: true, value: createObjectURL })
-    Object.defineProperty(window.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
-    const createElement = vi.spyOn(window.document, 'createElement')
-    const clickDownload = vi.spyOn(HTMLElement.prototype, 'click').mockImplementation(() => {})
-    const downloadButton = screen.getByRole('button', { name: 'Download launch-review.pdf' })
-    await user.click(downloadButton)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
-      String(input) === '/v1/workspaces/workspace-1/documents/document-1/download',
-    )).toBe(true))
-    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(clickDownload).toHaveBeenCalledTimes(1))
-    const downloadedBlob = createObjectURL.mock.calls[0]?.[0] as Blob | undefined
-    expect(downloadedBlob?.size).toBe(23)
-    expect(downloadedBlob?.type).toBe('application/pdf')
-    const anchorIndex = createElement.mock.calls.findIndex(([tagName]) => tagName === 'a')
-    expect(anchorIndex).toBeGreaterThanOrEqual(0)
-    const downloadAnchor = createElement.mock.results[anchorIndex]?.value as HTMLAnchorElement
-    expect(downloadAnchor.download).toBe('launch-review.pdf')
-    const downloadCall = fetchMock.mock.calls.find(([input]) =>
-      String(input) === '/v1/workspaces/workspace-1/documents/document-1/download',
-    )
-    if (downloadCall === undefined) throw new Error('Expected a document download request')
-    const downloadHeaders = downloadCall[1]?.headers
-    if (!(downloadHeaders instanceof Headers)) throw new Error('Expected download request headers')
-    expect(downloadHeaders.get('Authorization')).toBe('Bearer member-token')
-    await waitFor(
-      () => expect(revokeObjectURL).toHaveBeenCalledWith('blob:document-download'),
-      { timeout: 2000 },
-    )
-
-    await user.type(screen.getByLabelText('Your message'), 'Give me a follow-up')
-    await user.click(screen.getByRole('button', { name: 'Send message' }))
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Download launch-review.pdf' })).toHaveLength(1))
-    expect(screen.getByText('Documents in this conversation (1)')).toBeInTheDocument()
-    if (createObjectURLDescriptor === undefined) Reflect.deleteProperty(window.URL, 'createObjectURL')
-    else Object.defineProperty(window.URL, 'createObjectURL', createObjectURLDescriptor)
-    if (revokeObjectURLDescriptor === undefined) Reflect.deleteProperty(window.URL, 'revokeObjectURL')
-    else Object.defineProperty(window.URL, 'revokeObjectURL', revokeObjectURLDescriptor)
-    createElement.mockRestore()
-    clickDownload.mockRestore()
-    const askCall = fetchMock.mock.calls.find(([input]) =>
-      String(input) === '/v1/agent/conversations/conversation-1/turns'
-      && (input instanceof Request ? input.method : '') !== 'GET',
-    )
-    if (askCall === undefined) throw new Error('Expected a conversation turn request')
-    const headers = askCall[1]?.headers
-    if (!(headers instanceof Headers)) throw new Error('Expected request headers')
-    expect(headers.get('Authorization')).toBe('Bearer member-token')
-    expect(headers.get('Content-Type')).toBe('application/json')
-    const body = JSON.parse(String(askCall[1]?.body)) as { request_id: string; question: string }
-    expect(body.question).toBe('What changed in revenue?')
-    expect(body.request_id).toBeTruthy()
-  })
-
-  it('locates a source by row or page instead of reporting one unavailable', async () => {
-    // A CSV row has no pages by design and a computed aggregate has neither
-    // pages nor a row, so the old message named a document kind rather than a
-    // fault. Every CSV entry in a list carried it.
-    const source = {
-      workspace_id: workspace.id,
-      document_id: 'document-1',
-      processing_run_id: 'run-1',
-      chunk_id: 'chunk-1',
-      ordinal: 0,
-      score: 1,
-      content_hash: 'a'.repeat(64),
-      filename: 'sales.csv',
-      section_path: [],
-      page_numbers: [],
-    }
-    const turn = json({
-      answer: 'Total 12,120,733.41 [1]',
-      status: 'completed',
-      failure_code: null,
-      created_at: '2026-09-24T08:00:00Z',
-      completed_at: '2026-09-24T08:00:01Z',
-      context_available: true,
-      sources: [
-        source,
-        {
-          ...source,
-          chunk_id: 'chunk-2',
-          ordinal: 5,
-          filename: 'inventory.csv',
-        },
-        {
-          ...source,
-          chunk_id: 'chunk-3',
-          ordinal: 5,
-          filename: 'page.pdf',
-          section_path: ['Results'],
-          page_numbers: [3],
-        },
-      ],
-    })
-    installApi(owner, [workspace], undefined, turn)
-    const user = userEvent.setup()
-
-    window.history.replaceState(null, '', '/ask-context')
-    writeSessionToken('member-token')
-    render(<App />)
-
-    await screen.findByRole('region', { name: 'Conversation' })
-    await user.click(await screen.findByRole('button', { name: 'New conversation' }))
-    await user.type(await screen.findByLabelText('Your message'), 'total revenue?')
-    await user.click(screen.getByRole('button', { name: 'Send message' }))
-    await screen.findByRole('heading', { name: 'Answer' })
-    await user.click(screen.getByText(/Sources \(3\)/))
-
-    expect(screen.queryByText(/Page unavailable/)).not.toBeInTheDocument()
-
-    // The citation list is the only one whose items are prefixed "[N]"; the
-    // transcript also has a plain list of the documents involved.
-    const entries = screen.getAllByRole('listitem').filter((item) =>
-      /^\[\d+\]/.test(item.textContent ?? '')
-    )
-    expect(entries).toHaveLength(3)
-    const aggregate = entries.find((item) => item.textContent?.includes('sales.csv'))
-    const row = entries.find((item) => item.textContent?.includes('inventory.csv'))
-    const page = entries.find((item) => item.textContent?.includes('page.pdf'))
-
-    // No pages and no row, so only the file and its workspace are worth
-    // showing. Asserting the whole string catches a separator left hanging
-    // with nothing after it, which a looser check would wave through.
-    expect(aggregate?.textContent).toBe('[1]sales.csvLaunch notes')
-    expect(aggregate?.textContent).not.toMatch(/Page|Row/)
-    // A row is a location, and a better one than a missing page.
-    expect(row?.textContent).toMatch(/Row 5/)
-    // A paginated document is unaffected, and keeps its heading breadcrumb.
-    expect(page?.textContent).toMatch(/Page 3/)
-    expect(page?.textContent).toContain('Results')
-  })
-
-  it('keeps source citations visible but hides downloads from workspace viewers', async () => {
-    window.history.replaceState(null, '', '/ask-context')
-    writeSessionToken('viewer-token')
-    const viewerWorkspace: Workspace = {
-      ...workspace,
-      membership_role: 'viewer',
-      can_upload: false,
-      can_download: false,
-      can_manage_members: false,
-    }
-    const turn = json({
-      answer: 'The review covers launch results. [1]',
-      status: 'completed',
-      failure_code: null,
-      created_at: '2026-09-24T08:00:00Z',
-      completed_at: '2026-09-24T08:00:01Z',
-      context_available: true,
-      sources: [{
-        workspace_id: viewerWorkspace.id,
-        document_id: 'document-1',
-        processing_run_id: 'run-1',
-        chunk_id: 'chunk-1',
-        ordinal: 4,
-        score: 0.91,
-        content_hash: 'a'.repeat(64),
-        filename: 'launch-review.pdf',
-        section_path: ['Results'],
-        page_numbers: [3],
-      }],
-    })
-    installApi(owner, [viewerWorkspace], undefined, turn)
-    const user = userEvent.setup()
-
-    render(<App />)
-
-    await screen.findByRole('region', { name: 'Conversation' })
-    await user.click(await screen.findByRole('button', { name: 'New conversation' }))
-    await user.type(await screen.findByLabelText('Your message'), 'Summarize the launch review')
-    await user.click(screen.getByRole('button', { name: 'Send message' }))
-    expect(await screen.findByRole('heading', { name: 'Answer' })).toBeInTheDocument()
-    await user.click(screen.getByText(/Sources \(1\)/))
-
-    expect(screen.getByText('launch-review.pdf')).toBeInTheDocument()
-    expect(screen.queryByText(/Documents in this conversation/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Download launch-review.pdf/ })).not.toBeInTheDocument()
-  })
-
   it('shows the active process and recent workspace activity in notifications', async () => {
-    window.history.replaceState(null, '', '/ask-context')
+    window.history.replaceState(null, '', '/dashboard')
     writeSessionToken('member-token')
     const activeRun = {
       id: 'run-active',
@@ -796,7 +458,7 @@ Use \`report.csv\` for details.
       embedded_chunk_count: 4,
       completed_at: '2026-09-24T08:01:00Z',
     }
-    installApi(owner, [workspace], undefined, undefined, {
+    installApi(owner, [workspace], undefined, {
       active: { item: activeRun },
       recent: {
         items: [activeRun, completedRun],
@@ -808,7 +470,7 @@ Use \`report.csv\` for details.
 
     render(<App />)
 
-    await screen.findByRole('region', { name: 'Conversation' })
+    await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })
     const notificationButton = await screen.findByRole('button', {
       name: 'Open processing notifications, 2 recent runs',
     })
@@ -829,7 +491,7 @@ Use \`report.csv\` for details.
     // against the polling code too and prove nothing.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
-      window.history.replaceState(null, '', '/ask-context')
+      window.history.replaceState(null, '', '/dashboard')
       writeSessionToken('member-token')
       const fetchMock = installApi(owner, [workspace])
       const countProcessingRequests = () => fetchMock.mock.calls.filter(([input]) => {
@@ -855,7 +517,7 @@ Use \`report.csv\` for details.
   })
 
   it('reloads processing activity only when Refresh is pressed', async () => {
-    window.history.replaceState(null, '', '/ask-context')
+    window.history.replaceState(null, '', '/dashboard')
     writeSessionToken('member-token')
     const firstRun = {
       id: 'run-first',
@@ -881,7 +543,7 @@ Use \`report.csv\` for details.
         since: '2026-09-24T07:00:00Z',
       },
     }
-    installApi(owner, [workspace], undefined, undefined, processingResponses)
+    installApi(owner, [workspace], undefined, processingResponses)
     const user = userEvent.setup()
 
     render(<App />)
@@ -909,14 +571,14 @@ Use \`report.csv\` for details.
   })
 
   it('closes the slide-in navigation with Escape and the backdrop', async () => {
-    window.history.replaceState(null, '', '/ask-context')
+    window.history.replaceState(null, '', '/dashboard')
     writeSessionToken('member-token')
     installApi(owner)
     const user = userEvent.setup()
 
     render(<App />)
 
-    await screen.findByRole('region', { name: 'Conversation' })
+    await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })
     const openNavigation = screen.getByRole('button', { name: 'Open navigation' })
     await user.click(openNavigation)
     expect(screen.getByRole('dialog', { name: 'Primary navigation' })).toBeInTheDocument()
@@ -945,7 +607,7 @@ Use \`report.csv\` for details.
       created_at: '2026-09-24T08:00:00Z',
       duplicate: false,
     }
-    installApi(owner, [workspace], undefined, undefined, {}, {
+    installApi(owner, [workspace], undefined, {}, {
       list: { items: [document], total: 1, offset: 0, limit: 50 },
       deleted,
     })
@@ -994,7 +656,7 @@ Use \`report.csv\` for details.
     }
     // Deliberately a platform admin. An admin bypass is the exact mistake
     // this guards: load_workspace_access has none, so the button would 404.
-    installApi(admin, [viewerWorkspace], undefined, undefined, {}, {
+    installApi(admin, [viewerWorkspace], undefined, {}, {
       list: {
         items: [{
           id: 'document-viewer',

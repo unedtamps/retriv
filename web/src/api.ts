@@ -1,13 +1,10 @@
 import type {
   AdminUserList,
   ActiveProcessingRun,
-  AgentConversation,
-  AgentConversationList,
-  AgentConversationTurn,
-  AgentConversationTurnList,
+  ApiKeyList,
+  CreatedApiKey,
   CreatedUser,
   CurrentUser,
-  ContextAnswer,
   DocumentList,
   DocumentUpload,
   GeneratedPassword,
@@ -195,84 +192,6 @@ export const api = {
     return request<ProcessingRunList>('/v1/processing-runs/recent', { token, signal })
   },
 
-  askContext(token: string, question: string, signal?: AbortSignal): Promise<ContextAnswer> {
-    return request<ContextAnswer>('/v1/agent/ask', {
-      token,
-      method: 'POST',
-      signal,
-      ...jsonOptions({ question }),
-    })
-  },
-
-  listAgentConversations(
-    token: string,
-    options: PageOptions = {},
-  ): Promise<AgentConversationList> {
-    const params = new URLSearchParams({
-      offset: String(options.offset ?? 0),
-      limit: String(options.limit ?? 50),
-    })
-    return request<AgentConversationList>(
-      `/v1/agent/conversations?${params}`,
-      { token, signal: options.signal },
-    )
-  },
-
-  createAgentConversation(
-    token: string,
-    title?: string,
-  ): Promise<AgentConversation> {
-    return request<AgentConversation>('/v1/agent/conversations', {
-      token,
-      method: 'POST',
-      ...jsonOptions(title === undefined ? {} : { title }),
-    })
-  },
-
-  listAgentConversationTurns(
-    token: string,
-    conversationId: string,
-    options: PageOptions = {},
-  ): Promise<AgentConversationTurnList> {
-    const params = new URLSearchParams({
-      offset: String(options.offset ?? 0),
-      limit: String(options.limit ?? 50),
-    })
-    return request<AgentConversationTurnList>(
-      `/v1/agent/conversations/${encodeURIComponent(conversationId)}/turns?${params}`,
-      { token, signal: options.signal },
-    )
-  },
-
-  sendAgentConversationTurn(
-    token: string,
-    conversationId: string,
-    requestId: string,
-    question: string,
-    signal?: AbortSignal,
-  ): Promise<AgentConversationTurn> {
-    return request<AgentConversationTurn>(
-      `/v1/agent/conversations/${encodeURIComponent(conversationId)}/turns`,
-      {
-        token,
-        method: 'POST',
-        signal,
-        ...jsonOptions({ request_id: requestId, question }),
-      },
-    )
-  },
-
-  deleteAgentConversation(
-    token: string,
-    conversationId: string,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    return request<void>(
-      `/v1/agent/conversations/${encodeURIComponent(conversationId)}`,
-      { token, method: 'DELETE', signal },
-    )
-  },
-
   listAdminUsers(token: string, options: UserPageOptions = {}): Promise<AdminUserList> {
     const params = new URLSearchParams({
       offset: String(options.offset ?? 0),
@@ -363,6 +282,25 @@ export const api = {
       ? adminMemberPath(workspaceId, userId)
       : ownerMemberPath(workspaceId, userId)
     return request<void>(path, { token, method: 'DELETE' })
+  },
+
+  listApiKeys(token: string, signal?: AbortSignal): Promise<ApiKeyList> {
+    return request<ApiKeyList>('/v1/api-keys', { token, signal })
+  },
+
+  createApiKey(token: string, name: string): Promise<CreatedApiKey> {
+    return request<CreatedApiKey>('/v1/api-keys', {
+      token,
+      method: 'POST',
+      ...jsonOptions({ name }),
+    })
+  },
+
+  revokeApiKey(token: string, keyId: string): Promise<void> {
+    return request<void>(`/v1/api-keys/${encodeURIComponent(keyId)}`, {
+      token,
+      method: 'DELETE',
+    })
   },
 }
 

@@ -375,6 +375,9 @@ class RaisingStorage:
     def check_health(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover
         raise AssertionError("not reached")
 
+    def presign_get(self, *, bucket: str, key: str, expires_in: int) -> str:
+        raise AssertionError("not reached")
+
     def open_object(self, *, bucket: str, key: str) -> Any:
         from botocore.exceptions import ClientError
 

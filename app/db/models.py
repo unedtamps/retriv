@@ -290,9 +290,21 @@ class DocumentRow(Base):
             "processing_run_id", "row_number", name="uq_document_rows_run_row"
         ),
         Index("ix_document_rows_active_lookup", "workspace_id", "processing_run_id"),
-        # The model writes filter predicates into JSONB keys, so a GIN index
-        # is what makes `data->>'status' = 'OPEN'` an index lookup rather than
-        # a scan across every workspace's rows.
+        # The one index that answers the query every caller makes. RowQuery
+        # refuses a statement that does not name a document_id, so this
+        # predicate is present in every statement it will run -- and without an
+        # index on it, each one began with a sequential scan of the whole
+        # table. With it, a query reads its one file and costs the same
+        # whether the workspace holds ten files or ten thousand.
+        Index("ix_document_rows_document", "document_id"),
+        # A GIN index over the payload, using the default jsonb_ops operator
+        # class. Correcting an earlier claim in this file: that operator class
+        # accelerates `@>`, `?`, `?|` and `?&`, and NOT the `data->>'col' = x`
+        # form that model-written statements actually use -- that stays a
+        # scan. It is kept because it is the only index that can answer a
+        # key-existence question, and the row cost is small next to the
+        # document_id index above; it is not what makes a row query fast, and
+        # the comment should not pretend otherwise.
         Index("ix_document_rows_data", "data", postgresql_using="gin"),
     )
 
@@ -354,68 +366,34 @@ class ChunkEmbedding(Base):
     )
 
 
-class AgentConversation(Base):
-    __tablename__ = "agent_conversations"
-    __table_args__ = (
-        Index("ix_agent_conversations_owner_updated", "owner_user_id", "updated_at"),
-    )
+class ApiKey(Base):
+    """A long-lived bearer credential for one user.
+
+    Only ``key_hash`` is stored: the plaintext is shown once at creation and
+    cannot be recovered. Lookup goes through the SHA-256 hash, so there is no
+    column to index that an attacker with read access could use directly --
+    the hash is the credential, and it is what gets rate-checked on use.
+
+    The key carries no workspace scope of its own. Scope is derived from the
+    owning user's live memberships on every request, so removing a member
+    takes effect immediately instead of waiting for a key to expire.
+    """
+
+    __tablename__ = "api_keys"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    owner_user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    title: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    next_sequence: Mapped[int] = mapped_column(default=1, server_default="1")
-    active_turn_id: Mapped[UUID | None] = mapped_column(nullable=True)
-    active_turn_started_at: Mapped[datetime | None] = mapped_column(
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-
-
-class AgentConversationTurn(Base):
-    __tablename__ = "agent_conversation_turns"
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('processing', 'completed', 'failed')",
-            name="agent_conversation_turn_status",
-        ),
-        UniqueConstraint(
-            "conversation_id", "sequence", name="uq_agent_turns_conversation_sequence"
-        ),
-        UniqueConstraint(
-            "conversation_id", "request_id", name="uq_agent_turns_conversation_request"
-        ),
-        Index("ix_agent_turns_conversation_sequence", "conversation_id", "sequence"),
-    )
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    reservation_token: Mapped[UUID] = mapped_column(nullable=False, default=uuid4)
-    conversation_id: Mapped[UUID] = mapped_column(
-        ForeignKey("agent_conversations.id", ondelete="CASCADE"), nullable=False
-    )
-    request_id: Mapped[UUID] = mapped_column(nullable=False)
-    sequence: Mapped[int] = mapped_column(nullable=False)
-    question: Mapped[str] = mapped_column(Text, nullable=False)
-    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_refs: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON_TYPE, default=list, server_default="[]", nullable=False
-    )
-    source_workspace_ids: Mapped[list[str]] = mapped_column(
-        JSON_TYPE, default=list, server_default="[]", nullable=False
-    )
-    status: Mapped[str] = mapped_column(
-        String(16), default="processing", server_default="processing", nullable=False
-    )
-    failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
+    revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

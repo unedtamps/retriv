@@ -1,10 +1,8 @@
-import asyncio
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 import httpx
 import pytest
@@ -14,11 +12,6 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.agent.dependencies import get_answer_harness
-from app.agent.schemas import (
-    AgentHistoryMessage,
-    AnswerResponse,
-)
 from app.core.config import Settings, get_settings
 from app.db.models import User, Workspace, WorkspaceMembership
 from app.db.session import Base, get_session
@@ -38,9 +31,11 @@ class InMemoryObjectStorage:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.metadata: dict[tuple[str, str], dict[str, str]] = {}
+        self.presigned: list[tuple[str, str, int]] = []
         self.upload_error = False
         self.open_error = False
         self.delete_error = False
+        self.presign_error = False
 
     def upload_file(
         self,
@@ -63,6 +58,23 @@ class InMemoryObjectStorage:
             return BytesIO(self.objects[(bucket, key)])
         except KeyError as exc:
             raise ObjectNotFoundError("Object does not exist") from exc
+
+    def presign_get(self, *, bucket: str, key: str, expires_in: int) -> str:
+        """A stand-in for a SigV4 URL, with the shape the tool depends on.
+
+        The expiry and signature parameters are real in the URL a test sees,
+        so a test can assert the tool handed out a time-limited address rather
+        than a permanent one. No signature is actually computed.
+        """
+        self.presigned.append((bucket, key, expires_in))
+        if self.presign_error:
+            raise StorageError("Injected presign failure")
+        if (bucket, key) not in self.objects:
+            raise ObjectNotFoundError("Object does not exist")
+        return (
+            f"https://objects.example.test/{bucket}/{key}"
+            f"?X-Amz-Expires={expires_in}&X-Amz-Signature=stub"
+        )
 
     def delete_object(self, *, bucket: str, key: str) -> None:
         if self.delete_error:
@@ -110,8 +122,6 @@ def settings(tmp_path: Path) -> Settings:
         s3_raw_bucket="raw-documents",
         s3_artifact_bucket="context-documents",
         qdrant_read_only_api_key=SecretStr("test-qdrant-read-only-key-xxxxxxxxxx"),
-        chat_api_key=SecretStr("test-chat-api-key-xxxxxxxxxxxxxxxxxxx"),
-        chat_model="test-provider/test-model",
         antivirus_enabled=False,
         upload_temp_dir=tmp_path,
         max_upload_bytes=1024 * 1024,
@@ -156,58 +166,12 @@ def scanner() -> CleanScanner:
     return CleanScanner()
 
 
-class FakeAnswerHarness:
-    """Stands in for the real harness.
-
-    Records the question, the derived workspace scope, and the history it
-    was handed, so a test can assert what the route computed from the
-    caller's memberships. Results are queued so a test can return
-    something different per call, raise on the first call only, or block
-    on an event to test concurrency.
-    """
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, list[UUID], list[AgentHistoryMessage]]] = []
-        self.results: list[AnswerResponse | Exception] = []
-        self.default = AnswerResponse(answer="Stub answer [1].", sources=[])
-        self.gate: asyncio.Event | None = None
-        self.gate_question: str | None = None
-        self.entered = asyncio.Event()
-
-    async def answer(
-        self,
-        question: str,
-        workspace_ids: list[UUID],
-        history: list[AgentHistoryMessage],
-    ) -> AnswerResponse:
-        self.calls.append((question, list(workspace_ids), list(history)))
-        # Claim the queued result before blocking. A gated call holds the
-        # conversation, so a later takeover must not take the result the
-        # gated call was scripted to return.
-        result = self.results.pop(0) if self.results else self.default
-        if self.gate is not None and question == self.gate_question:
-            self.entered.set()
-            await self.gate.wait()
-        if isinstance(result, Exception):
-            raise result
-        return result
-
-    async def aclose(self) -> None:
-        return
-
-
-@pytest.fixture
-def answer_harness() -> FakeAnswerHarness:
-    return FakeAnswerHarness()
-
-
 @pytest.fixture
 def app(
     settings: Settings,
     db_session_factory: async_sessionmaker[AsyncSession],
     object_storage: ObjectStorage,
     scanner: MalwareScanner,
-    answer_harness: FakeAnswerHarness,
 ) -> Iterator[Any]:
     application = create_app(settings)
 
@@ -219,7 +183,6 @@ def app(
     application.dependency_overrides[get_session] = override_session
     application.dependency_overrides[get_object_storage] = lambda: object_storage
     application.dependency_overrides[get_malware_scanner] = lambda: scanner
-    application.dependency_overrides[get_answer_harness] = lambda: answer_harness
     yield application
     application.dependency_overrides.clear()
 

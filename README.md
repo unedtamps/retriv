@@ -1,12 +1,13 @@
 # Retriv
 
 Backend untuk menerima dokumen perusahaan dengan scope per workspace, mengindeksnya, dan
-menjawab pertanyaan di atasnya.
+menyajikannya sebagai tool MCP: `find_documents` untuk mencari berkas, `search_context`
+untuk prosa, `query_rows` untuk CSV, `download_document` untuk berkas aslinya.
 
 Satu aplikasi. Satu database. Dua entrypoint lain: worker pemrosesan dan provisioning.
 
 ```
-app/          the HTTP application: auth, documents, processing status, answers
+app/          the HTTP application: auth, documents, processing status, the MCP server
 worker/       the extraction worker: Docling, chunking, embedding (separate process)
 provisioning/ the one-shot CLI that creates the first users and workspaces
 alembic/      one migration history, one database
@@ -31,15 +32,15 @@ flowchart LR
     end
     subgraph external["external"]
         L["LM Studio<br/>:1234"]
-        O["chat model<br/>OpenAI-compatible"]
+        X["MCP client<br/>Claude Code, Codex, custom agent"]
     end
 
     W -->|"/v1 with a bearer token"| A
+    X -->|"/mcp with an API key"| A
     A --> DB
     A --> Q
     A --> M
     A --> C
-    A -->|HTTPS| O
     K --> DB
     K --> Q
     K -->|artifact bucket| M
@@ -99,9 +100,6 @@ PDF away from the request path.
 - `uv` for local test/lint, or Python 3.12+.
 - An OpenAI-compatible embedding server on `127.0.0.1:1234` that is reachable from the
   worker container.
-- A chat API key for answers, and the model id to use with it. The endpoint
-  need not be OpenRouter: the harness picks `OpenRouterModel` or `OpenAIChatModel` from
-  `CHAT_BASE_URL`, so any OpenAI-compatible service works.
 - About 4 GiB of RAM for ClamAV on first startup.
 
 ## Running locally
@@ -110,9 +108,9 @@ PDF away from the request path.
 cp .env.example .env
 ```
 
-Fill in every `CHANGE ME`. The only one that cannot be generated for you is the chat
-key; the rest are `openssl rand -hex 32`. Until the chat key and model are set, uploads
-and indexing work and questions return a provider error.
+Fill in every `CHANGE ME`; the generated ones are `openssl rand -hex 32`. There is no
+model-provider key to hunt for: uploads, indexing, and retrieval all work as soon as the
+stack is up.
 
 ```bash
 make migrate   # start infrastructure and apply the schema
@@ -145,59 +143,120 @@ Everything is in Docker named volumes under the `retriv-api` project:
 Nothing is bind-mounted. `docker compose down` keeps the data; `docker compose down -v`
 deletes all of it.
 
-## Asking a question
+## Asking a question over MCP
+
+Retrieval is served as MCP tools at `/mcp` (streamable HTTP, mounted in the same
+FastAPI app). A client -- Claude Code, Codex, or anything that speaks the protocol --
+keeps `Authorization: Bearer rk_...` on every request. The key identifies a user; the
+workspaces it can see are derived live from that user's memberships, so demoting or
+removing the user narrows the next call rather than the next login.
+
+The tools are `find_documents`, `search_context`, `list_queryable_files`,
+`query_rows`, and `download_document`. `query_rows` is registered only when `RETRIV_SQL_DATABASE_URL` is
+set: an absent tool is something a model stops trying, whereas a tool that always
+answers "not enabled" is one it keeps retrying.
+
+Nothing here writes. Upload, status and deletion live in the HTTP API and the dashboard,
+because they are decisions a person takes rather than ones a model should reach for
+unprompted. An API key is therefore read-only: a leaked one exposes documents the holder
+could already search, and can destroy nothing.
 
 A turn has two possible doors into the documents. `search_context` retrieves prose by
-meaning; `query_rows` runs SQL over tabular rows. The model is offered both and picks,
-which is why the catalogue is in every prompt it sees.
+meaning; `query_rows` runs SQL over tabular rows. The client's model picks, which is
+why `list_queryable_files` exists and why the CSV catalogue is repeated inside the row
+tool's reply.
+
+`find_documents` is the door in rather than the way out: it maps a name to a
+document_id. Without it a model can only learn an id from a search result or the CSV
+catalogue, so naming a file in a question is not something it can act on. It reports
+each match's status, because `ready` is the difference between a document that answers
+a question and one that returns nothing yet, and each match's size and workspace,
+because **filenames are not unique** -- only content is, per workspace, so two revisions
+of one document both appear and have to be told apart by the caller.
+
+`download_document` is the way out to the file itself, and it is worth understanding what
+it deliberately does not do: it returns addresses and metadata, never the bytes. A tool
+result is what lands in the model's context, so a 566 KB PDF delivered as a result is
+roughly 189k tokens of base64 in the prompt. Instead it returns two ways to fetch the
+file:
+
+| Field | Points at | Needs a header | Permission re-checked |
+|---|---|---|---|
+| `link` | the object store, signed | no | once, when minted |
+| `url` | this API's `/download` route | yes, the same API key | on every request |
+
+`link` is a SigV4 presigned GET, valid for `mcp_download_link_ttl_seconds` (default 300,
+capped at an hour). It needs no credential at all, which is what makes it usable as a
+plain click, and it points straight at MinIO -- the request never touches this process
+again. The cost is that it is a bearer credential which **cannot be revoked before it
+expires**, so the `download` permission is checked once when it is minted and the window
+is kept short on purpose. `url` is the conservative alternative: slower (bytes stream
+through the API) but revocable, and it works anywhere the API is reachable.
+
+Because `link` names the object store directly, whoever receives it must be able to
+reach MinIO. Out of the box that is `127.0.0.1:9000`, so the link is usable by an agent
+on this machine and by nobody else; exposing it to a browser elsewhere means putting
+MinIO behind a public TLS hostname, which is an infrastructure decision this tool does
+not make.
+
+The secret key never appears in a signed URL -- only the access key ID does, which is an
+identifier rather than a credential, and MinIO's IAM policy is what actually bounds it.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as User
-    participant A as app
-    participant H as harness
-    participant L as chat model
+    actor U as Operator
+    participant C as MCP client
+    participant A as app (/mcp)
     participant E as LM Studio
     participant Q as Qdrant
     participant DB as PostgreSQL
+    participant M as MinIO
 
-    U->>A: POST /v1/agent/ask
-    A->>DB: derive workspace_ids from memberships
-    A->>H: answer(question, workspace_ids)
-    H->>H: read the CSV catalogue (up to 100 files)
-    H->>L: question + catalogue + search_context + query_rows
-    L-->>H: search_context or query_rows
-    H->>E: embed the query, if searching
-    E-->>H: vector
-    H->>Q: search, filter workspace_id IN scope
-    H->>DB: re-validate every point against PostgreSQL
-    H->>L: validated evidence
-    H->>DB: or run SQL as the reader role, read-only, RLS applies the scope
-    DB-->>H: rows, or values for an aggregate
-    H->>L: evidence, one citable source per file
-    L-->>H: an answer citing [1], [2]
-    H-->>A: answer + sources
-    A->>A: refuse if any source is outside the scope
-    A-->>U: the answer with its sources
+    U->>C: what does the procurement manual say?
+    C->>A: POST /mcp, Authorization: Bearer rk_...
+    A->>A: key hash -> user, refuse if revoked
+    A->>DB: memberships holding search_context -> workspace_ids
+    C->>A: tools/call find_documents(pattern)
+    A->>DB: filename match, status, size, workspace
+    A-->>C: matching documents and their document_ids
+    C->>A: tools/call search_context(query)
+    A->>E: embed the query
+    E-->>A: vector
+    A->>Q: search, filter workspace_id IN scope
+    A->>DB: re-validate every point against PostgreSQL
+    A-->>C: labelled sources, one citation each
+    Note over C,A: or list_queryable_files, then query_rows(sql)
+    A->>DB: allowlist, read-only, retriv_reader, RLS
+    DB-->>A: rows, or values for an aggregate
+    A-->>C: the evidence, or "no relevant sources"
+    Note over C,A: or download_document, which returns two addresses
+    A->>DB: membership holding download, checked once
+    A-->>C: link (signed, short-lived) and url (this API)
+    C->>M: GET the signed link, no header
+    M-->>C: the original bytes
 ```
 
-Four things keep this honest, and all four survive the merge:
+Four things keep this honest:
 
 1. **The scope is derived from the caller's own membership table**, not from a
-   client-supplied list. There is no signed token to forge, because there is no second
-   service to receive one.
+   client-supplied list. Naming a `workspace_id` can only narrow the set the key
+   already had; it cannot widen it, and the refusal is the same for "not yours" and
+   "does not exist".
 2. **The `search_context` tool accepts a query and nothing else.** A model has no
    argument with which to argue for a wider scope.
 3. **Every Qdrant point is re-validated against PostgreSQL**, including a recomputed
    `content_hash`. A vector whose chunk is gone, stale, or from a superseded run never
-   reaches the model.
-4. **The route re-checks the sources on the way out.** Reaching that check means the
-   harness itself drifted, so the whole answer is refused rather than returned in part.
+   reaches the client.
+4. **`RowQuery` re-checks the result on the way out.** Every row it returns must carry
+   the one `document_id` the statement was written against; a result spanning two files
+   is refused rather than rendered.
 
-A turn that cited a workspace the caller has since lost stays visible in their private
-transcript, but its sources are blanked and it is never replayed as context. Greeting-only
-messages skip retrieval entirely, so a user with no workspace can still say hello.
+The key is checked twice on purpose. The endpoint middleware answers "is this a live
+credential?" before a byte of the JSON-RPC body is read, and every tool re-derives the
+caller from its own request headers, because tool handlers run in the session manager's
+task group rather than in the HTTP request that carried them. Revoking a key therefore
+takes effect on the next call, not at the end of a session.
 
 ### Asking a spreadsheet question
 
@@ -227,13 +286,53 @@ the model cannot name it at all.
 `verify_reader()` refuses to run if the configured role turns out to be `SUPERUSER` or to
 hold `BYPASSRLS`, which would make every layer above irrelevant.
 
-The role is set up by migration `0003_row_catalogue`, which grants `SELECT` on the three
-tables a query legitimately needs and enables `FORCE ROW LEVEL SECURITY` on all of them.
-Point `SQL_DATABASE_URL` at that role, not at the application DSN: the tool works against
-a full-privilege connection, but then nothing below is doing any work. Leaving the setting
+### Where the reader role comes from
+
+`FORCE ROW LEVEL SECURITY` is on all three tables and `verify_reader()` refuses a role that
+could ignore it. The role itself is created by `postgres-init`, a one-shot compose service
+that runs on `docker compose up` alongside `minio-init`:
+
+```mermaid
+flowchart LR
+    U["docker compose up"] --> MI["minio-init<br/>MinIO users and buckets"]
+    U --> PI["postgres-init<br/>retriv_reader + grants"]
+    PI --> R["role created,<br/>NOSUPERUSER NOBYPASSRLS"]
+    R --> G["GRANT SELECT on<br/>document_rows, documents,<br/>processing_runs"]
+```
+
+This was a documented manual `CREATE ROLE` once, and that turned out to be the worst
+possible place for it. Migrations `0002` and `0003` grant to the role **only if it already
+exists** — a password must never land in a migration, so a GRANT against a role that was
+never created aborts the whole upgrade. Skipping the manual step therefore produced a
+deployment that migrated cleanly, provisioned cleanly, and then refused to start, with
+nothing in the output naming the step that was missed.
+
+The script is idempotent and applies the grants itself rather than relying on migration
+order, so both directions work: a fresh volume gets its tables from `alembic` and its
+grants from the script, an existing volume gets both repaired. It also re-asserts
+`NOSUPERUSER NOBYPASSRLS` and resets the password on every run, so rotating the secret in
+`.env` takes effect on the next `compose up`, and a role promoted by hand is demoted rather
+than quietly keeping privileges the policies do not constrain.
+
+`make sql-role` runs just this step. It is the recovery path for a dropped role, and it is
+also wired into `make api`, which otherwise does not go through `infra` and would leave a
+developer on a fresh clone with a failure whose cause is a service they never named.
+
+Point `RETRIV_SQL_DATABASE_URL` at that role, not at the application DSN: the tool works
+against a full-privilege connection, but then nothing above is doing any work. Leaving it
 unset is the safe default — the tool is never registered and the model cannot reach a
 table, while the catalogue still lists the files through the app's own session so it can
 tell the user the data exists but is not queryable.
+
+The password exists twice by necessity — the script creates the role with
+`RETRIV_SQL_READER_PASSWORD`, and asyncpg authenticates with the copy inside the DSN — and
+nothing interpolates between them. The settings layer compares the two at startup, because
+the alternative is a deployment that fails in `verify_reader()` with a message blaming the
+DSN rather than the value that actually disagrees with it.
+
+```bash
+make sql-role   # create or repair the role and its grants
+```
 
 Two rules keep a query from silently answering a question about the wrong file. A query
 must mention a `document_id` literal, and rows returning more than one `document_id` are
@@ -244,31 +343,15 @@ statement rather than searching its text.
 
 ### How a CSV answer is cited
 
-An aggregate has no row to point at, so it cannot be cited the way a quoted line is. It
-is cited against **the file it was computed from**, once:
+An aggregate has no row to point at, so it cannot be cited the way a quoted line is.
+`query_rows` reports it as values and says so outright -- "these values are computed from
+the rows, so there is no single row to cite" -- so a count is never dressed up as a
+quotation. Row results are the opposite: each row becomes one source, and two files
+still yield two sources, because they are different evidence.
 
-```mermaid
-flowchart LR
-    subgraph "one group-by over 7 columns"
-        Q1["q1: sum by quarter"] --> S
-        Q2["q2: min/max check"] --> S
-        Q3["q3: row count"] --> S
-    end
-    S["ledger: one ContextSource<br/>chunk_id = uuid5(document_id, 'aggregate')"] --> U["1 citation"]
-    style U stroke-width:2px
-```
-
-The constant namespace is the point. A group-by that returns seven rows is still one
-piece of evidence, and emitting a source per computed row filled the citation list with
-twenty-one entries for the same file — most of them from the model checking its own
-arithmetic. Two different files still yield two citations, which is correct: they are
-different evidence.
-
-The locator follows from the same rule. A source is located by page if it has one, by
-row if it has one, and by nothing at all if it has neither — which is the case for every
-aggregate and for every DOCX chunk, since Docling emits no `page_no` for DOCX. The older
-"Page unavailable" string described a document kind rather than a fault, so it named the
-wrong thing for every source that lacked pages.
+A source is located by page if it has one and by nothing if it does not. Every CSV row
+carries `pages=unknown`, for the plain reason that a row has no page and inventing one
+would make a citation point at the wrong place.
 
 ## How a document becomes searchable
 
@@ -426,66 +509,6 @@ While the cleanup is in flight the `(workspace_id, sha256)` unique constraint st
 holds the row, which is why an identical re-upload is refused rather than silently
 creating a duplicate.
 
-## Asking a question about a document
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as User
-    participant A as app
-    participant DB as PostgreSQL
-    participant H as harness
-    participant L as chat model
-    participant E as LM Studio
-    participant Q as Qdrant
-
-    U->>A: POST /v1/agent/ask
-    A->>DB: SELECT workspace_ids from memberships<br/>where role has search_context
-    alt the user is in no searchable workspace
-        A-->>U: 403 context_access_required
-    end
-    A->>H: answer(question, workspace_ids)
-
-    loop at most 10 tool calls, 3 model requests each
-        H->>L: messages + the search_context tool
-        L-->>H: calls search_context with a query
-        H->>E: embed the query
-        E-->>H: vector
-        H->>Q: search, filter workspace_id IN scope AND profile matches
-        Q-->>H: points and payloads
-        H->>DB: re-validate every point: the document is not deleted,<br/>the run is the active one, the chunk is indexed,<br/>profile and dimensions match, content_hash matches
-        H->>H: reject the result if any point is out of scope<br/>or fails validation
-        H->>L: the validated evidence
-        L-->>H: an answer citing [1], [2]
-    end
-
-    H-->>A: answer + sources
-    A->>A: refuse if any source is outside the scope
-    A-->>U: the answer with its sources
-```
-
-Four things keep this honest, and all four survive the merge:
-
-1. **The scope is derived from the caller's own membership table**, not from a
-   client-supplied list. There is no signed token to forge, because there is no second
-   service to receive one.
-2. **The `search_context` tool accepts a query and nothing else.** A model has no
-   argument with which to argue for a wider scope.
-3. **Every Qdrant point is re-validated against PostgreSQL**, including a recomputed
-   `content_hash`. A vector whose chunk is gone, stale, or from a superseded run never
-   reaches the model.
-4. **The route re-checks the sources on the way out.** Reaching that check means the
-   harness itself drifted, so the whole answer is refused rather than returned in part.
-
-A turn that cited a workspace the caller has since lost stays visible in their private
-transcript, but its sources are blanked and it is never replayed as context. Greeting-only
-messages skip retrieval entirely, so a user with no workspace can still say hello.
-
-The three tool limits are one budget, and the evidence a turn can actually hold is
-`min(MAX_CURRENT_SOURCES, MAX_TOOL_CALLS * (max_context_chunks + heading_expand_chunks))`.
-The second term binds first, so raising the source ceiling alone does nothing. A test
-asserts the inequality so the two cannot drift apart silently.
-
 ## Authentication and revocation
 
 ```mermaid
@@ -516,6 +539,25 @@ sequenceDiagram
 immediately rather than at token expiry: the claim is compared against the row on every
 request, so bumping the counter invalidates every outstanding token at once. The
 `admin` platform role is orthogonal to workspace roles and grants no data access.
+
+API keys are a second, longer-lived credential for the same user. One is created from the
+dashboard, shown in plaintext exactly once, and stored as a SHA-256 hash alongside a short
+display prefix -- nothing on disk can be turned back into a usable key. No scope is stored
+on the key: the workspaces it reaches are read from the owning user's memberships on every
+request, so demoting the user, disabling them, or revoking the key each narrow the next
+tool call on their own.
+
+A key reaches exactly two things: `/mcp`, and the one HTTP route `download_document`
+points at -- `GET /v1/workspaces/{id}/documents/{id}/download`, which is why that route
+accepts a key where every other route still requires the dashboard's JWT. It exists so an
+agent can fetch the bytes a tool pointed it at without the file passing through the model.
+That is the entire blast radius: an agent key can read and download, and reaches no write
+endpoint, no other user's data, and nothing outside the holder's workspaces.
+
+The signed `link` the tool hands out is a third thing a holder of a document's address can
+do, and it is deliberately weaker than the key: it names one object, cannot be narrowed,
+and dies on its own. Revoking the key does not revoke a link already issued, which is
+the one guarantee an operator cannot have here.
 
 ## Provisioning
 
@@ -573,8 +615,7 @@ erDiagram
     workspaces ||--o{ workspace_memberships : "has"
     workspaces ||--o{ documents : "contains"
     users ||--o{ documents : "uploaded, nullable"
-    users ||--o{ agent_conversations : "owns"
-    agent_conversations ||--o{ agent_conversation_turns : "contains"
+    users ||--o{ api_keys : "owns"
     documents ||--o{ processing_runs : "is processed by"
     processing_runs ||--o{ document_chunks : "produces, PDF or DOCX"
     processing_runs ||--o{ document_rows : "produces, CSV"
@@ -585,6 +626,13 @@ erDiagram
         text username UK
         text role "admin or user"
         int auth_version "bumped to revoke tokens"
+    }
+    api_keys {
+        uuid id PK
+        uuid user_id FK
+        text key_prefix "displayed only"
+        text key_hash UK "SHA-256 of the key"
+        timestamptz revoked_at
     }
     workspace_memberships {
         uuid user_id PK
@@ -647,7 +695,7 @@ returned cell, and repeating a header across 100k rows is the cost this design a
 
 `document_rows.data` is JSONB and read with `->>`, which is why a SQL error saying
 `column "year" does not exist` comes back to the model as a hint naming `data->>'Year'`
-rather than as a failure. The harness translates the error rather than replaying it,
+rather than as a failure. The tool translates the error rather than replaying it,
 because the model can fix the second query and cannot fix a bare failure.
 
 ## Development

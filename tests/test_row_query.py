@@ -13,6 +13,8 @@ comment.
 """
 
 
+from uuid import UUID, uuid4
+
 import pytest
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -181,3 +183,58 @@ def test_an_unknown_failure_stays_generic() -> None:
         _explain(_failing(RuntimeError("connection reset by peer")))
         == "The query could not be executed."
     )
+
+
+_ROW_KEYS = (
+    "id",
+    "workspace_id",
+    "document_id",
+    "processing_run_id",
+    "row_number",
+    "data",
+)
+
+
+def _result_row(document_id: UUID) -> tuple[object, ...]:
+    """One row, shaped the way Postgres hands it back."""
+    return (
+        uuid4(),
+        uuid4(),
+        document_id,
+        uuid4(),
+        1,
+        {"id": "1", "amount": "1500.00"},
+    )
+
+
+def test_a_result_spanning_two_files_is_refused() -> None:
+    """The statement's own text is not the witness; the rows are.
+
+    A ``document_id`` can appear in a statement without narrowing anything,
+    so no presence test on the SQL can tell two files apart. The rows are the
+    only thing that knows. This is the single place the rule is enforced now:
+    ``RowQuery.run`` applies it, and neither the agent nor the MCP tool
+    carries its own copy.
+    """
+    with pytest.raises(RowQueryError, match="rows came from 2 files"):
+        runner()._to_results([_result_row(uuid4()), _result_row(uuid4())], _ROW_KEYS)
+
+
+def test_a_result_from_one_file_is_kept() -> None:
+    document_id = uuid4()
+    outcome = runner()._to_results(
+        [_result_row(document_id), _result_row(document_id)], _ROW_KEYS
+    )
+    assert [row.document_id for row in outcome.sources] == [document_id, document_id]
+
+
+def test_a_value_only_result_has_nothing_to_span() -> None:
+    """An aggregate returns no rows, so there is nothing for the check to see.
+
+    It is still guarded, by the caller's requirement that the statement name
+    a document_id -- which is why that check stays where it is rather than
+    moving in here.
+    """
+    outcome = runner()._to_results([(12,)], ("count",))
+    assert outcome.sources == []
+    assert outcome.values == [{"count": 12}]

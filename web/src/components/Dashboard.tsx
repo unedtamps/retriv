@@ -4,10 +4,10 @@ import {
   BookOpenText,
   Building2,
   CheckCircle2,
-  CircleHelp,
   ChevronRight,
   CircleSlash2,
   FileUp,
+  KeyRound,
   LayoutGrid,
   LogOut,
   Menu,
@@ -20,12 +20,12 @@ import {
 } from 'lucide-react'
 import type { AppRoute, CurrentUser, OneTimeCredential, Workspace } from '../types'
 import { AdminUserPanel } from './AdminUserPanel'
+import { ApiKeysPanel } from './ApiKeysPanel'
 import { Brand } from './LoginScreen'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { CredentialDialog } from './CredentialDialog'
 import { ProcessingNotifications } from './ProcessingNotifications'
 import { UploadContext } from './UploadContext'
-import { AskContext } from './AskContext'
 import { WorkspaceDrawer } from './WorkspaceDrawer'
 
 interface DashboardProps {
@@ -140,7 +140,7 @@ export function Dashboard({
         </button>
         <Brand />
         <span className="ml-auto hidden font-mono text-[0.65rem] uppercase tracking-[0.14em] text-stone-500 sm:block">
-          {route === '/ask-context' ? 'Workspace knowledge' : route === '/upload-context' ? 'Document ingestion' : 'Workspace governance'}
+          {route === '/upload-context' ? 'Document ingestion' : 'Workspace governance'}
         </span>
         <ProcessingNotifications
           token={token}
@@ -182,15 +182,6 @@ export function Dashboard({
         </div>
         <nav className="mt-10 space-y-2" aria-label="Main navigation">
           <a
-            className={route === '/ask-context' ? 'nav-item nav-item-active' : 'nav-item'}
-            href="/ask-context"
-            aria-current={route === '/ask-context' ? 'page' : undefined}
-            onClick={(event) => navigateFromDrawer(event, '/ask-context')}
-          >
-            <CircleHelp aria-hidden="true" size={17} />
-            Ask context
-          </a>
-          <a
             className={route === '/dashboard' ? 'nav-item nav-item-active' : 'nav-item'}
             href="/dashboard"
             aria-current={route === '/dashboard' ? 'page' : undefined}
@@ -198,6 +189,14 @@ export function Dashboard({
           >
             <LayoutGrid aria-hidden="true" size={17} />
             Dashboard
+          </a>
+          <a
+            className="nav-item"
+            href={route === '/dashboard' ? '#api-keys' : '/dashboard#api-keys'}
+            onClick={closeNavigation}
+          >
+            <KeyRound aria-hidden="true" size={17} />
+            API keys
           </a>
           <a
             className={route === '/upload-context' ? 'nav-item nav-item-active' : 'nav-item'}
@@ -240,8 +239,6 @@ export function Dashboard({
       <main id="dashboard-content" inert={navigationOpen || notificationsOpen}>
         {route === '/upload-context' ? (
           <UploadContext token={token} workspaces={workspaces} onUnauthorized={onUnauthorized} />
-        ) : route === '/ask-context' ? (
-          <AskContext token={token} workspaces={workspaces} onUnauthorized={onUnauthorized} />
         ) : (
         <div className="mx-auto max-w-[96rem] px-4 py-8 sm:px-6 lg:px-10 lg:py-10 xl:px-12">
           <header className="flex flex-col gap-6 border-b border-stone-300 pb-8 sm:flex-row sm:items-end sm:justify-between">
@@ -341,6 +338,10 @@ export function Dashboard({
               <div><h2 className="text-lg font-semibold">Policy changes are immediate</h2><p className="mt-1 text-sm leading-6 text-stone-300">Workspace membership is checked by the API on every protected operation, not cached in your login token.</p></div>
             </section>
           )}
+
+          <section id="api-keys" className="mt-8 scroll-mt-24">
+            <ApiKeysPanel token={token} onUnauthorized={onUnauthorized} onNotice={showNotice} />
+          </section>
         </div>
         )}
       </main>

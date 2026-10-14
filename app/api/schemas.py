@@ -5,8 +5,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.agent.schemas import ContextSource
-
 WorkspaceRole = Literal["owner", "editor", "viewer"]
 
 
@@ -182,111 +180,6 @@ class DocumentListResponse(BaseModel):
     limit: int
 
 
-class AskContextRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=2000)
-
-    @field_validator("question")
-    @classmethod
-    def normalize_question(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Question cannot be blank")
-        return normalized
-
-
-class AgentConversationCreateRequest(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=160)
-
-    @field_validator("title")
-    @classmethod
-    def normalize_title(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
-
-
-class AgentConversationSummary(BaseModel):
-    id: UUID
-    title: str | None
-    created_at: datetime
-    updated_at: datetime
-
-
-class AgentConversationListResponse(BaseModel):
-    items: list[AgentConversationSummary]
-    total: int
-    offset: int
-    limit: int
-
-
-class AgentConversationTurnRequest(BaseModel):
-    request_id: UUID
-    question: str = Field(min_length=1, max_length=2000)
-
-    @field_validator("question")
-    @classmethod
-    def normalize_question(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Question cannot be blank")
-        return normalized
-
-
-class ConversationSourceReference(BaseModel):
-    workspace_id: UUID
-    document_id: UUID
-    processing_run_id: UUID
-    chunk_id: UUID
-    ordinal: int
-    score: float
-    content_hash: str
-    filename: str | None
-    section_path: list[str]
-    page_numbers: list[int]
-
-
-class AgentHistoryMessage(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=24_000)
-    source_workspace_ids: list[UUID] = Field(default_factory=list, max_length=1000)
-
-
-class AgentConversationTurnResponse(BaseModel):
-    id: UUID
-    request_id: UUID
-    sequence: int
-    question: str
-    answer: str | None
-    status: Literal["processing", "completed", "failed"]
-    failure_code: str | None
-    created_at: datetime
-    completed_at: datetime | None
-    context_available: bool = True
-    sources: list[ConversationSourceReference] = Field(max_length=32)
-
-
-class AgentConversationTurnListResponse(BaseModel):
-    items: list[AgentConversationTurnResponse]
-    total: int
-    offset: int
-    limit: int
-
-
-class AgentAskResponse(BaseModel):
-    """Public shape of an answer.
-
-    ContextSource is the harness's own model, reused rather than
-    redefined: the answer path no longer crosses an HTTP boundary, so
-    there is no upstream response to re-validate into a parallel type.
-    """
-
-    answer: str = Field(min_length=1, max_length=24_000)
-    sources: list[ContextSource] = Field(max_length=32)
-
-
 class ProcessingRunSummary(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -324,3 +217,37 @@ class ProblemDetail(BaseModel):
     code: str
     instance: str | None = None
     errors: list[dict[str, str]] = Field(default_factory=list)
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("API key name cannot be blank")
+        return normalized
+
+
+class ApiKeySummary(BaseModel):
+    id: UUID
+    name: str
+    # Display-only fragment of the secret. Short enough to recognise a key,
+    # long enough that two keys never look alike in a list.
+    key_prefix: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
+class ApiKeyListResponse(BaseModel):
+    items: list[ApiKeySummary]
+
+
+class ApiKeyCreatedResponse(ApiKeySummary):
+    # The plaintext credential. Present only in the creation response; the
+    # stored form is a hash, so this object cannot be re-derived.
+    key: str
+    warning: str
