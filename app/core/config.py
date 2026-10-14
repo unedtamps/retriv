@@ -154,6 +154,51 @@ class Settings(BaseSettings):
     sql_database_url: str | None = None
     sql_statement_timeout_ms: int = Field(default=5_000, ge=100, le=60_000)
     sql_max_result_rows: int = Field(default=200, ge=1, le=5_000)
+    # The credentials postgres-init creates the role with. The app does not
+    # use them to connect -- it uses sql_database_url -- so their only job is
+    # to let the settings below catch the two copies drifting apart.
+    sql_reader_user: str = "retriv_reader"
+    sql_reader_password: SecretStr | None = None
+
+    @model_validator(mode="after")
+    def check_sql_reader_credentials_agree(self) -> "Settings":
+        """Catch the reader role being created with one password and connected
+        to with another.
+
+        The password appears twice by necessity: `postgres-init` creates the
+        role from `sql_reader_password`, and the DSN carries it separately
+        because that is what asyncpg authenticates with. Nothing interpolates
+        between them. Rotating one and forgetting the other leaves a deployment
+        that migrates cleanly, provisions cleanly, and then fails at startup
+        with "configured but unusable" -- which names the DSN and hides the
+        actual mismatch.
+        """
+        if self.sql_database_url is None or self.sql_reader_password is None:
+            return self
+        password = self.sql_reader_password.get_secret_value()
+        if not password:
+            return self
+        parsed = make_url(self.sql_database_url)
+        if parsed.password is None or not parsed.password:
+            raise ValueError(
+                "RETRIV_SQL_DATABASE_URL has no password, so it cannot match "
+                "RETRIV_SQL_READER_PASSWORD. Include one, or drop "
+                "RETRIV_SQL_READER_PASSWORD to stop this check."
+            )
+        if not hmac.compare_digest(unquote(parsed.password), password):
+            raise ValueError(
+                "RETRIV_SQL_READER_PASSWORD does not match the password in "
+                "RETRIV_SQL_DATABASE_URL. postgres-init creates the role with "
+                "the first and the app connects with the second; they must be "
+                "the same value."
+            )
+        if parsed.username != self.sql_reader_user:
+            raise ValueError(
+                f"RETRIV_SQL_DATABASE_URL connects as {parsed.username!r} but "
+                f"postgres-init creates the role named {self.sql_reader_user!r}. "
+                "Point the DSN at the role this deployment creates."
+            )
+        return self
 
     @field_validator("jwt_secret")
     @classmethod

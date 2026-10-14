@@ -11,8 +11,8 @@ name: retriv-api
 
 # The worker's environment. Every value is the RETRIV_ name the merged
 # Settings reads, so there is one settings vocabulary across both processes.
-# Note what is absent: the JWT secret, the chat key, and the read-only
-# Qdrant key. The worker has no use for them and should not hold them.
+# Note what is absent: the JWT secret and the read-only Qdrant key. The
+# worker has no use for them and should not hold them.
 x-worker-environment: &worker-environment
   RETRIV_COMPONENT: worker
   RETRIV_ENVIRONMENT: ${RETRIV_ENVIRONMENT:-local}
@@ -67,6 +67,34 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
+    networks:
+      - app-net
+
+  # Creates the read-only role the row-query tool connects as, and grants it
+  # SELECT on the three tables. Runs once and exits, like minio-init.
+  #
+  # It exists because a password must never land in a migration, so 0002 and
+  # 0003 grant to this role only if it already exists. Documenting "run this
+  # CREATE ROLE by hand" produced a setup that migrated cleanly, failed to
+  # start, and said nothing about which step was skipped. Here the step is part
+  # of `docker compose up` and cannot be skipped by omission.
+  postgres-init:
+    image: postgres:17-alpine
+    restart: "no"
+    entrypoint: ["/bin/sh", "/config/init.sh"]
+    environment:
+      PGHOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      RETRIV_ENVIRONMENT: ${RETRIV_ENVIRONMENT:-local}
+      RETRIV_SQL_READER_USER: ${RETRIV_SQL_READER_USER:-retriv_reader}
+      RETRIV_SQL_READER_PASSWORD: ${RETRIV_SQL_READER_PASSWORD:?RETRIV_SQL_READER_PASSWORD is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./docker/postgres/init.sh:/config/init.sh:ro
     networks:
       - app-net
 

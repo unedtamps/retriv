@@ -30,9 +30,6 @@ PRODUCTION_BASE: dict[str, Any] = {
     "qdrant_url": "https://qdrant.example.test",
     "embedding_base_url": "https://embeddings.example.test/v1",
     "embedding_api_key": SecretStr("production-embedding-key-xxxxxxxxxxxxxxxx"),
-    "chat_api_key": SecretStr("production-chat-api-key-xxxxxxxxxxxxxxxxxxxxx"),
-    "chat_base_url": "https://openrouter.ai/api/v1",
-    "chat_model": "provider/model",
     "cors_allowed_origins": ["https://dashboard.example.test"],
 }
 
@@ -114,7 +111,7 @@ def test_production_rejects_default_service_credentials() -> None:
         Settings(
             **{
                 **PRODUCTION_BASE,
-                "chat_api_key": SecretStr("change-this-openrouter-key-do-not-use"),
+                "s3_secret_key": SecretStr("change-this-storage-key-do-not-use"),
             }
         )
 
@@ -140,26 +137,19 @@ def test_production_worker_requires_baked_docling_artifacts() -> None:
 def test_worker_accepts_a_fully_configured_production_environment() -> None:
     settings = Settings(**WORKER_BASE)
     assert settings.component == "worker"
-    # The worker holds no JWT secret and no chat key. There is no user to
-    # authenticate and no conversation to answer.
+    # The worker holds no JWT secret: there is no user to authenticate.
     assert not hasattr(settings, "jwt_secret") or settings.jwt_secret is not None
 
 
 def test_local_environment_tolerates_placeholders() -> None:
-    """A developer must be able to boot without a real provider key. The
+    """A developer must be able to boot without real service credentials. The
     placeholder is long enough to pass the length floor and contains
     'change-this' so production still refuses it."""
     settings = Settings(
         environment="local",
-        chat_api_key=SecretStr("change-this-openrouter-key-do-not-use-in-production"),
-        chat_model="change-this/change-this",
+        s3_secret_key=SecretStr("change-this-storage-key-do-not-use-in-production"),
     )
-    assert settings.chat_model == "change-this/change-this"
-
-
-def test_chat_model_must_be_a_provider_qualified_id() -> None:
-    with pytest.raises(ValidationError, match="OpenRouter model ID"):
-        Settings(chat_model="no-slash-here")
+    assert settings.s3_secret_key.get_secret_value().startswith("change-this")
 
 
 def test_raw_and_artifact_buckets_must_differ() -> None:
@@ -179,7 +169,7 @@ def test_retry_ceiling_must_not_undercut_the_base() -> None:
 
 def test_secrets_shorter_than_the_floor_are_rejected() -> None:
     with pytest.raises(ValidationError, match="at least 32"):
-        Settings(chat_api_key=SecretStr("too-short"))
+        Settings(embedding_api_key=SecretStr("too-short"))
 
 
 def test_service_urls_reject_embedded_credentials() -> None:
@@ -281,3 +271,90 @@ def test_provisioning_does_not_read_dotenv_by_itself(
     settings = ProvisionerSettings()
     assert settings.s3_access_key == "migration-reader"
     assert settings.manifest_bucket == "migration-manifests"
+
+
+def _reader_settings(**overrides: Any) -> dict[str, Any]:
+    """The reader credentials a working deployment passes.
+
+    Both copies of the password exist by necessity: postgres-init creates the
+    role from sql_reader_password, and asyncpg authenticates with the one
+    inside the DSN. Nothing interpolates between them.
+    """
+    values: dict[str, Any] = {
+        "sql_reader_user": "retriv_reader",
+        "sql_reader_password": SecretStr("reader-password"),
+        "sql_database_url": (
+            "postgresql+asyncpg://retriv_reader:reader-password@postgres:5432/retriv"
+        ),
+    }
+    values.update(overrides)
+    return values
+
+
+def test_matching_sql_reader_credentials_are_accepted() -> None:
+    """The ordinary case, and the one that must not become noisy."""
+    Settings(**_reader_settings())
+
+
+def test_sql_reader_password_mismatch_is_named_at_startup() -> None:
+    """Rotating one copy of the password is the most likely mistake here.
+
+    Without this the deployment migrates cleanly, provisions cleanly, and then
+    dies in verify_reader() with "RETRIV_SQL_DATABASE_URL is configured but
+    unusable" -- which blames the DSN and says nothing about the value that
+    actually disagrees with it.
+    """
+    with pytest.raises(ValidationError, match="does not match the password"):
+        Settings(
+            **_reader_settings(
+                sql_reader_password=SecretStr("rotated-but-not-in-the-dsn")
+            )
+        )
+
+
+def test_sql_reader_username_mismatch_is_rejected() -> None:
+    """A DSN aimed at a role nothing creates cannot work, and the mismatch is
+    the reason -- not an authentication failure three layers later."""
+    with pytest.raises(ValidationError, match="postgres-init creates the role"):
+        Settings(**_reader_settings(sql_reader_user="someone_else"))
+
+
+def test_a_dsn_without_a_password_is_rejected_when_a_reader_password_is_set() -> None:
+    """Silently skipping the comparison would let this through, and the failure
+    would resurface as the generic unusable-DSN error it exists to prevent."""
+    with pytest.raises(ValidationError, match="has no password"):
+        Settings(
+            **_reader_settings(
+                sql_database_url="postgresql+asyncpg://retriv_reader@postgres:5432/retriv"
+            )
+        )
+
+
+def test_url_encoded_passwords_compare_after_decoding() -> None:
+    """A password needing URL-encoding arrives percent-encoded in the DSN.
+
+    Comparing the raw text would reject a deployment whose two copies really
+    are the same value, which is worse than not checking at all: the operator
+    would be told to fix something that is correct.
+    """
+    Settings(
+        **_reader_settings(
+            sql_reader_password=SecretStr("p@ss w0rd/with:chars"),
+            sql_database_url=(
+                "postgresql+asyncpg://retriv_reader:p%40ss%20w0rd%2Fwith%3Achars"
+                "@postgres:5432/retriv"
+            ),
+        )
+    )
+
+
+def test_the_check_is_skipped_when_the_tool_is_off() -> None:
+    """No DSN means the reader role is never used, so there is nothing to keep
+    in step. Failing here would make the tool un-disableable once someone had
+    left the credentials in .env."""
+    Settings(sql_reader_password=SecretStr("left-behind"))
+
+
+def test_the_check_is_skipped_when_the_reader_password_is_absent() -> None:
+    """Also a supported shape: a DSN alone, with the role managed elsewhere."""
+    Settings(sql_database_url="postgresql+asyncpg://someone:pw@postgres:5432/retriv")
