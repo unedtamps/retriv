@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from './api'
 import { Dashboard } from './components/Dashboard'
@@ -37,10 +37,10 @@ function App() {
     return () => window.removeEventListener('popstate', syncRoute)
   }, [])
 
-  function navigate(route: AppRoute) {
+  const navigate = useCallback((route: AppRoute) => {
     if (window.location.pathname !== route) window.history.pushState(null, '', route)
     setRoute(route)
-  }
+  }, [])
 
   useEffect(() => {
     if (token === null) return
@@ -81,15 +81,15 @@ function App() {
     setRetryKey((value) => value + 1)
   }
 
-  function handleLogout() {
+  const handleLogout = useCallback(() => {
     clearSessionToken()
     setToken(null)
     setReady(null)
     setLoading(false)
     setLoadError(null)
-  }
+  }, [])
 
-  async function refreshWorkspaces() {
+  const refreshWorkspaces = useCallback(async () => {
     if (token === null) return
     try {
       const workspaces = await loadWorkspaceCatalog(token)
@@ -98,7 +98,7 @@ function App() {
       if (isUnauthorized(caught)) handleLogout()
       else throw caught
     }
-  }
+  }, [token, handleLogout])
 
   if (token === null) return <LoginScreen onLogin={handleLogin} />
   if (loading) return <BootScreen />

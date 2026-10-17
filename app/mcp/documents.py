@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Document, ProcessingRun
@@ -65,35 +65,48 @@ async def find_documents(
     Returns the page and the total that matched before the page, so the caller
     can say "showing 20 of 63" instead of implying the list is complete.
 
-    Ordering puts an exact filename first, then the shortest names, because a
-    revised document usually keeps its name and grows a suffix -- and the
-    caller asking for "Peraturan.pdf" wants that file, not the 63 others whose
-    names happen to contain the words. The active run is outer-joined rather
-    than fetched per row for the same reason the list route does it: a status
-    per document, and one round trip.
+    Ordering puts an exact filename first, then names that start with the
+    pattern, because a revised document usually keeps its name and grows a
+    suffix -- and the caller asking for "Peraturan.pdf" wants that file, not
+    the 63 others whose names happen to contain the words. Ranking, the page
+    slice and the total (a window count riding along with the page) all happen
+    in one query, so a workspace with many matching documents loads only the
+    page it asked for. The active run is outer-joined rather than fetched per
+    row for the same reason the list route does it: a status per document, and
+    one round trip.
     """
     if not workspace_ids:
         return [], 0
 
     condition = Document.workspace_id.in_(workspace_ids) & Document.deleted_at.is_(None)
-    if pattern:
-        condition = condition & Document.original_filename.ilike(
-            f"%{_escape_like(pattern)}%", escape="\\"
-        )
-
-    total = await session.scalar(
-        select(func.count()).select_from(Document).where(condition)
-    )
-
-    # Ranked in Python rather than SQL: the ranking is "how close is this
-    # name", which is not expressible as a portable ORDER BY, and the row count
-    # is already bounded by the workspace's document count.
-    result = await session.execute(
-        select(Document, ProcessingRun)
+    statement = (
+        select(Document, ProcessingRun, func.count().over().label("total"))
         .outerjoin(ProcessingRun, ProcessingRun.id == Document.active_processing_run_id)
         .where(condition)
-        .order_by(Document.created_at.desc(), Document.id)
     )
+
+    if pattern:
+        needle = pattern.casefold()
+        statement = statement.where(
+            Document.original_filename.ilike(
+                f"%{_escape_like(pattern)}%", escape="\\"
+            )
+        )
+        rank = case(
+            (func.lower(Document.original_filename) == needle, 0),
+            (
+                Document.original_filename.ilike(
+                    f"{_escape_like(needle)}%", escape="\\"
+                ),
+                1,
+            ),
+            else_=2,
+        )
+        statement = statement.order_by(rank, Document.original_filename, Document.id)
+    else:
+        statement = statement.order_by(Document.created_at.desc(), Document.id)
+
+    result = await session.execute(statement.limit(limit))
 
     rows = result.all()
     summaries = [
@@ -107,24 +120,10 @@ async def find_documents(
             row_count=int(run.row_count or 0) if run is not None else 0,
             created_at=document.created_at,
         )
-        for document, run in rows
+        for document, run, _ in rows
     ]
 
-    if pattern:
-        needle = pattern.casefold()
-        summaries.sort(key=lambda item: (_rank(item.filename, needle), item.filename))
-
-    return summaries[:limit], total or 0
-
-
-def _rank(filename: str, needle: str) -> int:
-    """0 for the exact name, 1 for a name that starts with it, else 2."""
-    folded = filename.casefold()
-    if folded == needle:
-        return 0
-    if folded.startswith(needle):
-        return 1
-    return 2
+    return summaries, int(rows[0].total) if rows else 0
 
 
 def format_documents(

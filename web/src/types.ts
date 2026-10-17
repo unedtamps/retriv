@@ -23,7 +23,6 @@ export interface Workspace {
   created_at: string
   membership_role: WorkspaceRole | null
   can_upload: boolean
-  can_download: boolean
   can_search_context: boolean
   can_manage_members: boolean
   /**

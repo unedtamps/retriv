@@ -79,7 +79,7 @@ export function WorkspaceDrawer({
         setLoadingDocuments(false)
       })
     return () => controller.abort()
-  }, [workspace, token, onUnauthorized])
+  }, [workspace.id, token, onUnauthorized])
 
   useEffect(() => {
     if (!canManage) return
@@ -97,7 +97,7 @@ export function WorkspaceDrawer({
         setLoadingMembers(false)
       })
     return () => controller.abort()
-  }, [workspace, canManage, token, isAdmin, onUnauthorized])
+  }, [workspace.id, canManage, token, isAdmin, onUnauthorized])
 
   async function searchCandidates(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

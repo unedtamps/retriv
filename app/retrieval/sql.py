@@ -230,6 +230,30 @@ class CatalogueReader:
             hidden=0,
         )
 
+    async def filenames(
+        self, *, workspace_ids: tuple[UUID, ...], document_ids: set[UUID]
+    ) -> dict[UUID, str]:
+        """Name the documents a row query returned, by primary-key lookup.
+
+        The citation needs one name per returned row, so this fetches only the
+        ids the query produced rather than the whole catalogue.
+        """
+        from sqlalchemy import select as sa_select
+
+        from app.db.models import Document
+
+        if not workspace_ids or not document_ids:
+            return {}
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                sa_select(Document.id, Document.original_filename).where(
+                    Document.id.in_(document_ids),
+                    Document.workspace_id.in_(workspace_ids),
+                    Document.deleted_at.is_(None),
+                )
+            )
+            return {document_id: filename for document_id, filename in rows}
+
 
 class RowQuery:
     """Runs one statement against the rows, inside a scope the caller sets."""
@@ -448,7 +472,7 @@ class RowQuery:
                     row_count=int(row[4] or 0),
                     columns=list(row[5] or []),
                 )
-                for row in rows[:capped]
+                for row in rows
             ],
             hidden=max(0, total - len(rows)),
         )
@@ -556,9 +580,3 @@ def _escape_like(value: str) -> str:
 
 def _sorted_names() -> str:
     return ", ".join(sorted(_ALLOWED_TABLES))
-
-
-# Re-exported for the annotation on RowResult.as_source without importing the
-# agent package at module load, which would be a cycle.
-if False:  # pragma: no cover
-    from app.retrieval.schemas import ContextSource

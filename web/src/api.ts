@@ -74,25 +74,6 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload as T
 }
 
-async function requestBlob(path: string, token: string): Promise<Blob> {
-  const headers = new Headers({
-    Accept: 'application/octet-stream, */*',
-    Authorization: `Bearer ${token}`,
-  })
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers,
-    cache: 'no-store',
-  })
-
-  if (!response.ok) {
-    const isJson = response.headers.get('content-type')?.includes('json') ?? false
-    const payload = isJson ? ((await response.json()) as unknown) : null
-    throw new ApiError(response.status, payload as ProblemDetail | null)
-  }
-
-  return response.blob()
-}
-
 function jsonOptions(body: unknown): Pick<RequestOptions, 'body' | 'headers'> {
   return {
     body: JSON.stringify(body),
@@ -174,13 +155,6 @@ export const api = {
     return request<void>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
       { token, method: 'DELETE' },
-    )
-  },
-
-  downloadDocument(token: string, workspaceId: string, documentId: string): Promise<Blob> {
-    return requestBlob(
-      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/download`,
-      token,
     )
   },
 

@@ -15,15 +15,12 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ApiKey, User
-from app.db.session import get_session
 from app.security.auth import authentication_error
 
 KEY_SCHEME = "rk"
@@ -149,23 +146,3 @@ def bearer_api_key(authorization: str | None) -> str:
     if scheme.lower() != "bearer" or not value.strip():
         raise authentication_error()
     return value.strip()
-
-
-async def get_api_key_user(
-    authorization: Annotated[str | None, Header()],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> User:
-    """FastAPI dependency: resolve the MCP request's API key to a user.
-
-    Distinct from ``get_current_user`` on purpose: JWTs expire and are
-    refreshed by the dashboard, while this path must accept a non-expiring
-    credential and reject it the moment it is revoked.
-    """
-    key = bearer_api_key(authorization)
-    user = await authenticate_api_key(session, key)
-    if user is None:
-        raise authentication_error()
-    return user
-
-
-ApiKeyUser = Annotated[User, Depends(get_api_key_user)]

@@ -30,6 +30,7 @@ from app.infrastructure.scanner import get_malware_scanner
 from app.infrastructure.storage import get_object_storage
 from app.main import create_app
 from app.mcp.runtime import McpRuntime
+from app.mcp.server import _instructions
 from app.retrieval.context import ContextRetriever
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import (
@@ -457,6 +458,39 @@ async def test_tools_are_the_documented_five(mcp: McpEnv) -> None:
         "download_document",
         "find_documents",
     }
+
+
+async def test_query_rows_states_the_jsonb_shape_before_any_failure(
+    mcp: McpEnv,
+) -> None:
+    """The description has to carry the contract the catalogue cannot.
+
+    On a live run the model wrote CSV headers as if they were SQL columns and
+    had every statement rejected. The description named list_queryable_files,
+    which supplied the key names, but never said where those keys live, so the
+    first query was wrong every time. Naming the JSONB column up front is what
+    makes the first attempt correct instead of the ninth.
+    """
+    listed = await mcp.session.request(mcp.alice_key, "tools/list", {})
+    tools = {tool["name"]: tool for tool in listed["result"]["tools"]}
+    description = tools["query_rows"]["description"]
+    assert "JSONB" in description
+    assert "document_rows" in description
+    # The shape, not just the vocabulary: a model that is told the keys are
+    # case-sensitive and must be cast has enough to write the statement.
+    assert "(data->>'Amount')::numeric" in description
+
+
+def test_the_csv_note_appears_only_when_the_row_tool_does() -> None:
+    """Instructions already vary by deployment, and the note has to vary too.
+
+    ``_instructions`` warns that pointing a model at a tool the server does
+    not have sends it looking for an answer it will never get. A deployment
+    without the reader has no query_rows, so describing the JSONB column
+    would be describing a table no tool can read.
+    """
+    assert "JSONB" in _instructions(row_queries=True)
+    assert "JSONB" not in _instructions(row_queries=False)
 
 
 async def test_no_tool_writes_to_a_workspace(mcp: McpEnv) -> None:

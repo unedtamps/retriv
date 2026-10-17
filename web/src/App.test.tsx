@@ -27,7 +27,6 @@ const workspace: Workspace = {
   created_at: '2026-09-23T08:00:00Z',
   membership_role: 'owner' as const,
   can_upload: true,
-  can_download: true,
   can_search_context: true,
   can_manage_members: true,
   can_delete: true,
@@ -100,12 +99,6 @@ function installApi(
         duplicate: false,
       }, 201)
     }
-    if (url === '/v1/workspaces/workspace-1/documents/document-1/download') {
-      return new Response('original document bytes', {
-        status: 200,
-        headers: { 'Content-Type': 'application/pdf' },
-      })
-    }
     if (url === '/v1/workspaces/workspace-1/members') return json({ items: [] })
     if (url.startsWith('/v1/admin/users')) return json({ items: [], total: 0, offset: 0, limit: 50 })
     throw new Error(`Unexpected request: ${url}`)
@@ -150,7 +143,6 @@ describe('dashboard application', () => {
         name: 'Shared reference',
         membership_role: 'viewer',
         can_upload: false,
-        can_download: false,
         can_manage_members: false,
         can_delete: false,
       },
@@ -161,7 +153,6 @@ describe('dashboard application', () => {
         name: 'Company catalog',
         membership_role: null,
         can_upload: false,
-        can_download: false,
         can_search_context: false,
         can_manage_members: false,
         can_delete: false,
@@ -649,7 +640,6 @@ describe('dashboard application', () => {
       name: 'Shared reference',
       membership_role: 'viewer',
       can_upload: false,
-      can_download: false,
       can_search_context: true,
       can_manage_members: false,
       can_delete: false,

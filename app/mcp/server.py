@@ -83,7 +83,9 @@ def _instructions(*, row_queries: bool) -> str:
     if not row_queries:
         return lead + tail
     return (
-        lead + " Pass that document_id to query_rows, run one query per file."
+        lead + " Pass that document_id to query_rows, run one query per file:"
+        " the cells are text inside the JSONB column `data`, so cast before"
+        " comparing."
     ) + tail
 
 
@@ -147,6 +149,17 @@ async def _catalogue_for(
     return await runtime.row_query.queryable_files(
         workspace_ids=workspace_ids, offset=offset, limit=limit, pattern=pattern
     )
+
+
+async def _rejection_prefix(runtime: McpRuntime, scope: tuple[UUID, ...]) -> str:
+    """The catalogue, fetched only when a rejection needs to hand it back.
+
+    Successful queries used to carry it too, which repeated up to 100 files
+    with their columns in every answer; the model fetches it once with
+    list_queryable_files instead.
+    """
+    catalogue = await _catalogue_for(runtime, scope)
+    return format_catalogue(catalogue, queryable=True)
 
 
 async def _principal(
@@ -298,6 +311,12 @@ def build_mcp_server(
         ) -> str:
             """Run one SQL statement over the rows of a CSV file.
 
+            Two tables may be read: `document_rows` and `documents`. A CSV has
+            no columns of its own -- every cell is text inside the JSONB column
+            `data`, keyed by the header exactly as list_queryable_files spells
+            it. Cast to compare, `(data->>'Amount')::numeric`, and an empty cell
+            is `''` rather than NULL.
+
             The statement must filter on document_id, and every row it returns
             must come from that one file; anything else is rejected. Use the
             document_id and column names from list_queryable_files. An aggregate
@@ -311,9 +330,8 @@ def build_mcp_server(
             scope = tuple(principal.workspace_ids)
             if not scope:
                 return format_catalogue(Catalogue(entries=[], hidden=0))
-            catalogue = await _catalogue_for(runtime, scope)
-            prefix = format_catalogue(catalogue, queryable=True)
             if not mentions_document_id(sql):
+                prefix = await _rejection_prefix(runtime, scope)
                 raise ToolError(
                     f"{prefix}The query was rejected: it does not name a "
                     "document_id, so it could read any file at once. Add "
@@ -325,28 +343,34 @@ def build_mcp_server(
             except RowQueryError as exc:
                 # The statement is the caller's own text, so it is not echoed
                 # back; the reason is what they need.
+                prefix = await _rejection_prefix(runtime, scope)
                 raise ToolError(f"{prefix}The query was rejected: {exc}") from exc
 
             computed = format_values(outcome.values)
-            sources = [
-                result.as_source(catalogue.filenames.get(result.document_id))
-                for result in outcome.sources
-            ]
-            if sources:
+            if outcome.sources:
+                filenames = await runtime.catalogue_reader.filenames(
+                    workspace_ids=scope,
+                    document_ids={result.document_id for result in outcome.sources},
+                )
+                sources = [
+                    result.as_source(filenames.get(result.document_id))
+                    for result in outcome.sources
+                ]
                 # RowQuery already refused a statement whose rows span
                 # documents, so what is left is to render them.
                 body = format_context(sources, source_indices(_by_chunk(sources)))
-                return f"{prefix}{body}{computed}"
+                return f"{body}{computed}"
             if computed:
                 return (
-                    f"{prefix}{computed}\n"
+                    f"{computed}\n"
                     "These values are computed from the rows, so there is no "
                     "single row to cite. Give the number and name the file it "
                     "came from.\n"
                 )
             return (
-                f"{prefix}No rows matched. Check the document_id and column names "
-                "against the catalogue above; a misspelled column returns nothing."
+                "No rows matched. Check the document_id and column names "
+                "against the catalogue from list_queryable_files; a "
+                "misspelled column returns nothing."
             )
 
     @mcp.tool()

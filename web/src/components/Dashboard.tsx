@@ -83,15 +83,7 @@ export function Dashboard({
     setNotice({ message, tone })
   }
 
-  function openUpload(event: MouseEvent<HTMLAnchorElement>) {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    event.preventDefault()
-    setNavigationOpen(false)
-    setSelectedWorkspaceId(null)
-    onNavigate('/upload-context')
-  }
-
-  function navigateFromDrawer(event: MouseEvent<HTMLAnchorElement>, destination: AppRoute) {
+  function navigateFromNav(event: MouseEvent<HTMLAnchorElement>, destination: AppRoute) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
     setNavigationOpen(false)
@@ -185,7 +177,7 @@ export function Dashboard({
             className={route === '/dashboard' ? 'nav-item nav-item-active' : 'nav-item'}
             href="/dashboard"
             aria-current={route === '/dashboard' ? 'page' : undefined}
-            onClick={(event) => navigateFromDrawer(event, '/dashboard')}
+            onClick={(event) => navigateFromNav(event, '/dashboard')}
           >
             <LayoutGrid aria-hidden="true" size={17} />
             Dashboard
@@ -202,7 +194,7 @@ export function Dashboard({
             className={route === '/upload-context' ? 'nav-item nav-item-active' : 'nav-item'}
             href="/upload-context"
             aria-current={route === '/upload-context' ? 'page' : undefined}
-            onClick={openUpload}
+            onClick={(event) => navigateFromNav(event, '/upload-context')}
           >
             <FileUp aria-hidden="true" size={17} />
             Upload context

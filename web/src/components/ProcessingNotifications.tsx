@@ -48,11 +48,6 @@ export function ProcessingNotifications({
   const [refreshKey, setRefreshKey] = useState(0)
   const bellButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const onUnauthorizedRef = useRef(onUnauthorized)
-
-  useEffect(() => {
-    onUnauthorizedRef.current = onUnauthorized
-  }, [onUnauthorized])
 
   useEffect(() => {
     let cancelled = false
@@ -72,7 +67,7 @@ export function ProcessingNotifications({
       } catch (caught) {
         if (cancelled || (caught instanceof Error && caught.name === 'AbortError')) return
         if (isUnauthorized(caught)) {
-          onUnauthorizedRef.current()
+          onUnauthorized()
         } else {
           setError(getErrorMessage(caught))
         }
@@ -86,7 +81,7 @@ export function ProcessingNotifications({
       cancelled = true
       controller.abort()
     }
-  }, [token, refreshKey])
+  }, [token, refreshKey, onUnauthorized])
 
   useEffect(() => {
     if (!open) return

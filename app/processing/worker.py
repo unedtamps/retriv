@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 
 from anyio import to_thread
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import and_, delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
@@ -72,11 +72,11 @@ logger = logging.getLogger(__name__)
 
 # The temporary-file suffix a media type is downloaded under. Explicit rather
 # than inferred, because the parser is chosen by the extension and an
-# inferred suffix silently feeds the wrong parser the wrong bytes.
+# inferred suffix silently feeds the wrong parser the wrong bytes. CSV is
+# absent: it is dispatched before this lookup and never parsed by extension.
 _SOURCE_SUFFIX = {
     PDF_MEDIA_TYPE: ".pdf",
     DOCX_MEDIA_TYPE: ".docx",
-    CSV_MEDIA_TYPE: ".csv",
 }
 
 # Rows are inserted with a core insert rather than ORM objects: at the 100k
@@ -166,6 +166,8 @@ class ProcessingWorker:
                     )
                 )
             ).all()
+            if not expired:
+                return
             failed_ids = [
                 run_id
                 for run_id, attempts in expired
@@ -176,38 +178,40 @@ class ProcessingWorker:
                 for run_id, attempts in expired
                 if attempts < self._settings.processing_max_attempts
             ]
-            await session.execute(
-                update(ProcessingRun)
-                .where(
-                    ProcessingRun.status.in_(ACTIVE_RUN_STATUSES),
-                    ProcessingRun.lease_until.is_not(None),
-                    ProcessingRun.lease_until < now,
-                    ProcessingRun.attempts >= self._settings.processing_max_attempts,
+            if failed_ids:
+                await session.execute(
+                    update(ProcessingRun)
+                    .where(
+                        ProcessingRun.status.in_(ACTIVE_RUN_STATUSES),
+                        ProcessingRun.lease_until.is_not(None),
+                        ProcessingRun.lease_until < now,
+                        ProcessingRun.attempts >= self._settings.processing_max_attempts,
+                    )
+                    .values(
+                        status=RUN_FAILED,
+                        lease_until=None,
+                        lease_token=None,
+                        completed_at=now,
+                        last_error="Processing lease expired at the retry limit",
+                    )
                 )
-                .values(
-                    status=RUN_FAILED,
-                    lease_until=None,
-                    lease_token=None,
-                    completed_at=now,
-                    last_error="Processing lease expired at the retry limit",
+            if retry_ids:
+                await session.execute(
+                    update(ProcessingRun)
+                    .where(
+                        ProcessingRun.status.in_(ACTIVE_RUN_STATUSES),
+                        ProcessingRun.lease_until.is_not(None),
+                        ProcessingRun.lease_until < now,
+                        ProcessingRun.attempts < self._settings.processing_max_attempts,
+                    )
+                    .values(
+                        status=RUN_RETRY_WAIT,
+                        available_at=now,
+                        lease_until=None,
+                        lease_token=None,
+                        last_error="Processing lease expired before completion",
+                    )
                 )
-            )
-            await session.execute(
-                update(ProcessingRun)
-                .where(
-                    ProcessingRun.status.in_(ACTIVE_RUN_STATUSES),
-                    ProcessingRun.lease_until.is_not(None),
-                    ProcessingRun.lease_until < now,
-                    ProcessingRun.attempts < self._settings.processing_max_attempts,
-                )
-                .values(
-                    status=RUN_RETRY_WAIT,
-                    available_at=now,
-                    lease_until=None,
-                    lease_token=None,
-                    last_error="Processing lease expired before completion",
-                )
-            )
             if failed_ids:
                 await session.execute(
                     update(ChunkEmbedding)
@@ -287,26 +291,52 @@ class ProcessingWorker:
         self._next_embedding_reconciliation = now + timedelta(
             seconds=self._settings.embedding_reconciliation_interval_seconds
         )
+        settings = self._settings
         async with self._session_factory() as session, session.begin():
-            result = await session.scalars(
-                select(ProcessingRun)
-                .join(Document, Document.id == ProcessingRun.document_id)
-                .where(
-                    ProcessingRun.job_kind == JOB_EXTRACT,
-                    ProcessingRun.status == RUN_READY,
-                    Document.deleted_at.is_(None),
-                    Document.active_processing_run_id == ProcessingRun.id,
+            runs = (
+                await session.scalars(
+                    select(ProcessingRun)
+                    .join(Document, Document.id == ProcessingRun.document_id)
+                    .where(
+                        ProcessingRun.job_kind == JOB_EXTRACT,
+                        ProcessingRun.status == RUN_READY,
+                        Document.deleted_at.is_(None),
+                        Document.active_processing_run_id == ProcessingRun.id,
+                        # Chunked runs only: a CSV is ready with no chunks and
+                        # nothing to embed.
+                        ProcessingRun.chunk_count > 0,
+                        # Fully indexed runs are excluded in SQL. Without this
+                        # the sweep would re-examine the same oldest 100 rows
+                        # every interval and never reach the runs behind them.
+                        or_(
+                            ProcessingRun.embedded_chunk_count
+                            != ProcessingRun.chunk_count,
+                            ProcessingRun.embedding_profile.is_(None),
+                            ProcessingRun.embedding_profile != settings.embedding_profile,
+                            ProcessingRun.embedding_model.is_(None),
+                            ProcessingRun.embedding_model != settings.embedding_model,
+                            ProcessingRun.embedding_dimensions.is_(None),
+                            ProcessingRun.embedding_dimensions
+                            != settings.embedding_dimensions,
+                        ),
+                    )
+                    .order_by(ProcessingRun.created_at, ProcessingRun.id)
+                    .limit(100)
+                    .with_for_update(of=ProcessingRun, skip_locked=True)
                 )
-                .order_by(ProcessingRun.created_at, ProcessingRun.id)
-                .limit(100)
-                .with_for_update(of=ProcessingRun, skip_locked=True)
-            )
-            for run in result.all():
+            ).all()
+            for run in runs:
+                # Only the identity columns are needed to reconcile; loading
+                # the chunk entities would pull every chunk's text along.
                 chunks = (
-                    await session.scalars(
-                        select(DocumentChunk)
-                        .where(DocumentChunk.processing_run_id == run.id)
-                        .order_by(DocumentChunk.ordinal)
+                    await session.execute(
+                        select(
+                            DocumentChunk.id,
+                            DocumentChunk.workspace_id,
+                            DocumentChunk.document_id,
+                            DocumentChunk.processing_run_id,
+                            DocumentChunk.content_hash,
+                        ).where(DocumentChunk.processing_run_id == run.id)
                     )
                 ).all()
                 if not chunks:
@@ -316,7 +346,7 @@ class ProcessingWorker:
                         select(ChunkEmbedding).where(
                             ChunkEmbedding.processing_run_id == run.id,
                             ChunkEmbedding.embedding_profile
-                            == self._settings.embedding_profile,
+                            == settings.embedding_profile,
                         )
                     )
                 ).all()
@@ -325,35 +355,47 @@ class ProcessingWorker:
                 for chunk in chunks:
                     embedding = by_chunk_id.get(chunk.id)
                     if embedding is None:
-                        session.add(self._embedding_record(chunk))
+                        session.add(
+                            self._new_embedding_record(
+                                chunk_id=chunk.id,
+                                workspace_id=chunk.workspace_id,
+                                document_id=chunk.document_id,
+                                processing_run_id=chunk.processing_run_id,
+                                content_hash=chunk.content_hash,
+                            )
+                        )
                         continue
                     if (
                         embedding.status == EMBEDDING_INDEXED
                         and embedding.content_hash == chunk.content_hash
-                        and embedding.model == self._settings.embedding_model
-                        and embedding.dimensions == self._settings.embedding_dimensions
+                        and embedding.model == settings.embedding_model
+                        and embedding.dimensions == settings.embedding_dimensions
                     ):
                         indexed_count += 1
                         continue
-                    embedding.model = self._settings.embedding_model
-                    embedding.dimensions = self._settings.embedding_dimensions
+                    embedding.model = settings.embedding_model
+                    embedding.dimensions = settings.embedding_dimensions
                     embedding.content_hash = chunk.content_hash
                     embedding.qdrant_point_id = self._qdrant_point_id(chunk.id)
                     embedding.status = EMBEDDING_PENDING
                     embedding.last_error = None
                     embedding.embedded_at = None
                     embedding.updated_at = now
+                # The run was a candidate because a counter or the recorded
+                # embedding configuration disagreed with the rows. Record the
+                # reconciled values either way; only re-queue if work remains,
+                # or the sweep would keep selecting a run it just finished.
+                run.chunk_count = len(chunks)
+                run.embedded_chunk_count = indexed_count
+                run.embedding_profile = settings.embedding_profile
+                run.embedding_model = settings.embedding_model
+                run.embedding_dimensions = settings.embedding_dimensions
                 if indexed_count == len(chunks):
                     continue
                 run.status = RUN_QUEUED
                 run.available_at = now
                 run.completed_at = None
                 run.last_error = None
-                run.chunk_count = len(chunks)
-                run.embedded_chunk_count = indexed_count
-                run.embedding_profile = self._settings.embedding_profile
-                run.embedding_model = self._settings.embedding_model
-                run.embedding_dimensions = self._settings.embedding_dimensions
 
     async def _claim_one(self) -> ProcessingRun | None:
         now = utcnow()
@@ -414,7 +456,7 @@ class ProcessingWorker:
         if suffix is None:
             # Was `".pdf" if pdf else ".docx"`, naming every non-PDF .docx.
             # Harmless while XLSX was the only other type because the
-            # extractor rejected it first -- until CSV needed its own suffix.
+            # extractor rejected it first.
             raise PermanentProcessingError(
                 f"No source suffix for media type: {document.detected_media_type}"
             )
@@ -491,9 +533,6 @@ class ProcessingWorker:
                     sha256=artifact_sha256,
                 )
             )
-            await self._set_phase(
-                claimed_run.id, lease_token, RUN_STORING_ARTIFACT
-            )
             await to_thread.run_sync(
                 partial(
                     self._storage.put_bytes,
@@ -517,10 +556,6 @@ class ProcessingWorker:
             )
             if not chunks_persisted:
                 await self._delete_artifacts(artifact_key, manifest_key)
-        except LeaseLostError:
-            if artifact_key is not None and manifest_key is not None:
-                await self._delete_artifacts(artifact_key, manifest_key)
-            raise
         except Exception:
             if artifact_key is not None and manifest_key is not None:
                 await self._delete_artifacts(artifact_key, manifest_key)
@@ -820,10 +855,8 @@ class ProcessingWorker:
             run = await session.get(ProcessingRun, claimed_run.id)
             if run is None or run.lease_token != lease_token:
                 raise LeaseLostError()
-            run.status = RUN_READY
-            run.lease_until = None
-            run.lease_token = None
-            run.completed_at = utcnow()
+            # No status write here: the document DELETE cascades to this run,
+            # so anything set on it in this transaction is never observable.
             document = await session.scalar(
                 select(Document)
                 .where(Document.id == claimed_run.document_id)
@@ -1087,19 +1120,10 @@ class ProcessingWorker:
             )
             if getattr(result, "rowcount", 0) != len(chunk_ids):
                 raise LeaseLostError()
-            indexed_count = await session.scalar(
-                select(func.count())
-                .select_from(ChunkEmbedding)
-                .where(
-                    ChunkEmbedding.processing_run_id == run_id,
-                    ChunkEmbedding.embedding_profile
-                    == self._settings.embedding_profile,
-                    ChunkEmbedding.status == EMBEDDING_INDEXED,
-                    ChunkEmbedding.model == self._settings.embedding_model,
-                    ChunkEmbedding.dimensions == self._settings.embedding_dimensions,
-                )
-            )
-            run.embedded_chunk_count = int(indexed_count or 0)
+            # The UPDATE just moved exactly len(chunk_ids) rows to INDEXED, so
+            # the increment is exact; a COUNT here ran after every batch, and
+            # _activate_embedded_run recounts the true total anyway.
+            run.embedded_chunk_count = (run.embedded_chunk_count or 0) + len(chunk_ids)
 
     async def _activate_embedded_run(
         self, run_id: UUID, lease_token: UUID
@@ -1139,13 +1163,7 @@ class ProcessingWorker:
                     ChunkEmbedding.content_hash == DocumentChunk.content_hash,
                 )
             )
-            if not run.row_count and (not chunk_count or indexed_count != chunk_count):
-                # row_count marks a row-bearing run, which has nothing in
-                # Qdrant to compare. Such runs do not actually reach here --
-                # _process_csv_extract sets RUN_READY directly -- but without
-                # the guard they would fail twice, on indexed_count !=
-                # chunk_count and on not chunk_count, both reported as a
-                # missing embedding.
+            if not chunk_count or indexed_count != chunk_count:
                 raise PermanentProcessingError(
                     "Not every document chunk has a matching Qdrant embedding"
                 )
@@ -1230,16 +1248,33 @@ class ProcessingWorker:
             return True
 
     def _embedding_record(self, chunk: DocumentChunk) -> ChunkEmbedding:
-        return ChunkEmbedding(
+        return self._new_embedding_record(
             chunk_id=chunk.id,
-            embedding_profile=self._settings.embedding_profile,
             workspace_id=chunk.workspace_id,
             document_id=chunk.document_id,
             processing_run_id=chunk.processing_run_id,
+            content_hash=chunk.content_hash,
+        )
+
+    def _new_embedding_record(
+        self,
+        *,
+        chunk_id: UUID,
+        workspace_id: UUID,
+        document_id: UUID,
+        processing_run_id: UUID,
+        content_hash: str,
+    ) -> ChunkEmbedding:
+        return ChunkEmbedding(
+            chunk_id=chunk_id,
+            embedding_profile=self._settings.embedding_profile,
+            workspace_id=workspace_id,
+            document_id=document_id,
+            processing_run_id=processing_run_id,
             model=self._settings.embedding_model,
             dimensions=self._settings.embedding_dimensions,
-            content_hash=chunk.content_hash,
-            qdrant_point_id=self._qdrant_point_id(chunk.id),
+            content_hash=content_hash,
+            qdrant_point_id=self._qdrant_point_id(chunk_id),
             status=EMBEDDING_PENDING,
         )
 

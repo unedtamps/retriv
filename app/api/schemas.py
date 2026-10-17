@@ -209,16 +209,6 @@ class ProcessingRunListResponse(BaseModel):
     since: datetime
 
 
-class ProblemDetail(BaseModel):
-    type: str = "about:blank"
-    title: str
-    status: int
-    detail: str
-    code: str
-    instance: str | None = None
-    errors: list[dict[str, str]] = Field(default_factory=list)
-
-
 class ApiKeyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 

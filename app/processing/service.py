@@ -42,13 +42,13 @@ async def enqueue_extract(
     which is what made the old webhook replay safe.
     """
     existing_run = await session.scalar(
-        select(ProcessingRun.id).where(
+        select(ProcessingRun).where(
             ProcessingRun.document_id == document.id,
             ProcessingRun.job_kind == JOB_EXTRACT,
         )
     )
     if existing_run is not None:
-        return await session.get(ProcessingRun, existing_run)  # type: ignore[return-value]
+        return existing_run
 
     status = initial_extract_status(document.detected_media_type)
     run = ProcessingRun(

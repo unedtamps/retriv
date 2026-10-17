@@ -767,6 +767,97 @@ async def test_embedding_backfill_requeues_a_run_left_half_indexed(
     assert [embedding.status for embedding in embeddings] == [EMBEDDING_INDEXED]
 
 
+async def test_embedding_backfill_finds_a_run_behind_finished_ones(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A hundred finished runs must not hide the one that needs fixing.
+
+    The sweep takes the oldest hundred candidates. Fully indexed runs are
+    excluded in SQL rather than skipped in the loop: otherwise a backlog of
+    finished runs fills the window every interval and whatever sits behind
+    them waits forever.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    vectors = FakeVectorStore()
+    indexer = build_worker(
+        db_session_factory, settings, storage=storage, vectors=vectors
+    )
+    await indexer.run_once()
+
+    async with db_session_factory() as session, session.begin():
+        for embedding in (
+            await session.scalars(
+                select(ChunkEmbedding).where(
+                    ChunkEmbedding.document_id == document.id
+                )
+            )
+        ).all():
+            embedding.status = "pending"
+        stored_run = await session.get(ProcessingRun, run.id)
+        assert stored_run is not None
+        stored_run.embedded_chunk_count = 0
+
+        # Older and already fully indexed: the pre-fix sweep selected these
+        # first and stopped at the window, never reaching the run above.
+        finished = datetime.now(UTC) - timedelta(days=1)
+        for index in range(100):
+            finished_run_id = uuid4()
+            finished_document_id = uuid4()
+            finished_document = Document(
+                id=finished_document_id,
+                workspace_id=entities.finance.id,
+                original_filename=f"finished-{index}.pdf",
+                detected_media_type="application/pdf",
+                size_bytes=1,
+                sha256=hashlib.sha256(f"finished-{index}".encode()).hexdigest(),
+                bucket="raw-documents",
+                object_key=(
+                    f"workspaces/{entities.finance.id}/objects/"
+                    f"finished/{finished_document_id}"
+                ),
+            )
+            finished_document.active_processing_run_id = finished_run_id
+            session.add(finished_document)
+            session.add(
+                ProcessingRun(
+                    id=finished_run_id,
+                    document_id=finished_document_id,
+                    workspace_id=entities.finance.id,
+                    job_kind=JOB_EXTRACT,
+                    pipeline_version="2026.1",
+                    status=RUN_READY,
+                    chunk_count=1,
+                    embedded_chunk_count=1,
+                    embedding_profile=settings.embedding_profile,
+                    embedding_model=settings.embedding_model,
+                    embedding_dimensions=settings.embedding_dimensions,
+                    created_at=finished + timedelta(seconds=index),
+                )
+            )
+
+    vectors.points.clear()
+    backfill = build_worker(
+        db_session_factory, settings, storage=storage, vectors=vectors
+    )
+    assert await backfill.run_once() is True
+
+    assert len(vectors.points) == 1
+    async with db_session_factory() as session:
+        embeddings = (
+            await session.scalars(
+                select(ChunkEmbedding).where(
+                    ChunkEmbedding.document_id == document.id
+                )
+            )
+        ).all()
+    assert [embedding.status for embedding in embeddings] == [EMBEDDING_INDEXED]
+
+
 # -- CSV -----------------------------------------------------------------
 #
 # A CSV is stored as rows and deliberately never embedded. These tests pin
