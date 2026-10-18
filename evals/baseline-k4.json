@@ -1,0 +1,524 @@
+{
+  "ran_at": "2026-10-17T05:06:25.024426+00:00",
+  "config": {
+    "embedding_model": "text-embedding-qwen3-embedding-8b",
+    "embedding_profile": "qwen3-embedding-8b-4096-v1",
+    "max_context_chunks": 4,
+    "min_relevance_score": 0.25,
+    "heading_expand_chunks": 4,
+    "heading_chunk_max_tokens": 12
+  },
+  "summary": {
+    "queries": 25,
+    "errors": 0,
+    "recall@1": 0.72,
+    "recall@4": 0.96,
+    "mrr": 0.82,
+    "in_final_output": 0.96,
+    "expansion_only_hits": 0,
+    "avg_matches": 4.0,
+    "avg_final": 4.0
+  },
+  "queries": [
+    {
+      "query": "When does the FASB's new consolidation guidance issued in early 2015 take effect, and has the company finished assessing its impact?",
+      "rank": 2,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "cde8b914-8d5d-5558-bf5d-f793114c20f3",
+        "02e6eb55-098a-5ae7-85c5-58e32a3df147",
+        "abe85cbb-cb8f-5f92-a6fc-4a60408c556e",
+        "300c6b0a-c43f-5a05-b566-7971e37e1507"
+      ],
+      "final_ids": [
+        "cde8b914-8d5d-5558-bf5d-f793114c20f3",
+        "02e6eb55-098a-5ae7-85c5-58e32a3df147",
+        "abe85cbb-cb8f-5f92-a6fc-4a60408c556e",
+        "300c6b0a-c43f-5a05-b566-7971e37e1507"
+      ],
+      "error": null
+    },
+    {
+      "query": "Why might internal controls over financial reporting fail to prevent or detect a misstatement?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "50d781a1-1a49-5185-8a3a-7e957e88e1c8",
+        "978c2e00-7f76-5f5e-9d11-f8774835c3ed",
+        "37c5ea61-2a4c-5213-b96f-682f7a4f79e8",
+        "ca1581bf-92ce-5bd3-b76f-06f03a2c37af"
+      ],
+      "final_ids": [
+        "50d781a1-1a49-5185-8a3a-7e957e88e1c8",
+        "978c2e00-7f76-5f5e-9d11-f8774835c3ed",
+        "37c5ea61-2a4c-5213-b96f-682f7a4f79e8",
+        "ca1581bf-92ce-5bd3-b76f-06f03a2c37af"
+      ],
+      "error": null
+    },
+    {
+      "query": "When did Vivendi stop being treated as a related party of the company?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "79cda8d8-1ac1-5c67-8856-76cc82f5ea2e",
+        "989834aa-a6d7-53b9-86f5-fe33a71e6a7a",
+        "125c1d17-5629-5c51-9dca-e225e985fc58",
+        "cf21ded0-1267-5230-9728-f9404bf416f7"
+      ],
+      "final_ids": [
+        "79cda8d8-1ac1-5c67-8856-76cc82f5ea2e",
+        "989834aa-a6d7-53b9-86f5-fe33a71e6a7a",
+        "125c1d17-5629-5c51-9dca-e225e985fc58",
+        "cf21ded0-1267-5230-9728-f9404bf416f7"
+      ],
+      "error": null
+    },
+    {
+      "query": "What is the notional amount of the foreign currency forward contracts the company had designated as cash-flow hedges at the end of 2015?",
+      "rank": 3,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "7c8ff810-712c-5784-bf6b-b7f653851d16",
+        "c2e4c5a2-8e5d-59b8-962c-1c73cf439688",
+        "ac29921d-6f5d-5549-a5f0-289b03eab9fc",
+        "35311c82-4fef-5421-bcea-e7f77453e7ce"
+      ],
+      "final_ids": [
+        "7c8ff810-712c-5784-bf6b-b7f653851d16",
+        "c2e4c5a2-8e5d-59b8-962c-1c73cf439688",
+        "ac29921d-6f5d-5549-a5f0-289b03eab9fc",
+        "35311c82-4fef-5421-bcea-e7f77453e7ce"
+      ],
+      "error": null
+    },
+    {
+      "query": "For 2014, what was the net effect of deferral of net revenues and related cost of sales on income from operations before income tax expense?",
+      "rank": 2,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "afdaf0e1-cbd1-5db4-9aba-306107c2332b",
+        "3ecebb94-c7d2-57f1-afbb-e36f4e35061f",
+        "cdaca454-b61e-5d27-98c5-5ed2bf2877f0",
+        "8efe9625-e493-5cb7-a139-4885fcdf06db"
+      ],
+      "final_ids": [
+        "afdaf0e1-cbd1-5db4-9aba-306107c2332b",
+        "3ecebb94-c7d2-57f1-afbb-e36f4e35061f",
+        "cdaca454-b61e-5d27-98c5-5ed2bf2877f0",
+        "8efe9625-e493-5cb7-a139-4885fcdf06db"
+      ],
+      "error": null
+    },
+    {
+      "query": "What interest rates and maturity dates apply to the unsecured senior notes the company issued in September 2013?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "a3ab2494-3f3b-5f6a-8d0c-6e96586f6a38",
+        "e6692cea-04df-58ab-b105-07c5ff8080f7",
+        "83963b0e-a75f-5a1f-b26f-8681f499d483",
+        "0b7ab905-ca78-5fd9-bebd-f9c6e4e22c02"
+      ],
+      "final_ids": [
+        "a3ab2494-3f3b-5f6a-8d0c-6e96586f6a38",
+        "e6692cea-04df-58ab-b105-07c5ff8080f7",
+        "83963b0e-a75f-5a1f-b26f-8681f499d483",
+        "0b7ab905-ca78-5fd9-bebd-f9c6e4e22c02"
+      ],
+      "error": null
+    },
+    {
+      "query": "How did the company's declared dividend per share change from 2011 through 2015?",
+      "rank": null,
+      "in_final": false,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "d74879b2-281d-5d7e-9b28-de7f18fbac4f",
+        "ba6d9aae-cab3-5c2d-9703-1ae0cd747f76",
+        "64dba9e7-9b06-5bd4-aab5-9b377551776f",
+        "bae1355e-c5a1-5d70-b8dc-82d670c281ac"
+      ],
+      "final_ids": [
+        "d74879b2-281d-5d7e-9b28-de7f18fbac4f",
+        "ba6d9aae-cab3-5c2d-9703-1ae0cd747f76",
+        "64dba9e7-9b06-5bd4-aab5-9b377551776f",
+        "bae1355e-c5a1-5d70-b8dc-82d670c281ac"
+      ],
+      "error": null
+    },
+    {
+      "query": "What was the company's cash and cash equivalents balance at the end of 2013?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "0ea25a3f-5347-57b5-8b62-cf90028ef3d5",
+        "a92bf0f2-fdc3-5fc9-b73d-e762556eae2b",
+        "47dbd5d9-12fc-57ca-81fb-d7e105764d5b",
+        "3d1e3ace-27dd-5c76-b1ab-4d0c76b92f0a"
+      ],
+      "final_ids": [
+        "0ea25a3f-5347-57b5-8b62-cf90028ef3d5",
+        "a92bf0f2-fdc3-5fc9-b73d-e762556eae2b",
+        "47dbd5d9-12fc-57ca-81fb-d7e105764d5b",
+        "3d1e3ace-27dd-5c76-b1ab-4d0c76b92f0a"
+      ],
+      "error": null
+    },
+    {
+      "query": "What typically happens to downloadable content sales for a game that is not well received?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "20888470-e29f-5d4a-9cdb-b8df285f4ced",
+        "6c438e6e-49ee-57aa-bea8-8c114689535c",
+        "45b32cc0-038a-50d4-b097-85580f59a559",
+        "00a218d2-c15b-5b11-a5b6-44898eae1eec"
+      ],
+      "final_ids": [
+        "20888470-e29f-5d4a-9cdb-b8df285f4ced",
+        "6c438e6e-49ee-57aa-bea8-8c114689535c",
+        "45b32cc0-038a-50d4-b097-85580f59a559",
+        "00a218d2-c15b-5b11-a5b6-44898eae1eec"
+      ],
+      "error": null
+    },
+    {
+      "query": "What happens if the ESRB or another ratings agency re-rates one of the company's games after release?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "bf88f70e-2d44-5700-8947-7afeeadf7a89",
+        "e79b5a48-c5a2-583c-9792-6bae28699a32",
+        "45b32cc0-038a-50d4-b097-85580f59a559",
+        "940aa237-5d41-546f-9958-129459daf065"
+      ],
+      "final_ids": [
+        "bf88f70e-2d44-5700-8947-7afeeadf7a89",
+        "e79b5a48-c5a2-583c-9792-6bae28699a32",
+        "45b32cc0-038a-50d4-b097-85580f59a559",
+        "940aa237-5d41-546f-9958-129459daf065"
+      ],
+      "error": null
+    },
+    {
+      "query": "What factors does management weigh when estimating allowances for product returns and price protection?",
+      "rank": 3,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "e235acd7-52cc-5306-a24f-0d8f3a3262c1",
+        "97809684-6194-57de-9039-b3d95df63a91",
+        "36ceadfb-d7cd-53ac-b7e7-833ec154325e",
+        "da14749f-d803-5477-9033-587943b0b8e0"
+      ],
+      "final_ids": [
+        "e235acd7-52cc-5306-a24f-0d8f3a3262c1",
+        "97809684-6194-57de-9039-b3d95df63a91",
+        "36ceadfb-d7cd-53ac-b7e7-833ec154325e",
+        "da14749f-d803-5477-9033-587943b0b8e0"
+      ],
+      "error": null
+    },
+    {
+      "query": "What are the financial consequences if the company invests in a new technology or platform that does not become commercially successful?",
+      "rank": 3,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "305052a6-6a81-5d0f-b01c-4fd7557742e3",
+        "5b1c1507-a4c6-5919-ba6f-18090206f56e",
+        "0094665d-4cb7-557f-bee3-61a11786955a",
+        "c62d1da4-ee53-5535-a27e-b77aac400dbb"
+      ],
+      "final_ids": [
+        "305052a6-6a81-5d0f-b01c-4fd7557742e3",
+        "5b1c1507-a4c6-5919-ba6f-18090206f56e",
+        "0094665d-4cb7-557f-bee3-61a11786955a",
+        "c62d1da4-ee53-5535-a27e-b77aac400dbb"
+      ],
+      "error": null
+    },
+    {
+      "query": "Why is a delay in a game's launch date so damaging to the company's yearly results?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "fe317af3-fe72-5c72-9aff-63920a78d147",
+        "c62d1da4-ee53-5535-a27e-b77aac400dbb",
+        "29ac1211-249b-5f90-a8a5-690d9db78635",
+        "20888470-e29f-5d4a-9cdb-b8df285f4ced"
+      ],
+      "final_ids": [
+        "fe317af3-fe72-5c72-9aff-63920a78d147",
+        "c62d1da4-ee53-5535-a27e-b77aac400dbb",
+        "29ac1211-249b-5f90-a8a5-690d9db78635",
+        "20888470-e29f-5d4a-9cdb-b8df285f4ced"
+      ],
+      "error": null
+    },
+    {
+      "query": "What were the main reasons cash used in investing activities jumped in 2015?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "41efa0f0-9feb-55fe-a26c-448659045e82",
+        "3d1e3ace-27dd-5c76-b1ab-4d0c76b92f0a",
+        "9dc86006-d12f-5927-8e81-99ca6dbf384f",
+        "a92bf0f2-fdc3-5fc9-b73d-e762556eae2b"
+      ],
+      "final_ids": [
+        "41efa0f0-9feb-55fe-a26c-448659045e82",
+        "3d1e3ace-27dd-5c76-b1ab-4d0c76b92f0a",
+        "9dc86006-d12f-5927-8e81-99ca6dbf384f",
+        "a92bf0f2-fdc3-5fc9-b73d-e762556eae2b"
+      ],
+      "error": null
+    },
+    {
+      "query": "Why do console makers have so much leverage over how much the company earns on its games?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "940aa237-5d41-546f-9958-129459daf065",
+        "4f981d24-b3bc-5f04-a16b-3a37ed514c9e",
+        "14b21d1f-9277-56ba-b92b-39a415f348ed",
+        "a6c7f49f-13d4-56f3-b84e-d0b6c7254505"
+      ],
+      "final_ids": [
+        "940aa237-5d41-546f-9958-129459daf065",
+        "4f981d24-b3bc-5f04-a16b-3a37ed514c9e",
+        "14b21d1f-9277-56ba-b92b-39a415f348ed",
+        "a6c7f49f-13d4-56f3-b84e-d0b6c7254505"
+      ],
+      "error": null
+    },
+    {
+      "query": "What debt repayment did the company make right after the end of 2015, and why wasn't it shown as a current liability on the 2015 balance sheet?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "283d0abc-be14-519a-82b3-17904432ae19",
+        "dbd53b22-862e-5773-bee9-bedfd3f9e31f",
+        "83b28158-3044-523f-a077-c2ece9237ced",
+        "5ff82c3e-d6d4-5632-a729-6afc4d7c9339"
+      ],
+      "final_ids": [
+        "283d0abc-be14-519a-82b3-17904432ae19",
+        "dbd53b22-862e-5773-bee9-bedfd3f9e31f",
+        "83b28158-3044-523f-a077-c2ece9237ced",
+        "5ff82c3e-d6d4-5632-a729-6afc4d7c9339"
+      ],
+      "error": null
+    },
+    {
+      "query": "What does the September 2015 accounting standard on measurement-period adjustments change about how acquisition adjustments are reported?",
+      "rank": 2,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "abe85cbb-cb8f-5f92-a6fc-4a60408c556e",
+        "300c6b0a-c43f-5a05-b566-7971e37e1507",
+        "982ae28c-3ca6-57d1-b212-119c3ee20d4b",
+        "02e6eb55-098a-5ae7-85c5-58e32a3df147"
+      ],
+      "final_ids": [
+        "abe85cbb-cb8f-5f92-a6fc-4a60408c556e",
+        "300c6b0a-c43f-5a05-b566-7971e37e1507",
+        "982ae28c-3ca6-57d1-b212-119c3ee20d4b",
+        "02e6eb55-098a-5ae7-85c5-58e32a3df147"
+      ],
+      "error": null
+    },
+    {
+      "query": "How does management estimate how much of its accounts receivable might be uncollectible?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "da14749f-d803-5477-9033-587943b0b8e0",
+        "972ddcaf-a02b-525f-b984-09ed2968e54e",
+        "fb90597b-45ec-5981-b18d-e9854616a00d",
+        "36ceadfb-d7cd-53ac-b7e7-833ec154325e"
+      ],
+      "final_ids": [
+        "da14749f-d803-5477-9033-587943b0b8e0",
+        "972ddcaf-a02b-525f-b984-09ed2968e54e",
+        "fb90597b-45ec-5981-b18d-e9854616a00d",
+        "36ceadfb-d7cd-53ac-b7e7-833ec154325e"
+      ],
+      "error": null
+    },
+    {
+      "query": "Why can retailers demand better terms when competition for shelf space intensifies?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "ab076942-61eb-52cf-9363-411061ee910c",
+        "45b32cc0-038a-50d4-b097-85580f59a559",
+        "ef283951-893d-5b20-8bea-d3edbd186feb",
+        "53fb2297-31db-509f-b5f4-947a253becc2"
+      ],
+      "final_ids": [
+        "ab076942-61eb-52cf-9363-411061ee910c",
+        "45b32cc0-038a-50d4-b097-85580f59a559",
+        "ef283951-893d-5b20-8bea-d3edbd186feb",
+        "53fb2297-31db-509f-b5f4-947a253becc2"
+      ],
+      "error": null
+    },
+    {
+      "query": "Which filing first incorporated the company's 2014 Incentive Plan by reference?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "df850dab-78c3-5437-bca2-cf607440f626",
+        "97133333-116a-5f5f-ac79-e4173660cdab",
+        "2c1bfcff-f580-5d29-be63-d803b227fc68",
+        "1999e3c8-236d-5f0c-8325-cb74d645ebcd"
+      ],
+      "final_ids": [
+        "df850dab-78c3-5437-bca2-cf607440f626",
+        "97133333-116a-5f5f-ac79-e4173660cdab",
+        "2c1bfcff-f580-5d29-be63-d803b227fc68",
+        "1999e3c8-236d-5f0c-8325-cb74d645ebcd"
+      ],
+      "error": null
+    },
+    {
+      "query": "How does the company recognize revenue from durable virtual goods sold inside its games?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "4e36e7c8-dc93-5523-8268-947c1fbf16b7",
+        "8476b51b-a3e5-5c0b-bb96-2a3085622a3e",
+        "ab6b571d-b4e8-5013-955b-2095a2957b45",
+        "870e47c1-62d3-53bc-bfdc-a3d36a152b9f"
+      ],
+      "final_ids": [
+        "4e36e7c8-dc93-5523-8268-947c1fbf16b7",
+        "8476b51b-a3e5-5c0b-bb96-2a3085622a3e",
+        "ab6b571d-b4e8-5013-955b-2095a2957b45",
+        "870e47c1-62d3-53bc-bfdc-a3d36a152b9f"
+      ],
+      "error": null
+    },
+    {
+      "query": "What percentage of the company's net revenues came from international sales in 2015?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "33abedd5-0736-5679-94a3-4769f49178c6",
+        "a0b84661-9a57-50f1-8faa-739ade874f20",
+        "29f2d599-9efa-5f86-b0d5-f1d88015b0ad",
+        "a9479cf8-257a-5a7f-ad55-8eac937071f2"
+      ],
+      "final_ids": [
+        "33abedd5-0736-5679-94a3-4769f49178c6",
+        "a0b84661-9a57-50f1-8faa-739ade874f20",
+        "29f2d599-9efa-5f86-b0d5-f1d88015b0ad",
+        "a9479cf8-257a-5a7f-ad55-8eac937071f2"
+      ],
+      "error": null
+    },
+    {
+      "query": "How are arrangements that bundle software with hardware or services accounted for?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "aa74cd3d-fbe5-5084-a90e-ab52b9ef9a27",
+        "3109ddd2-ec1b-5eb2-9686-568a9126ad9b",
+        "d6734bcf-7c3c-5676-925c-1bcea4ec26b1",
+        "fe669c42-0506-59e8-a8d9-da47b1764b65"
+      ],
+      "final_ids": [
+        "aa74cd3d-fbe5-5084-a90e-ab52b9ef9a27",
+        "3109ddd2-ec1b-5eb2-9686-568a9126ad9b",
+        "d6734bcf-7c3c-5676-925c-1bcea4ec26b1",
+        "fe669c42-0506-59e8-a8d9-da47b1764b65"
+      ],
+      "error": null
+    },
+    {
+      "query": "Under what circumstances may a stock option holder transfer their award to someone else?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "5f3e3a00-905b-5de0-989f-e64f23c8487d",
+        "4a739b2c-5b2a-5102-aa15-da3fc5106777",
+        "5b55434d-c4d4-5b3d-b83a-8dc012ea33fc",
+        "7308e818-a9af-547d-9114-829710486a5d"
+      ],
+      "final_ids": [
+        "5f3e3a00-905b-5de0-989f-e64f23c8487d",
+        "4a739b2c-5b2a-5102-aa15-da3fc5106777",
+        "5b55434d-c4d4-5b3d-b83a-8dc012ea33fc",
+        "7308e818-a9af-547d-9114-829710486a5d"
+      ],
+      "error": null
+    },
+    {
+      "query": "If the stock option terms created a tax liability under Section 409A, would the company cover the holder's taxes?",
+      "rank": 1,
+      "in_final": true,
+      "matches": 4,
+      "final": 4,
+      "matched_ids": [
+        "9f83514e-b086-501e-8617-2bc09f87a849",
+        "a4029626-a84d-5f54-b778-4d18baa925f5",
+        "0c052cad-bb03-5ac2-a878-c2ce44599683",
+        "ae737c66-27a1-5a92-80e3-f9f28076ae54"
+      ],
+      "final_ids": [
+        "9f83514e-b086-501e-8617-2bc09f87a849",
+        "a4029626-a84d-5f54-b778-4d18baa925f5",
+        "0c052cad-bb03-5ac2-a878-c2ce44599683",
+        "ae737c66-27a1-5a92-80e3-f9f28076ae54"
+      ],
+      "error": null
+    }
+  ]
+}

@@ -10,7 +10,7 @@ __pycache__/
 htmlcov/
 migration-manifests/
 *.migration.json
-users-v*.json
+data
 
 # local model/tessdata caches used by offline diagnostics
 .cache/
