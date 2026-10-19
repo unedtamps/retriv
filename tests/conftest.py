@@ -9,7 +9,12 @@ import pytest
 import pytest_asyncio
 from pydantic import SecretStr
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings, get_settings
@@ -130,7 +135,7 @@ def settings(tmp_path: Path) -> Settings:
 
 
 @pytest_asyncio.fixture
-async def db_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+async def db_engine() -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         poolclass=StaticPool,
@@ -149,11 +154,20 @@ async def db_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]
 
     async with engine.begin() as connection:
         await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-    yield factory
+    yield engine
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session_factory(
+    db_engine: AsyncEngine,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    # One engine behind both fixtures: a second create_async_engine over
+    # "sqlite+aiosqlite://" is a second, empty database, not a second
+    # connection to this one.
+    async with db_engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    yield async_sessionmaker(db_engine, expire_on_commit=False)
 
 
 @pytest.fixture
