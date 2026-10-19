@@ -50,6 +50,7 @@ from app.infrastructure.storage import (
     ObjectTooLargeError,
 )
 from app.processing.worker import ProcessingWorker, utcnow
+from app.sections import encode_section_key
 from tests.conftest import SeededEntities
 from tests.document_samples import (
     csv_bytes,
@@ -135,6 +136,8 @@ class FakeExtractor:
                     text=text,
                     token_count=len(text.split()),
                     section_path=["Body"],
+                    section_key=encode_section_key(["Body"]),
+                    is_heading_only=False,
                     page_numbers=[1],
                     provenance={},
                 )

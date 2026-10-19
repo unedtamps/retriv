@@ -9,6 +9,7 @@ import pytest
 from app.documents.validation import DOCX_MEDIA_TYPE, PDF_MEDIA_TYPE
 from app.extraction.docling import DoclingExtractor
 from app.extraction.sandbox import SandboxedDoclingExtractor
+from app.sections import encode_section_key
 
 pytest.importorskip("docling")
 docx_module = pytest.importorskip("docx")
@@ -104,6 +105,50 @@ def test_extracts_docx_hierarchy(
     assert len(result.chunks) == 1
     assert "Operating costs remained stable" in result.chunks[0].text
     assert result.chunks[0].section_path == ["Annual Report"]
+    # The stored key is what section completion queries, so it must be derived from
+    # the path rather than left for the caller to reconstruct.
+    assert result.chunks[0].section_key == encode_section_key(["Annual Report"])
+    # This chunk carries body text, so the parser's own labels rule out heading-only.
+    assert result.chunks[0].is_heading_only is False
+
+
+@pytest.mark.integration
+def test_a_heading_with_no_body_is_marked_from_parser_labels(
+    tmp_path: Path, docling_extractor: DoclingExtractor
+) -> None:
+    """The structural signal replaces the old "is it under twelve tokens" guess.
+
+    A heading emitted on its own is recorded as heading-only whatever its depth, so a
+    deeply nested heading whose breadcrumb alone already exceeds any length threshold
+    is no longer misread as body text. Measured against the tokenizer the extractor
+    uses, this one is well past the old ceiling.
+    """
+    path = tmp_path / "nested.docx"
+    document = Document()
+    document.add_heading("Peraturan Menteri Keuangan Republik Indonesia", level=1)
+    document.add_paragraph("Ketentuan umum.")
+    document.add_heading("Pasal 16", level=2)
+    document.add_paragraph("Kerangka umum.")
+    document.add_heading("Kerangka Umum", level=3)
+    document.save(path)
+
+    result = docling_extractor.extract(path, media_type=DOCX_MEDIA_TYPE)
+
+    heading_only = [chunk for chunk in result.chunks if chunk.is_heading_only]
+    assert heading_only, "the childless heading should be emitted on its own"
+    assert heading_only[0].section_path == [
+        "Peraturan Menteri Keuangan Republik Indonesia",
+        "Pasal 16",
+        "Kerangka Umum",
+    ]
+    assert heading_only[0].section_key == encode_section_key(
+        ["Peraturan Menteri Keuangan Republik Indonesia", "Pasal 16", "Kerangka Umum"]
+    )
+    assert any(
+        chunk.section_path == ["Peraturan Menteri Keuangan Republik Indonesia", "Pasal 16"]
+        and not chunk.is_heading_only
+        for chunk in result.chunks
+    ), "the parent section keeps its own prose in a chunk that is not heading-only"
 
 
 @pytest.mark.integration

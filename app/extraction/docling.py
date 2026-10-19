@@ -5,6 +5,7 @@ from typing import Any
 
 from app.documents.validation import DOCX_MEDIA_TYPE, PDF_MEDIA_TYPE
 from app.extraction.base import ExtractedChunk, ExtractionError, ExtractionResult
+from app.sections import encode_section_key
 
 
 class DoclingExtractor:
@@ -142,9 +143,13 @@ class DoclingExtractor:
         source_refs: list[str] = []
         page_regions: list[dict[str, Any]] = []
         page_numbers: set[int] = set()
+        item_labels: list[str] = []
         for item in doc_items if isinstance(doc_items, list) else []:
             if not isinstance(item, dict):
                 continue
+            label = item.get("label")
+            if isinstance(label, str):
+                item_labels.append(label)
             self_ref = item.get("self_ref")
             if isinstance(self_ref, str):
                 source_refs.append(self_ref)
@@ -168,6 +173,13 @@ class DoclingExtractor:
             text=text,
             token_count=self._tokenizer.count_tokens(text),
             section_path=section_path,
+            section_key=encode_section_key(section_path),
+            # The parser already knows which items are headings, so record that
+            # rather than guessing from the token count. A heading emitted alone
+            # is the signal that its content lives further down the tree, in
+            # sub-sections that carry a deeper section_path.
+            is_heading_only=bool(item_labels)
+            and all(label == "section_header" for label in item_labels),
             page_numbers=sorted(page_numbers),
             provenance=provenance_payload,
         )

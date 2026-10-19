@@ -1225,6 +1225,8 @@ class ProcessingWorker:
                     text=chunk.text,
                     token_count=chunk.token_count,
                     section_path=chunk.section_path,
+                    section_key=chunk.section_key,
+                    is_heading_only=chunk.is_heading_only,
                     page_numbers=chunk.page_numbers,
                     provenance=chunk.provenance,
                     content_hash=content_hash,

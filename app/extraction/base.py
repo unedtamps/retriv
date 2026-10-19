@@ -12,6 +12,8 @@ class ExtractedChunk:
     text: str
     token_count: int
     section_path: list[str]
+    section_key: str
+    is_heading_only: bool
     page_numbers: list[int]
     provenance: dict[str, Any]
 

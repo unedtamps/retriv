@@ -205,6 +205,8 @@ class SandboxedDoclingExtractor:
         text = value.get("text")
         token_count = value.get("token_count")
         section_path = value.get("section_path")
+        section_key = value.get("section_key")
+        is_heading_only = value.get("is_heading_only")
         page_numbers = value.get("page_numbers")
         provenance = value.get("provenance")
         if (
@@ -212,6 +214,8 @@ class SandboxedDoclingExtractor:
             or not isinstance(token_count, int)
             or not isinstance(section_path, list)
             or not all(isinstance(item, str) for item in section_path)
+            or not isinstance(section_key, str)
+            or not isinstance(is_heading_only, bool)
             or not isinstance(page_numbers, list)
             or not all(isinstance(item, int) for item in page_numbers)
             or not isinstance(provenance, dict)
@@ -221,6 +225,8 @@ class SandboxedDoclingExtractor:
             text=text,
             token_count=token_count,
             section_path=section_path,
+            section_key=section_key,
+            is_heading_only=is_heading_only,
             page_numbers=page_numbers,
             provenance=provenance,
         )

@@ -248,6 +248,15 @@ class DocumentChunk(Base):
         UniqueConstraint("processing_run_id", "ordinal", name="uq_document_chunks_run_ordinal"),
         Index("ix_document_chunks_document", "workspace_id", "document_id"),
         Index("ix_document_chunks_active_lookup", "workspace_id", "processing_run_id"),
+        # Section completion looks a section up by its own key and its
+        # sub-sections by prefix. text_pattern_ops is what makes the prefix
+        # form of LIKE indexable; the default ops would force a scan.
+        Index(
+            "ix_document_chunks_section_key",
+            "processing_run_id",
+            "section_key",
+            postgresql_ops={"section_key": "text_pattern_ops"},
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -260,6 +269,14 @@ class DocumentChunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     section_path: Mapped[list[str]] = mapped_column(JSON_TYPE, default=list)
+    # Canonical text form of section_path. See app.sections for why this exists
+    # rather than querying the JSON column directly.
+    section_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # True when the chunk is nothing but headings. Recorded from the parser's own
+    # item labels rather than inferred from length: a chunk's token count includes
+    # the ancestor breadcrumb, so a length test starts misreading deep headings
+    # as body text.
+    is_heading_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     page_numbers: Mapped[list[int]] = mapped_column(JSON_TYPE, default=list)
     provenance: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
