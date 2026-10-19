@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { FileUp, KeyRound, LayoutGrid, LogOut, Menu, Users, X } from 'lucide-react'
+import { FileUp, LayoutGrid, LogOut, Menu, Users, X } from 'lucide-react'
 import type { AppRoute, CurrentUser, Workspace } from '../types'
 import { ProcessingNotifications } from './ProcessingNotifications'
 import { BrandLockup, BrandMark } from './ui/Brand'
@@ -178,11 +178,13 @@ function Navigation({
   closeButtonRef,
   onLogout,
 }: NavigationProps) {
+  // The navigation is for the screens. API keys are a section of the
+  // dashboard, not a screen of their own, so they are reached from the page
+  // rather than from here.
   const items = [
     { to: '/dashboard' as AppRoute, label: 'Dashboard', icon: LayoutGrid },
     { to: '/upload-context' as AppRoute, label: 'Upload context', icon: FileUp },
     ...(isAdmin ? [{ to: '/dashboard#users' as const, label: 'Users', icon: Users }] : []),
-    { to: '/dashboard#api-keys' as const, label: 'API keys', icon: KeyRound },
   ]
 
   return (
@@ -199,7 +201,8 @@ function Navigation({
           >
             <X aria-hidden="true" size={18} />
           </button>
-        )}      </div>
+        )}
+      </div>
 
       <nav className="flex-1 overflow-y-auto p-3" aria-label="Main navigation">
         <ul className="space-y-1">
