@@ -51,6 +51,40 @@ npm run check
 npm run preview
 ```
 
+## Design system
+
+The interface is described once, in `src/index.css`, and everything else is Tailwind utilities
+over those tokens.
+
+**Tokens** (`@theme` in `src/index.css`): three surfaces (`paper`, `surface`, `sunken`), two
+lines (`line`, `line-strong`), three inks (`ink`, `ink-muted`, `ink-faint`), one accent in two
+tones (`accent` for fills, `accent-ink` for text, borders and focus rings), and the status
+colours (`success`, `danger`, `warn`), which are semantic rather than brand. The type scale is
+two steps: `text-eyebrow` for the small mono labels and `text-meta` for counts and timestamps.
+
+**Rules**
+
+- One accent. Lime is the brand colour and the only interactive highlight; a second green used
+  for focus rings and active states was competing with it.
+- No raw colour values in a component. If a colour is needed, it is a token.
+- No arbitrary values (`text-[0.68rem]`, `bg-[#17231f]`). The scale is in the theme, so it can
+  be changed in one place.
+- The dark surface is the sign-in page and nothing else. Hand-painted dark panels meant one
+  colour meant two things depending on where it was used.
+
+**Classes** (`@layer components`): `btn` and its variants, `label`, `field`, `panel`, `table`,
+`eyebrow`, `badge`, `error-note`, `empty`, `toast`, `skip-link`, `nav-link`, `choice`. Twelve
+classes carry the whole interface.
+
+**Components** (`src/components/ui/`): `Panel` and `PanelHeader`, `DataTable` (a table that
+becomes a list of cards on a narrow screen), `SearchField`, `EmptyState`, `SecretWarning`,
+`CopyButton`, `BrandMark`. `src/hooks/`: `useApiResource` (one fetch with the abort and the
+sign-out handling, instead of seven copies of it), `useProcessingRuns`, `useIsDesktop`.
+
+The navigation is one element: a permanent rail from `lg` up, an off-canvas drawer below it.
+Which one it is decides whether it is a navigation landmark or a modal dialog, and that is
+decided by `useIsDesktop` rather than by CSS.
+
 ## Access Model
 
 - Platform admins can create users and workspaces and assign owner, editor, or viewer roles.
