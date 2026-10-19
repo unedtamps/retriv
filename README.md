@@ -151,10 +151,10 @@ keeps `Authorization: Bearer rk_...` on every request. The key identifies a user
 workspaces it can see are derived live from that user's memberships, so demoting or
 removing the user narrows the next call rather than the next login.
 
-The tools are `find_documents`, `search_context`, `list_queryable_files`,
-`query_rows`, and `download_document`. `query_rows` is registered only when `RETRIV_SQL_DATABASE_URL` is
-set: an absent tool is something a model stops trying, whereas a tool that always
-answers "not enabled" is one it keeps retrying.
+The tools are `find_documents`, `search_context`, `read_document`,
+`list_queryable_files`, `query_rows`, and `download_document`. `query_rows` is registered only
+when `RETRIV_SQL_DATABASE_URL` is set: an absent tool is something a model stops trying,
+whereas a tool that always answers "not enabled" is one it keeps retrying.
 
 Nothing here writes. Upload, status and deletion live in the HTTP API and the dashboard,
 because they are decisions a person takes rather than ones a model should reach for
@@ -164,7 +164,8 @@ could already search, and can destroy nothing.
 A turn has two possible doors into the documents. `search_context` retrieves prose by
 meaning; `query_rows` runs SQL over tabular rows. The client's model picks, which is
 why `list_queryable_files` exists and why the CSV catalogue is repeated inside the row
-tool's reply.
+tool's reply. Reading a document in order rather than by relevance is a third move,
+`read_document`, and it is described below.
 
 `find_documents` is the door in rather than the way out: it maps a name to a
 document_id. Without it a model can only learn an id from a search result or the CSV
@@ -225,7 +226,9 @@ sequenceDiagram
     E-->>A: vector
     A->>Q: search, filter workspace_id IN scope
     A->>DB: re-validate every point against PostgreSQL
+    A->>DB: complete each named section, same re-validation
     A-->>C: labelled sources, one citation each
+    Note over A,C: or read_document, to read in order from an ordinal
     Note over C,A: or list_queryable_files, then query_rows(sql)
     A->>DB: allowlist, read-only, retriv_reader, RLS
     DB-->>A: rows, or values for an aggregate
@@ -257,6 +260,80 @@ credential?" before a byte of the JSON-RPC body is read, and every tool re-deriv
 caller from its own request headers, because tool handlers run in the session manager's
 task group rather than in the HTTP request that carried them. Revoking a key therefore
 takes effect on the next call, not at the end of a session.
+
+### How a heading gets its content back
+
+Docling chunks a document by its own structure, not by a fixed window: a section that
+fits becomes one chunk, a longer one splits, and every chunk carries the full ancestor
+heading path (`section_path`) both as a column and prepended to its text. Retrieval is
+where that structure is spent.
+
+A heading is short and topically concentrated, so against a vague query it outscores the
+prose it introduces. On a 57-page regulation, "Article 16: General framework" matched at
+0.81 while Regulation 16.01-16.06 did not appear at all, and the agent reported the
+article's content as absent from a document that contained it.
+
+The repair is not to return the next few chunks in reading order -- the content is
+rarely adjacent. When Docling meets a heading followed by numbered sub-provisions, it
+files the prose under paths that *end* in the sub-number, so the heading's own key is
+held by a single short chunk and the substance sits at deeper keys. So a search completes
+each section it names: the anchor's own chunks, then its sub-sections, capped at
+`section_expand_chunks` per section and `max_context_sources` in total.
+
+Two details are load-bearing:
+
+- **`max_context_sources` must exceed `max_context_chunks`.** `limit` bounds similarity
+  matches; the budget bounds the total. Without a budget the cap collapses onto `limit`,
+  and a search that filled its quota has nowhere to put a completion -- which is exactly
+  the case completion exists to serve. Every baseline recorded before this was corrected
+  reports `expansion_only_hits: 0`, because the feature was unreachable.
+- **Subtree matching is on the key, not on the heading text.** `section_key` is the JSON
+  text of `section_path`, so a closing bracket followed by a comma marks a descendant
+  exactly: the subtree of `Pasal 16` cannot swallow `Pasal 160`. PostgreSQL cannot slice
+  `jsonb` (`jsonb subscript does not support slices`) and the jsonpath spelling
+  `$[0] == "..."` matches far more than the prefix it names, which is why the key is a
+  column in its own right, indexed with `text_pattern_ops`.
+
+Completed rows are not backed by a Qdrant match, so every guarantee in
+`VALIDATE_CHUNKS` is repeated for them: workspace scope, non-deleted document, active
+processing run, indexed embedding, and a recomputed `content_hash`.
+
+### Reading a document in order
+
+Completion repairs a search that lands on a heading. It does not answer the next question,
+which is what the text *around* a passage says. That is the other axis, and it is the one
+a vector search structurally cannot serve: nothing in an embedding knows what follows
+anything. `ordinal` is a chunk's position in reading order within one processing run, so a
+window over it is a contiguous slice -- the text after a hit, the rest of a section, or a
+document read through from the top.
+
+| | Axis | Answers |
+|---|---|---|
+| `search_context` | `section_key`, hierarchical | "what is section X?" |
+| `read_document` | `ordinal`, positional | "what comes after this chunk?" |
+
+The two compose, and the bridge between them is a number: every source label carries the
+`ordinal` it sits at, so a search hit hands the reader exactly the argument
+`read_document` needs. A hit that is only a title is also marked `kind=heading`, and the
+search reply says so explicitly -- otherwise the reader takes a bare heading as evidence
+that the document is silent on the subject, which is the exact misreading completion
+exists to prevent.
+
+The hint is conditional on a heading actually being in the results. Shown on every search
+it would be background noise within two calls, and a reader taught to ignore it cannot be
+taught anything by the version that matters.
+
+The window is bounded by `navigation_token_budget`, not by a chunk count. Chunk sizes in
+this corpus run from 5 tokens for a bare heading to the 700-token ceiling, so any fixed
+count is either wasteful on a short-headed document or explosive on a dense one; 8,000
+tokens is about 80 chunks of the regulations and about a dozen of a dense annual report.
+The reply always states how many chunks the document has and where to resume, so a
+truncated window cannot be mistaken for the whole document. A single chunk over budget is
+still returned, because trimming it would return nothing and every retry from the same
+`start_ordinal` would trim it again -- a window that can never advance.
+
+CSV files are refused here rather than handled: a CSV is stored as rows, not chunks, so the
+failure names `list_queryable_files` and `query_rows` instead of reading as a fault.
 
 ### Asking a spreadsheet question
 
@@ -675,6 +752,9 @@ erDiagram
         uuid processing_run_id FK
         int ordinal
         text text
+        jsonb section_path "ancestor heading path"
+        text section_key "JSON text of section_path"
+        bool is_heading_only
         text content_hash
     }
     chunk_embeddings {
