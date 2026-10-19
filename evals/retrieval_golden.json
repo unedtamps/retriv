@@ -5,153 +5,154 @@
   "queries": [
     {
       "query": "When does the FASB's new consolidation guidance issued in early 2015 take effect, and has the company finished assessing its impact?",
-      "chunk_id": "02e6eb55-098a-5ae7-85c5-58e32a3df147",
+      "chunk_id": "219097b4-2b56-596f-a316-b25edca7da4d",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "Why might internal controls over financial reporting fail to prevent or detect a misstatement?",
-      "chunk_id": "50d781a1-1a49-5185-8a3a-7e957e88e1c8",
+      "chunk_id": "46cc03a1-c2f1-508b-928f-26ee1e2bab84",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "When did Vivendi stop being treated as a related party of the company?",
-      "chunk_id": "79cda8d8-1ac1-5c67-8856-76cc82f5ea2e",
+      "chunk_id": "5b721b14-5bc2-514a-9cb2-dd2ac0651c6d",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What is the notional amount of the foreign currency forward contracts the company had designated as cash-flow hedges at the end of 2015?",
-      "chunk_id": "ac29921d-6f5d-5549-a5f0-289b03eab9fc",
+      "chunk_id": "064218d9-3e93-528a-879d-a3f286159932",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "For 2014, what was the net effect of deferral of net revenues and related cost of sales on income from operations before income tax expense?",
-      "chunk_id": "3ecebb94-c7d2-57f1-afbb-e36f4e35061f",
+      "chunk_id": "df0168a0-3273-5a5b-aa21-df80083f13d7",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What interest rates and maturity dates apply to the unsecured senior notes the company issued in September 2013?",
-      "chunk_id": "a3ab2494-3f3b-5f6a-8d0c-6e96586f6a38",
+      "chunk_id": "557ed743-18a5-501f-9e97-93d396e57ab2",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "How did the company's declared dividend per share change from 2011 through 2015?",
-      "chunk_id": "0b7ab905-ca78-5fd9-bebd-f9c6e4e22c02",
+      "chunk_id": "48d8d73c-2981-5cff-bf4c-77e2b0ea8284",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What was the company's cash and cash equivalents balance at the end of 2013?",
-      "chunk_id": "0ea25a3f-5347-57b5-8b62-cf90028ef3d5",
+      "chunk_id": "cf5e8f2f-4928-575d-8bf1-56baca2e941d",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What typically happens to downloadable content sales for a game that is not well received?",
-      "chunk_id": "20888470-e29f-5d4a-9cdb-b8df285f4ced",
+      "chunk_id": "41af28e0-c820-5568-ac18-1bc6ae2c2d56",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What happens if the ESRB or another ratings agency re-rates one of the company's games after release?",
-      "chunk_id": "bf88f70e-2d44-5700-8947-7afeeadf7a89",
+      "chunk_id": "a15f2ed0-3ecc-597e-8060-418d5bc482e2",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What factors does management weigh when estimating allowances for product returns and price protection?",
-      "chunk_id": "36ceadfb-d7cd-53ac-b7e7-833ec154325e",
+      "chunk_id": "8ca4b3d5-ba8c-5c73-8b79-dab140e11ad6",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What are the financial consequences if the company invests in a new technology or platform that does not become commercially successful?",
-      "chunk_id": "0094665d-4cb7-557f-bee3-61a11786955a",
+      "chunk_id": "8a1aa0d1-bcf6-52e6-9183-f16d414bea03",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "Why is a delay in a game's launch date so damaging to the company's yearly results?",
-      "chunk_id": "fe317af3-fe72-5c72-9aff-63920a78d147",
+      "chunk_id": "d38cbb82-8507-5481-8380-1624b367366b",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What were the main reasons cash used in investing activities jumped in 2015?",
-      "chunk_id": "41efa0f0-9feb-55fe-a26c-448659045e82",
+      "chunk_id": "2f844380-d3b5-5830-9bab-75e90c2d8601",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "Why do console makers have so much leverage over how much the company earns on its games?",
-      "chunk_id": "940aa237-5d41-546f-9958-129459daf065",
+      "chunk_id": "a5c0e2bd-8bd7-5af3-b124-5127acaadc0f",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What debt repayment did the company make right after the end of 2015, and why wasn't it shown as a current liability on the 2015 balance sheet?",
-      "chunk_id": "283d0abc-be14-519a-82b3-17904432ae19",
+      "chunk_id": "bf3459d6-7973-5a70-a57c-8fd5bc2f2cf0",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What does the September 2015 accounting standard on measurement-period adjustments change about how acquisition adjustments are reported?",
-      "chunk_id": "300c6b0a-c43f-5a05-b566-7971e37e1507",
+      "chunk_id": "cbd45072-cb4b-50c6-846e-c406c872f82c",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "How does management estimate how much of its accounts receivable might be uncollectible?",
-      "chunk_id": "da14749f-d803-5477-9033-587943b0b8e0",
+      "chunk_id": "1b3b2e7c-d657-526d-8988-d3f617fa64be",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "Why can retailers demand better terms when competition for shelf space intensifies?",
-      "chunk_id": "ab076942-61eb-52cf-9363-411061ee910c",
+      "chunk_id": "be7630b3-03ac-5d90-b23a-812d9d113919",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "Which filing first incorporated the company's 2014 Incentive Plan by reference?",
-      "chunk_id": "df850dab-78c3-5437-bca2-cf607440f626",
+      "chunk_id": "5765d0cd-e91e-5f29-9c94-d93f5f895b60",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "How does the company recognize revenue from durable virtual goods sold inside its games?",
-      "chunk_id": "4e36e7c8-dc93-5523-8268-947c1fbf16b7",
+      "chunk_id": "7b7fa52b-4672-5076-bd24-62d580f5553c",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "What percentage of the company's net revenues came from international sales in 2015?",
-      "chunk_id": "33abedd5-0736-5679-94a3-4769f49178c6",
+      "chunk_id": "5b417568-750f-5761-a3b6-c376c7fdd518",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "How are arrangements that bundle software with hardware or services accounted for?",
-      "chunk_id": "aa74cd3d-fbe5-5084-a90e-ab52b9ef9a27",
+      "chunk_id": "4b39e051-cc9d-53d2-a9e6-308e9913b86f",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "Under what circumstances may a stock option holder transfer their award to someone else?",
-      "chunk_id": "5f3e3a00-905b-5de0-989f-e64f23c8487d",
+      "chunk_id": "284720b8-f6ea-5579-981c-a56687eaa4ec",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     },
     {
       "query": "If the stock option terms created a tax liability under Section 409A, would the company cover the holder's taxes?",
-      "chunk_id": "9f83514e-b086-501e-8617-2bc09f87a849",
+      "chunk_id": "a8ca4c4b-898b-507e-9e8b-8e1b8da995e6",
       "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "5576e23a-36c9-4520-b3e8-247b2e9a763d"
+      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
     }
-  ]
+  ],
+  "refreshed_at": "after the row-wise table chunking reindex"
 }
