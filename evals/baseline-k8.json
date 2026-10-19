@@ -1,5 +1,6 @@
 {
   "ran_at": "2026-10-17T05:07:48.414811+00:00",
+  "note": "Pre-dates section completion. Retrieval then expanded a heading anchor by the next N chunks in reading order, detected by a <=12 token guess that included the heading breadcrumb, and no caller passed a budget -- so expansion_only_hits is 0 and the numbers describe position-based, not hierarchy-based, retrieval. Recorded unmodified for comparison.",
   "config": {
     "embedding_model": "text-embedding-qwen3-embedding-8b",
     "embedding_profile": "qwen3-embedding-8b-4096-v1",

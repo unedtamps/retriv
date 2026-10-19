@@ -4,8 +4,8 @@
 The retrieval tests say the pipeline is well-formed; none of them say whether
 a question actually finds the passage that answers it. This harness closes that
 gap: it sends questions through the same ``ContextRetriever`` the MCP
-``search_context`` tool uses, and reports recall, MRR, and how much the heading
-neighbour expansion contributed.
+``search_context`` tool uses, and reports recall, MRR, and how much section
+completion contributed.
 
 Two steps, both against the live stack (PostgreSQL, Qdrant and the embedding
 server must be running; LM Studio serves the chat model too):
@@ -22,8 +22,11 @@ server must be running; LM Studio serves the chat model too):
 
     uv run python scripts/eval_retrieval.py run --queries evals/retrieval_golden.json
 
-        Replays the golden set twice per question: once with expansion off, to
-        see the raw similarity rank, and once as the MCP tool runs it. Use
+        Replays the golden set twice per question: once with section completion
+        off, to see the raw similarity rank, and once as the MCP tool runs it.
+        A third pass over-fetches (--probe-limit, 32 by default) to report the
+        ceiling a reordering stage could reach: if the answer is not in the
+        first 32 matches, no reranker can put it first. Use
         --limit/--min-score/--expand-width to A/B a setting without editing
         .env, and --json to keep a run for comparison after a change.
 
@@ -91,6 +94,12 @@ class QueryOutcome:
     in_final: bool
     matches: int
     final: int
+    # Position among similarity matches in a deliberately over-fetched search.
+    # None when the probe did not run or the expected chunk still did not
+    # surface. This is what separates "the ranker put it in the wrong place"
+    # from "the vector search never had it": a reranker can only reorder what
+    # stage one returned, so recall at depth bounds every reordering method.
+    deep_rank: int | None = None
     # Returned ids keep a miss auditable: without them, deciding whether the
     # expected chunk lost to a wrong match or to a legitimate duplicate answer
     # means digging through the database again.
@@ -200,15 +209,19 @@ async def run(args: argparse.Namespace) -> int:
     if args.min_score is not None:
         overrides["min_relevance_score"] = args.min_score
     if args.expand_width is not None:
-        overrides["heading_expand_chunks"] = args.expand_width
+        overrides["section_expand_chunks"] = args.expand_width
     settings = settings.model_copy(update=overrides)
-    # The raw pass disables expansion so a neighbour cannot stand in for a
-    # similarity match that was missed.
-    raw_settings = settings.model_copy(update={"heading_expand_chunks": 0})
+    # The raw pass disables section completion so a completed chunk cannot stand
+    # in for a similarity match that was missed.
+    raw_settings = settings.model_copy(update={"section_expand_chunks": 0})
+    # A budget the MCP tool would never grant, so the probe measures what stage
+    # one could have found rather than what it was allowed to return.
+    probe_settings = raw_settings.model_copy(update={"max_context_sources": 10_000})
 
     engine = create_async_engine(settings.database_url)
     expanded = ContextRetriever(settings, engine)
     raw = ContextRetriever(raw_settings, engine)
+    probe = ContextRetriever(probe_settings, engine)
     outcomes: list[QueryOutcome] = []
     try:
         for item in queries:
@@ -216,10 +229,21 @@ async def run(args: argparse.Namespace) -> int:
             workspace = _uuid_field(item, "workspace_id", golden_path)
             try:
                 matches = await raw.retrieve(
-                    item["query"], [workspace], settings.max_context_chunks
+                    item["query"],
+                    [workspace],
+                    settings.max_context_chunks,
+                    budget=settings.max_context_sources,
                 )
                 sources = await expanded.retrieve(
-                    item["query"], [workspace], settings.max_context_chunks
+                    item["query"],
+                    [workspace],
+                    settings.max_context_chunks,
+                    budget=settings.max_context_sources,
+                )
+                probed = (
+                    await probe.retrieve(item["query"], [workspace], args.probe_limit)
+                    if args.probe_limit > settings.max_context_chunks
+                    else []
                 )
             except RetrievalUnavailable as exc:
                 outcomes.append(
@@ -241,10 +265,19 @@ async def run(args: argparse.Namespace) -> int:
                 ),
                 None,
             )
+            deep_rank = next(
+                (
+                    position
+                    for position, source in enumerate(probed, start=1)
+                    if source.chunk_id == expected
+                ),
+                None,
+            )
             outcomes.append(
                 QueryOutcome(
                     query=item["query"],
                     rank=rank,
+                    deep_rank=deep_rank,
                     in_final=any(source.chunk_id == expected for source in sources),
                     matches=len(matches),
                     final=len(sources),
@@ -255,6 +288,7 @@ async def run(args: argparse.Namespace) -> int:
     finally:
         await raw.aclose()
         await expanded.aclose()
+        await probe.aclose()
 
     _report(outcomes, settings, args)
     return 0 if not any(outcome.error for outcome in outcomes) else 1
@@ -276,14 +310,19 @@ def _report(
     print(
         f"\nlimit={settings.max_context_chunks} "
         f"min_score={settings.min_relevance_score} "
-        f"expand_width={settings.heading_expand_chunks} "
+        f"expand_width={settings.section_expand_chunks} "
         f"model={settings.embedding_model}\n"
     )
     for outcome in outcomes:
         rank = "  -" if outcome.rank is None else f"{outcome.rank:>3}"
+        deep = (
+            "  -"
+            if outcome.deep_rank is None
+            else f"{outcome.deep_rank:>3}"
+        )
         state = "error" if outcome.error else ("hit" if outcome.in_final else "miss")
         print(
-            f"rank={rank}  {state:<5}  "
+            f"rank={rank}  deep={deep}  {state:<5}  "
             f"matches={outcome.matches}  final={outcome.final}  "
             f"{outcome.query[:width]}"
         )
@@ -291,6 +330,7 @@ def _report(
     total = len(outcomes)
     errors = [outcome for outcome in outcomes if outcome.error]
     ranked = [outcome for outcome in outcomes if outcome.rank is not None]
+    probed = [outcome for outcome in outcomes if outcome.deep_rank is not None]
     summary = {
         "queries": total,
         "errors": len(errors),
@@ -300,21 +340,30 @@ def _report(
         "in_final_output": (
             sum(1 for outcome in outcomes if outcome.in_final) / total
         ),
-        "expansion_only_hits": sum(
+        "section_completion_only_hits": sum(
             1 for outcome in outcomes if outcome.rank is None and outcome.in_final
         ),
         "avg_matches": sum(outcome.matches for outcome in outcomes) / total,
         "avg_final": sum(outcome.final for outcome in outcomes) / total,
     }
+    if probed:
+        summary[f"recall@{args.probe_limit}"] = len(probed) / total
     recall_k = summary[f"recall@{settings.max_context_chunks}"]
+    deep_line = (
+        f"\nrecall@{args.probe_limit}={summary[f'recall@{args.probe_limit}']:.0%}"
+        "  (ceiling for any reordering stage)"
+        if probed
+        else ""
+    )
     print(
         f"\nrecall@1={summary['recall@1']:.0%}  "
         f"recall@{settings.max_context_chunks}={recall_k:.0%}  "
         f"mrr={summary['mrr']:.2f}  "
         f"in_final={summary['in_final_output']:.0%}  "
-        f"expansion_only={summary['expansion_only_hits']}  "
+        f"completed_only={summary['section_completion_only_hits']}  "
         f"avg_matches={summary['avg_matches']:.1f}  "
         f"avg_final={summary['avg_final']:.1f}"
+        f"{deep_line}"
     )
     if errors:
         print(
@@ -329,8 +378,8 @@ def _report(
                 "embedding_profile": settings.embedding_profile,
                 "max_context_chunks": settings.max_context_chunks,
                 "min_relevance_score": settings.min_relevance_score,
-                "heading_expand_chunks": settings.heading_expand_chunks,
-                "heading_chunk_max_tokens": settings.heading_chunk_max_tokens,
+                "section_expand_chunks": settings.section_expand_chunks,
+                "max_context_sources": settings.max_context_sources,
             },
             "summary": summary,
             "queries": [asdict(outcome) for outcome in outcomes],
@@ -380,6 +429,16 @@ def main() -> int:
     run_parser.add_argument("--limit", type=int, default=None)
     run_parser.add_argument("--min-score", type=float, default=None)
     run_parser.add_argument("--expand-width", type=int, default=None)
+    run_parser.add_argument(
+        "--probe-limit",
+        type=int,
+        default=32,
+        help=(
+            "Re-run each question with section completion off and this many "
+            "similarity matches, to report the ceiling any reordering stage "
+            "could reach. Ignored when it is not above --limit."
+        ),
+    )
     run_parser.add_argument("--json", dest="json_out", default=None)
 
     args = parser.parse_args()
