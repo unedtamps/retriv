@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { FileUp, LayoutGrid, LogOut, Menu, Users, X } from 'lucide-react'
+import { FileUp, LayoutGrid, LogOut, Menu, X } from 'lucide-react'
 import type { AppRoute, CurrentUser, Workspace } from '../types'
 import { ProcessingNotifications } from './ProcessingNotifications'
 import { BrandLockup, BrandMark } from './ui/Brand'
@@ -45,8 +45,6 @@ export function AppShell({
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const drawerCloseButtonRef = useRef<HTMLButtonElement>(null)
   const isDesktop = useIsDesktop()
-
-  const isAdmin = user.role === 'admin'
 
   useEffect(() => {
     if (!navigationOpen || isDesktop) return
@@ -111,7 +109,6 @@ export function AppShell({
       >
         <Navigation
           route={route}
-          isAdmin={isAdmin}
           user={user}
           onNavigate={navigateFromNav}
           onClose={() => setNavigationOpen(false)}
@@ -161,7 +158,6 @@ export function AppShell({
 
 interface NavigationProps {
   route: AppRoute
-  isAdmin: boolean
   user: CurrentUser
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, destination: AppRoute) => void
   onClose: () => void
@@ -171,20 +167,18 @@ interface NavigationProps {
 
 function Navigation({
   route,
-  isAdmin,
   user,
   onNavigate,
   onClose,
   closeButtonRef,
   onLogout,
 }: NavigationProps) {
-  // The navigation is for the screens. API keys are a section of the
-  // dashboard, not a screen of their own, so they are reached from the page
-  // rather than from here.
+  // The navigation is for the screens. The user directory and the API keys
+  // are sections of the dashboard, so they are reached from the page rather
+  // than from here.
   const items = [
     { to: '/dashboard' as AppRoute, label: 'Dashboard', icon: LayoutGrid },
     { to: '/upload-context' as AppRoute, label: 'Upload context', icon: FileUp },
-    ...(isAdmin ? [{ to: '/dashboard#users' as const, label: 'Users', icon: Users }] : []),
   ]
 
   return (
@@ -215,13 +209,7 @@ function Navigation({
                   className={active ? 'nav-link nav-link-active' : 'nav-link'}
                   href={item.to}
                   aria-current={active ? 'page' : undefined}
-                  onClick={(event) => {
-                    if (item.to.includes('#')) {
-                      onClose()
-                      return
-                    }
-                    onNavigate(event, item.to as AppRoute)
-                  }}
+                  onClick={(event) => onNavigate(event, item.to as AppRoute)}
                 >
                   <Icon aria-hidden="true" size={17} />
                   {item.label}
