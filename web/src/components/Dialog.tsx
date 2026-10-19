@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 interface DialogProps {
@@ -33,7 +34,7 @@ export function Dialog({
     if (!open && dialog.open) dialog.close()
   }, [open])
 
-  return (
+  return createPortal(
     <dialog
       ref={dialogRef}
       className={variant === 'drawer' ? 'app-dialog app-drawer' : 'app-dialog'}
@@ -42,7 +43,12 @@ export function Dialog({
       onCancel={(event) => {
         if (preventBackdropClose) event.preventDefault()
       }}
-      onClose={() => {
+      onClose={(event) => {
+        // A dialog nested inside another one closes with it, and the close
+        // event of the inner one passes through the outer one on the way
+        // down the tree. Without this the drawer would close when a
+        // confirmation inside it was dismissed.
+        if (event.target !== dialogRef.current) return
         if (open) onClose()
       }}
       onClick={(event) => {
@@ -50,25 +56,21 @@ export function Dialog({
       }}
     >
       <section className="dialog-surface" onClick={(event) => event.stopPropagation()}>
-        <header className="flex items-start justify-between gap-5 border-b border-stone-200 px-5 py-5 sm:px-7">
+        <header className="flex items-start justify-between gap-5 border-b border-line px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            {eyebrow === undefined ? null : (
-              <p className="mb-1 font-mono text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-emerald-800">
-                {eyebrow}
-              </p>
-            )}
-            <h2 id={titleId} className="text-xl font-semibold tracking-[-0.02em] text-stone-950">
+            {eyebrow === undefined ? null : <p className="eyebrow">{eyebrow}</p>}
+            <h2 id={titleId} className="mt-1 text-lg font-semibold tracking-[-0.015em] text-ink">
               {title}
             </h2>
             {description === undefined ? null : (
-              <p id={descriptionId} className="mt-1.5 max-w-xl text-sm leading-6 text-stone-600">
+              <p id={descriptionId} className="mt-1.5 max-w-xl text-sm leading-6 text-ink-muted">
                 {description}
               </p>
             )}
           </div>
           <button
             type="button"
-            className="icon-button shrink-0"
+            className="btn-icon shrink-0"
             aria-label={`Close ${title}`}
             onClick={onClose}
           >
@@ -77,7 +79,22 @@ export function Dialog({
         </header>
         {children}
       </section>
-    </dialog>
+    </dialog>,
+    document.body,
+  )
+}
+
+/**
+ * The row of buttons at the foot of a dialog.
+ *
+ * Six dialogs had this row written out, each with its own gap and its own
+ * border colour.
+ */
+export function DialogActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-col-reverse gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+      {children}
+    </div>
   )
 }
 
@@ -110,19 +127,19 @@ export function ConfirmDialog({
       onClose={onClose}
       preventBackdropClose={busy}
     >
-      <div className="flex flex-col-reverse gap-3 px-5 py-5 sm:flex-row sm:justify-end sm:px-7">
-        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>
+      <DialogActions>
+        <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>
           Cancel
         </button>
         <button
           type="button"
-          className={destructive ? 'button-danger' : 'button-primary'}
+          className={destructive ? 'btn btn-danger' : 'btn btn-primary'}
           disabled={busy}
           onClick={onConfirm}
         >
           {busy ? 'Working…' : confirmLabel}
         </button>
-      </div>
+      </DialogActions>
     </Dialog>
   )
 }

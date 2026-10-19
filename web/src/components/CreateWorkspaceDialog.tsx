@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Building2, Search } from 'lucide-react'
+import { Building2 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import type { AdminUser, Workspace } from '../types'
-import { Dialog } from './Dialog'
+import { Dialog, DialogActions } from './Dialog'
+import { SearchField } from './ui/SearchField'
 
 interface CreateWorkspaceDialogProps {
   open: boolean
@@ -102,87 +103,118 @@ export function CreateWorkspaceDialog({
       description="A workspace must begin with an owner. Ownership can only be assigned by an administrator."
       onClose={onClose}
     >
-      <form className="space-y-5 px-5 py-6 sm:px-7" onSubmit={handleSubmit}>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <label className="field-label" htmlFor="workspace-name">Name</label>
-            <input
-              id="workspace-name"
-              className="field-input"
-              value={name}
-              autoFocus
-              required
-              maxLength={255}
-              placeholder="Finance operations"
-              onChange={(event) => updateName(event.target.value)}
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="workspace-slug">Slug</label>
-            <input
-              id="workspace-slug"
-              className="field-input font-mono text-sm"
-              value={slug}
-              required
-              maxLength={100}
-              pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-              placeholder="finance-operations"
-              onChange={(event) => {
-                setSlugEdited(true)
-                setSlug(event.target.value.toLowerCase())
-              }}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="field-label" htmlFor="workspace-description">Description <span className="font-normal text-stone-400">Optional</span></label>
-          <textarea
-            id="workspace-description"
-            className="field-input min-h-24 resize-y"
-            value={description}
-            maxLength={1000}
-            placeholder="What context and documents belong in this workspace?"
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </div>
-        <div>
-          <div className="mb-2 flex items-end justify-between gap-4">
-            <label className="field-label mb-0" htmlFor="workspace-owner">Initial owner</label>
-            <span className="text-xs text-stone-400">Active users only</span>
-          </div>
-          <div className="mb-2 flex gap-2" role="search">
-            <div className="relative min-w-0 flex-1">
-              <Search className="field-icon" aria-hidden="true" size={16} />
+      <form onSubmit={handleSubmit}>
+        <div className="space-y-5 px-5 py-5 sm:px-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="workspace-name">
+                Name
+              </label>
               <input
-                className="field-input h-10 pl-10"
-                value={userSearch}
-                placeholder="Filter users"
-                aria-label="Search owner candidates"
-                onChange={(event) => setUserSearch(event.target.value)}
+                id="workspace-name"
+                className="field"
+                value={name}
+                autoFocus
+                required
+                maxLength={255}
+                placeholder="Finance operations"
+                onChange={(event) => updateName(event.target.value)}
               />
             </div>
-            <button type="button" className="button-secondary px-4" onClick={searchUsers}>Search</button>
+            <div>
+              <label className="label" htmlFor="workspace-slug">
+                Slug
+              </label>
+              <input
+                id="workspace-slug"
+                className="field font-mono text-sm"
+                value={slug}
+                required
+                maxLength={100}
+                pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                placeholder="finance-operations"
+                onChange={(event) => {
+                  setSlugEdited(true)
+                  setSlug(event.target.value.toLowerCase())
+                }}
+              />
+            </div>
           </div>
-          <select
-            id="workspace-owner"
-            className="field-input"
-            value={ownerId}
-            required
-            disabled={loadingUsers}
-            onChange={(event) => setOwnerId(event.target.value)}
-          >
-            <option value="">{loadingUsers ? 'Loading users…' : 'Select an owner'}</option>
-            {users.map((user) => <option key={user.id} value={user.id}>{user.username} · {user.role}</option>)}
-          </select>
+          <div>
+            <label className="label" htmlFor="workspace-description">
+              Description <span className="font-normal text-ink-faint">Optional</span>
+            </label>
+            <textarea
+              id="workspace-description"
+              className="field min-h-24 resize-y"
+              value={description}
+              maxLength={1000}
+              placeholder="What context and documents belong in this workspace?"
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </div>
+          <div>
+            <div className="mb-2 flex items-end justify-between gap-4">
+              <label className="label mb-0" htmlFor="workspace-owner">
+                Initial owner
+              </label>
+              <span className="text-xs text-ink-faint">Active users only</span>
+            </div>
+            <div className="mb-2 flex gap-2" role="search">
+              <SearchField
+                id="workspace-owner-search"
+                label="Search owner candidates"
+                value={userSearch}
+                onChange={setUserSearch}
+                placeholder="Filter users"
+                className="min-w-0 flex-1"
+              />
+              <button type="button" className="btn btn-secondary" onClick={searchUsers}>
+                Search
+              </button>
+            </div>
+            <select
+              id="workspace-owner"
+              className="field"
+              value={ownerId}
+              required
+              disabled={loadingUsers}
+              onChange={(event) => setOwnerId(event.target.value)}
+            >
+              <option value="">
+                {loadingUsers ? 'Loading users…' : 'Select an owner'}
+              </option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.username} · {user.role}
+                </option>
+              ))}
+            </select>
+          </div>
+          {error === null ? null : (
+            <p className="error-note" role="alert">
+              {error}
+            </p>
+          )}
         </div>
-        {error === null ? null : <p className="form-error" role="alert">{error}</p>}
-        <div className="flex flex-col-reverse gap-3 border-t border-stone-200 pt-5 sm:flex-row sm:justify-end">
-          <button type="button" className="button-secondary" disabled={status === 'submitting'} onClick={onClose}>Cancel</button>
-          <button type="submit" className="button-primary" disabled={status === 'submitting' || ownerId === ''}>
+        <DialogActions>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={status === 'submitting'}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={status === 'submitting' || ownerId === ''}
+          >
             <Building2 aria-hidden="true" size={17} />
             {status === 'submitting' ? 'Creating…' : 'Create workspace'}
           </button>
-        </div>
+        </DialogActions>
       </form>
     </Dialog>
   )

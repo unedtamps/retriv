@@ -3,6 +3,7 @@ import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from './api'
 import { Dashboard } from './components/Dashboard'
 import { LoginScreen } from './components/LoginScreen'
+import { BrandMark } from './components/ui/Brand'
 import { clearSessionToken, readSessionToken, writeSessionToken } from './session'
 import type { AppRoute, CurrentUser, Workspace } from './types'
 
@@ -104,14 +105,23 @@ function App() {
   if (loading) return <BootScreen />
   if (loadError !== null || ready === null) {
     return (
-      <main className="flex min-h-svh items-center justify-center bg-[#f4f1e8] p-5">
-        <section className="w-full max-w-md border border-stone-300 bg-white p-7 shadow-[0_20px_60px_rgba(28,36,31,0.08)]">
-          <span className="flex h-11 w-11 items-center justify-center bg-red-50 text-red-800"><AlertTriangle aria-hidden="true" size={20} /></span>
-          <h1 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-stone-950">Dashboard unavailable</h1>
-          <p className="mt-3 text-sm leading-6 text-stone-600">{loadError ?? 'The dashboard could not be loaded.'}</p>
-          <div className="mt-6 flex gap-3">
-            <button type="button" className="button-primary" onClick={retryLoad}><RefreshCw aria-hidden="true" size={16} />Try again</button>
-            <button type="button" className="button-secondary" onClick={handleLogout}>Sign out</button>
+      <main className="flex min-h-svh items-center justify-center bg-paper p-5">
+        <section className="w-full max-w-md rounded-card border border-line bg-surface p-6">
+          <span className="flex h-10 w-10 items-center justify-center rounded-card border border-danger/30 bg-danger-soft text-danger">
+            <AlertTriangle aria-hidden="true" size={19} />
+          </span>
+          <h1 className="mt-4 text-lg font-semibold text-ink">Dashboard unavailable</h1>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">
+            {loadError ?? 'The dashboard could not be loaded.'}
+          </p>
+          <div className="mt-5 flex gap-2">
+            <button type="button" className="btn btn-primary" onClick={retryLoad}>
+              <RefreshCw aria-hidden="true" size={16} />
+              Try again
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={handleLogout}>
+              Sign out
+            </button>
           </div>
         </section>
       </main>
@@ -147,10 +157,15 @@ async function loadWorkspaceCatalog(token: string, signal?: AbortSignal): Promis
 
 function BootScreen() {
   return (
-    <main className="flex min-h-svh items-center justify-center bg-[#17231f] text-white">
+    <main className="flex min-h-svh items-center justify-center bg-paper">
       <div className="text-center">
-        <LoaderCircle className="mx-auto animate-spin text-[#d9f15f]" aria-hidden="true" size={26} />
-        <p className="mt-4 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-stone-400">Resolving access policy</p>
+        <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-card bg-accent text-accent-ink">
+          <BrandMark size={19} />
+        </span>
+        <LoaderCircle className="mx-auto mt-4 animate-spin text-ink-faint" aria-hidden="true" size={22} />
+        <p className="mt-3 font-mono text-eyebrow uppercase tracking-eyebrow text-ink-faint">
+          Resolving access policy
+        </p>
       </div>
     </main>
   )

@@ -1,31 +1,28 @@
-import { useDeferredValue, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useDeferredValue, useState } from 'react'
 import {
-  ArrowUpRight,
   BookOpenText,
   Building2,
   CheckCircle2,
   ChevronRight,
   CircleSlash2,
   FileUp,
-  KeyRound,
-  LayoutGrid,
-  LogOut,
-  Menu,
   Plus,
   Search,
   ShieldCheck,
   Sparkles,
-  Users,
   X,
 } from 'lucide-react'
 import type { AppRoute, CurrentUser, OneTimeCredential, Workspace } from '../types'
 import { AdminUserPanel } from './AdminUserPanel'
 import { ApiKeysPanel } from './ApiKeysPanel'
-import { Brand } from './LoginScreen'
+import { AppShell } from './AppShell'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { CredentialDialog } from './CredentialDialog'
-import { ProcessingNotifications } from './ProcessingNotifications'
 import { UploadContext } from './UploadContext'
+import { DataTable } from './ui/DataTable'
+import { EmptyState } from './ui/Feedback'
+import { Panel, PanelHeader } from './ui/Panel'
+import { SearchField } from './ui/SearchField'
 import { WorkspaceDrawer } from './WorkspaceDrawer'
 
 interface DashboardProps {
@@ -60,10 +57,6 @@ export function Dashboard({
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
   const [credential, setCredential] = useState<OneTimeCredential | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [navigationOpen, setNavigationOpen] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const menuButtonRef = useRef<HTMLButtonElement>(null)
-  const drawerCloseButtonRef = useRef<HTMLButtonElement>(null)
 
   const isAdmin = user.role === 'admin'
   const normalizedQuery = deferredQuery.trim().toLowerCase()
@@ -83,260 +76,170 @@ export function Dashboard({
     setNotice({ message, tone })
   }
 
-  function navigateFromNav(event: MouseEvent<HTMLAnchorElement>, destination: AppRoute) {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    event.preventDefault()
-    setNavigationOpen(false)
-    setSelectedWorkspaceId(null)
-    onNavigate(destination)
-  }
-
-  function closeNavigation() {
-    setNavigationOpen(false)
-  }
-
-  useEffect(() => {
-    if (!navigationOpen) return
-
-    const previousOverflow = document.body.style.overflow
-    const menuButton = menuButtonRef.current
-    document.body.style.overflow = 'hidden'
-    drawerCloseButtonRef.current?.focus()
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setNavigationOpen(false)
-    }
-
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeOnEscape)
-      window.requestAnimationFrame(() => menuButton?.focus())
-    }
-  }, [navigationOpen])
-
   return (
-    <div className="min-h-svh bg-[#f4f1e8] text-stone-800">
-      <a href="#dashboard-content" className="skip-link">Skip to dashboard content</a>
-      <header inert={navigationOpen || notificationsOpen} className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-stone-300 bg-[#f4f1e8]/95 px-4 backdrop-blur sm:px-6">
-        <button
-          ref={menuButtonRef}
-          type="button"
-          className="icon-button"
-          aria-label={navigationOpen ? 'Navigation open' : 'Open navigation'}
-          aria-controls="primary-navigation"
-          aria-expanded={navigationOpen}
-          onClick={() => setNavigationOpen(true)}
-        >
-          <Menu aria-hidden="true" size={19} />
-        </button>
-        <Brand />
-        <span className="ml-auto hidden font-mono text-[0.65rem] uppercase tracking-[0.14em] text-stone-500 sm:block">
-          {route === '/upload-context' ? 'Document ingestion' : 'Workspace governance'}
-        </span>
-        <ProcessingNotifications
-          token={token}
-          workspaces={workspaces}
-          onUnauthorized={onUnauthorized}
-          onOpenChange={setNotificationsOpen}
-        />
-      </header>
-
-      {navigationOpen ? (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 cursor-pointer bg-[#17231f]/45 backdrop-blur-[1px]"
-          aria-label="Close navigation"
-          onClick={closeNavigation}
-        />
-      ) : null}
-
-      <aside
-        id="primary-navigation"
-        role="dialog"
-        aria-label="Primary navigation"
-        aria-modal={navigationOpen}
-        aria-hidden={!navigationOpen}
-        inert={!navigationOpen}
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-stone-800 bg-[#17231f] px-5 py-6 text-stone-100 shadow-[0_24px_80px_rgba(0,0,0,0.3)] transition-transform duration-200 motion-reduce:transition-none ${navigationOpen ? 'translate-x-0' : '-translate-x-full'}`}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <Brand light />
-          <button
-            ref={drawerCloseButtonRef}
-            type="button"
-            className="icon-button border-white/20 text-white hover:bg-white/10"
-            aria-label="Close navigation drawer"
-            onClick={closeNavigation}
-          >
-            <X aria-hidden="true" size={19} />
-          </button>
-        </div>
-        <nav className="mt-10 space-y-2" aria-label="Main navigation">
-          <a
-            className={route === '/dashboard' ? 'nav-item nav-item-active' : 'nav-item'}
-            href="/dashboard"
-            aria-current={route === '/dashboard' ? 'page' : undefined}
-            onClick={(event) => navigateFromNav(event, '/dashboard')}
-          >
-            <LayoutGrid aria-hidden="true" size={17} />
-            Dashboard
-          </a>
-          <a
-            className="nav-item"
-            href={route === '/dashboard' ? '#api-keys' : '/dashboard#api-keys'}
-            onClick={closeNavigation}
-          >
-            <KeyRound aria-hidden="true" size={17} />
-            API keys
-          </a>
-          <a
-            className={route === '/upload-context' ? 'nav-item nav-item-active' : 'nav-item'}
-            href="/upload-context"
-            aria-current={route === '/upload-context' ? 'page' : undefined}
-            onClick={(event) => navigateFromNav(event, '/upload-context')}
-          >
-            <FileUp aria-hidden="true" size={17} />
-            Upload context
-          </a>
-          {isAdmin ? (
-            <a
-              className="nav-item"
-              href={route === '/dashboard' ? '#users' : '/dashboard#users'}
-              onClick={closeNavigation}
-            >
-              <Users aria-hidden="true" size={17} />
-              Users
-            </a>
-          ) : null}
-        </nav>
-        <div className="mt-auto border-t border-white/10 pt-5">
-          <p className="font-mono text-[0.62rem] uppercase tracking-[0.17em] text-stone-500">Signed in as</p>
-          <div className="mt-3 flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center border border-white/15 bg-white/5 text-sm font-semibold uppercase text-[#d9f15f]">
-              {user.username.slice(0, 2)}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-white">{user.username}</p>
-              <p className="mt-0.5 text-xs capitalize text-stone-400">{user.role}</p>
-            </div>
-          </div>
-          <button type="button" className="mt-5 flex w-full cursor-pointer items-center gap-2 text-sm text-stone-400 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#d9f15f]" onClick={onLogout}>
-            <LogOut aria-hidden="true" size={16} />
-            Sign out
-          </button>
-        </div>
-      </aside>
-
-      <main id="dashboard-content" inert={navigationOpen || notificationsOpen}>
-        {route === '/upload-context' ? (
-          <UploadContext token={token} workspaces={workspaces} onUnauthorized={onUnauthorized} />
-        ) : (
-        <div className="mx-auto max-w-[96rem] px-4 py-8 sm:px-6 lg:px-10 lg:py-10 xl:px-12">
-          <header className="flex flex-col gap-6 border-b border-stone-300 pb-8 sm:flex-row sm:items-end sm:justify-between">
+    <AppShell
+      route={route}
+      onNavigate={onNavigate}
+      token={token}
+      user={user}
+      workspaces={workspaces}
+      onUnauthorized={onUnauthorized}
+      onLogout={onLogout}
+    >
+      {route === '/upload-context' ? (
+        <UploadContext token={token} workspaces={workspaces} onUnauthorized={onUnauthorized} />
+      ) : (
+        <div className="mx-auto max-w-80rem px-4 py-8 sm:px-6 lg:px-8">
+          <header className="flex flex-col gap-4 border-b border-line pb-6 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="section-eyebrow">Workspace governance</p>
-              <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.04em] text-stone-950 sm:text-4xl">
+              <p className="eyebrow">Workspace governance</p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-ink">
                 Access, ownership, and context boundaries.
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600 sm:text-base">
-                Every workspace is visible. Its documents and context remain available only to assigned members.
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
+                Every workspace is visible. Its documents and context remain available only to
+                assigned members.
               </p>
             </div>
             {isAdmin ? (
-              <button type="button" className="button-primary shrink-0" onClick={() => setCreateWorkspaceOpen(true)}>
+              <button
+                type="button"
+                className="btn btn-primary shrink-0"
+                onClick={() => setCreateWorkspaceOpen(true)}
+              >
                 <Plus aria-hidden="true" size={17} />
                 New workspace
               </button>
             ) : null}
           </header>
 
-          <section className="grid border-x border-b border-stone-300 bg-white sm:grid-cols-3" aria-label="Workspace summary">
-            <Metric label="Workspace catalog" value={workspaces.length} detail="Visible across the platform" />
-            <Metric label="Assigned to you" value={assignedCount} detail={`${ownerCount} owned workspace${ownerCount === 1 ? '' : 's'}`} />
-            <Metric label="Context enabled" value={contextCount} detail="Authorized for retrieval" />
-          </section>
+          {/* The counts that used to be a three-cell strip with 30px numbers.
+              They are a summary, not a headline. */}
+          <dl className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-ink-muted">
+            <Count label="visible" value={workspaces.length} />
+            <Count label="assigned to you" value={assignedCount} />
+            <Count label="owned by you" value={ownerCount} />
+            <Count label="with context access" value={contextCount} />
+          </dl>
 
-          <section id="workspaces" className="mt-8 scroll-mt-24 border border-stone-300 bg-white" aria-labelledby="workspace-catalog-title">
-            <header className="flex flex-col gap-4 border-b border-stone-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between lg:px-6">
-              <div>
-                <p className="section-eyebrow">Directory</p>
-                <h2 id="workspace-catalog-title" className="mt-1 text-xl font-semibold tracking-[-0.02em] text-stone-950">Workspace catalog</h2>
-              </div>
-              <div className="relative w-full sm:w-80">
-                <Search className="field-icon" aria-hidden="true" size={16} />
-                <label className="sr-only" htmlFor="workspace-search">Search workspaces</label>
-                <input
+          <Panel className="mt-6">
+            <PanelHeader
+              id="workspace-catalog-title"
+              eyebrow="Directory"
+              title="Workspace catalog"
+              actions={
+                <SearchField
                   id="workspace-search"
-                  className="field-input h-10 pl-10"
+                  label="Search workspaces"
                   value={query}
+                  onChange={setQuery}
                   placeholder="Search name, slug, or description"
-                  onChange={(event) => setQuery(event.target.value)}
+                  className="w-full sm:w-72"
                 />
-              </div>
-            </header>
-
+              }
+            />
             {visibleWorkspaces.length === 0 ? (
-              <div className="px-5 py-16 text-center">
-                <Search className="mx-auto text-stone-300" aria-hidden="true" size={28} />
-                <h3 className="mt-4 font-semibold text-stone-950">No matching workspace</h3>
-                <p className="mt-2 text-sm text-stone-500">Try a different name, slug, or description.</p>
-              </div>
+              <EmptyState
+                icon={<Search aria-hidden="true" size={20} />}
+                title="No matching workspace"
+                description="Try a different name, slug, or description."
+              />
             ) : (
-              <>
-                <div className="hidden overflow-x-auto sm:block">
-                  <table className="data-table min-w-[50rem]">
-                    <thead><tr><th>Workspace</th><th>Your role</th><th>Capabilities</th><th className="text-right">Details</th></tr></thead>
-                    <tbody>
-                      {visibleWorkspaces.map((workspace) => (
-                        <tr key={workspace.id}>
-                          <td>
-                            <div className="flex items-start gap-3">
-                              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center border border-stone-200 bg-stone-50 text-emerald-900"><Building2 aria-hidden="true" size={17} /></span>
-                              <div className="min-w-0">
-                                <p className="font-medium text-stone-950">{workspace.name}</p>
-                                <p className="mt-1 max-w-md truncate text-xs text-stone-500">{workspace.description ?? workspace.slug}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td>{workspace.membership_role === null ? <span className="text-sm text-stone-400">Unassigned</span> : <span className="role-badge">{workspace.membership_role}</span>}</td>
-                          <td><CapabilitySummary workspace={workspace} /></td>
-                          <td className="text-right"><button type="button" className="text-button ml-auto" onClick={() => setSelectedWorkspaceId(workspace.id)}>Open <ChevronRight aria-hidden="true" size={15} /></button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="divide-y divide-stone-200 sm:hidden">
-                  {visibleWorkspaces.map((workspace) => (
-                    <button key={workspace.id} type="button" className="block w-full cursor-pointer px-5 py-5 text-left transition-colors hover:bg-stone-50 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-emerald-800" onClick={() => setSelectedWorkspaceId(workspace.id)}>
-                      <div className="flex items-start justify-between gap-4"><div><p className="font-medium text-stone-950">{workspace.name}</p><p className="mt-1 font-mono text-[0.65rem] text-stone-400">{workspace.slug}</p></div><ArrowUpRight aria-hidden="true" className="text-stone-400" size={17} /></div>
-                      <div className="mt-4 flex items-center justify-between gap-4">{workspace.membership_role === null ? <span className="text-xs text-stone-400">Catalog only</span> : <span className="role-badge">{workspace.membership_role}</span>}<CapabilitySummary workspace={workspace} /></div>
-                    </button>
-                  ))}
-                </div>
-              </>
+              <DataTable
+                caption="Workspace catalog"
+                rows={visibleWorkspaces}
+                rowKey={(workspace) => workspace.id}
+                columns={[
+                  {
+                    key: 'workspace',
+                    header: 'Workspace',
+                    render: (workspace) => (
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-card border border-line bg-sunken text-ink-muted">
+                          <Building2 aria-hidden="true" size={16} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink">{workspace.name}</p>
+                          <p className="mt-0.5 truncate font-mono text-meta text-ink-faint">
+                            {workspace.slug}
+                          </p>
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'role',
+                    header: 'Your role',
+                    render: (workspace) =>
+                      workspace.membership_role === null ? (
+                        <span className="text-ink-faint">Unassigned</span>
+                      ) : (
+                        <span className="badge">{workspace.membership_role}</span>
+                      ),
+                  },
+                  {
+                    key: 'capabilities',
+                    header: 'Capabilities',
+                    render: (workspace) => <CapabilitySummary workspace={workspace} />,
+                  },
+                  {
+                    key: 'details',
+                    header: 'Details',
+                    align: 'right',
+                    render: (workspace) => (
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        onClick={() => setSelectedWorkspaceId(workspace.id)}
+                      >
+                        Open
+                        <ChevronRight aria-hidden="true" size={15} />
+                      </button>
+                    ),
+                  },
+                ]}
+              />
             )}
-            <footer className="border-t border-stone-200 px-5 py-3 font-mono text-[0.65rem] uppercase tracking-[0.12em] text-stone-500 lg:px-6">{visibleWorkspaces.length} of {workspaces.length} workspaces</footer>
-          </section>
+            <footer className="border-t border-line px-5 py-2.5 font-mono text-meta text-ink-faint">
+              {visibleWorkspaces.length} of {workspaces.length} workspaces
+            </footer>
+          </Panel>
 
           {isAdmin ? (
-            <div id="users" className="mt-8 scroll-mt-24">
-              <AdminUserPanel token={token} onCredential={setCredential} onUnauthorized={onUnauthorized} onNotice={showNotice} />
+            <div id="users" className="mt-6 scroll-mt-20">
+              <AdminUserPanel
+                token={token}
+                onCredential={setCredential}
+                onUnauthorized={onUnauthorized}
+                onNotice={showNotice}
+              />
             </div>
           ) : (
-            <section className="mt-8 grid gap-4 border border-stone-300 bg-[#17231f] p-6 text-white sm:grid-cols-[auto_1fr] sm:items-center sm:p-8">
-              <BookOpenText aria-hidden="true" className="text-[#d9f15f]" size={28} strokeWidth={1.6} />
-              <div><h2 className="text-lg font-semibold">Policy changes are immediate</h2><p className="mt-1 text-sm leading-6 text-stone-300">Workspace membership is checked by the API on every protected operation, not cached in your login token.</p></div>
+            <section className="mt-6 flex items-start gap-4 rounded-card border border-line bg-surface px-5 py-5">
+              <BookOpenText
+                aria-hidden="true"
+                className="mt-0.5 shrink-0 text-accent-ink"
+                size={22}
+              />
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Policy changes are immediate</h2>
+                <p className="mt-1 text-sm leading-6 text-ink-muted">
+                  Workspace membership is checked by the API on every protected operation, not
+                  cached in your login token.
+                </p>
+              </div>
             </section>
           )}
 
-          <section id="api-keys" className="mt-8 scroll-mt-24">
-            <ApiKeysPanel token={token} onUnauthorized={onUnauthorized} onNotice={showNotice} />
+          <section id="api-keys" className="mt-6 scroll-mt-20">
+            <ApiKeysPanel
+              token={token}
+              onUnauthorized={onUnauthorized}
+              onNotice={showNotice}
+            />
           </section>
         </div>
-        )}
-      </main>
+      )}
 
       {createWorkspaceOpen ? (
         <CreateWorkspaceDialog
@@ -352,32 +255,77 @@ export function Dashboard({
         />
       ) : null}
       {selectedWorkspace === null ? null : (
-        <WorkspaceDrawer key={selectedWorkspace.id} workspace={selectedWorkspace} token={token} isAdmin={isAdmin} onChanged={onRefreshWorkspaces} onUnauthorized={onUnauthorized} onNotice={showNotice} onClose={() => setSelectedWorkspaceId(null)} />
+        <WorkspaceDrawer
+          key={selectedWorkspace.id}
+          workspace={selectedWorkspace}
+          token={token}
+          isAdmin={isAdmin}
+          onChanged={onRefreshWorkspaces}
+          onUnauthorized={onUnauthorized}
+          onNotice={showNotice}
+          onClose={() => setSelectedWorkspaceId(null)}
+        />
       )}
       <CredentialDialog credential={credential} onClose={() => setCredential(null)} />
       {notice === null ? null : (
-        <div className={notice.tone === 'error' ? 'notice notice-error' : 'notice'} role="status" aria-live="polite">
-          {notice.tone === 'error' ? <CircleSlash2 aria-hidden="true" size={17} /> : <CheckCircle2 aria-hidden="true" size={17} />}
+        <div
+          className={notice.tone === 'error' ? 'toast toast-error' : 'toast'}
+          role="status"
+          aria-live="polite"
+        >
+          {notice.tone === 'error' ? (
+            <CircleSlash2 aria-hidden="true" size={17} />
+          ) : (
+            <CheckCircle2 aria-hidden="true" size={17} />
+          )}
           <span>{notice.message}</span>
-          <button type="button" aria-label="Dismiss notification" onClick={() => setNotice(null)}><X aria-hidden="true" size={15} /></button>
+          <button
+            type="button"
+            className="btn btn-quiet ml-auto"
+            aria-label="Dismiss notification"
+            onClick={() => setNotice(null)}
+          >
+            <X aria-hidden="true" size={15} />
+          </button>
         </div>
       )}
+    </AppShell>
+  )
+}
+
+function Count({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <dt className="sr-only">{label}</dt>
+      <dd className="font-semibold text-ink">{value}</dd>
+      <span>{label}</span>
     </div>
   )
 }
 
-interface MetricProps { label: string; value: number; detail: string }
-
-function Metric({ label, value, detail }: MetricProps) {
-  return <div className="border-b border-stone-200 px-5 py-5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 lg:px-6"><p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-stone-500">{label}</p><div className="mt-2 flex items-end gap-3"><p className="text-3xl font-semibold tracking-[-0.04em] text-stone-950">{value}</p><p className="pb-1 text-xs text-stone-500">{detail}</p></div></div>
-}
-
 function CapabilitySummary({ workspace }: { workspace: Workspace }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-stone-500">
-      <span className={workspace.can_upload ? 'capability-on' : 'capability-off'} title={workspace.can_upload ? 'Upload allowed' : 'Upload unavailable'}><FileUp aria-hidden="true" size={14} />Upload</span>
-      <span className={workspace.can_search_context ? 'capability-on' : 'capability-off'} title={workspace.can_search_context ? 'Context allowed' : 'Context unavailable'}><Sparkles aria-hidden="true" size={14} />Context</span>
-      {workspace.can_manage_members ? <span className="capability-on" title="Membership management allowed"><ShieldCheck aria-hidden="true" size={14} />Manage</span> : null}
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
+      <span
+        className={`inline-flex items-center gap-1 ${workspace.can_upload ? 'text-accent-ink' : 'text-ink-faint'}`}
+        title={workspace.can_upload ? 'Upload allowed' : 'Upload unavailable'}
+      >
+        <FileUp aria-hidden="true" size={14} /> Upload
+      </span>
+      <span
+        className={`inline-flex items-center gap-1 ${workspace.can_search_context ? 'text-accent-ink' : 'text-ink-faint'}`}
+        title={workspace.can_search_context ? 'Context allowed' : 'Context unavailable'}
+      >
+        <Sparkles aria-hidden="true" size={14} /> Context
+      </span>
+      {workspace.can_manage_members ? (
+        <span
+          className="inline-flex items-center gap-1 text-accent-ink"
+          title="Membership management allowed"
+        >
+          <ShieldCheck aria-hidden="true" size={14} /> Manage
+        </span>
+      ) : null}
     </div>
   )
 }

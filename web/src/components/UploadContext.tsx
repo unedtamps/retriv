@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import type { DocumentUpload, Workspace } from '../types'
+import { Panel, PanelHeader } from './ui/Panel'
 
 interface UploadContextProps {
   token: string
@@ -95,39 +96,49 @@ export function UploadContext({ token, workspaces, onUnauthorized }: UploadConte
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
-      <header className="border-b border-stone-300 pb-8">
-        <p className="section-eyebrow">Document intake</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-stone-950 sm:text-4xl">
-          Upload context
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600 sm:text-base">
-          Add a document to a workspace. Once accepted, its content is extracted and indexed in the background.
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <header className="border-b border-line pb-6">
+        <p className="eyebrow">Document intake</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-ink">Upload context</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
+          Add a document to a workspace. Once accepted, its content is extracted and indexed in
+          the background.
         </p>
       </header>
 
       {availableWorkspaces.length === 0 ? (
-        <section className="mt-8 border border-stone-300 bg-white px-6 py-12 text-center sm:px-10" aria-labelledby="no-upload-access">
-          <LockKeyhole className="mx-auto text-stone-500" aria-hidden="true" size={30} />
-          <h2 id="no-upload-access" className="mt-4 text-xl font-semibold text-stone-950">No workspaces available for upload</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-stone-600">
-            Ask a workspace owner for owner or editor access. A platform admin role alone does not grant document access.
-          </p>
-          <a href="/dashboard" className="button-secondary mt-6">View workspaces <ArrowRight aria-hidden="true" size={16} /></a>
-        </section>
+        <Panel className="mt-6">
+          <div className="px-6 py-12 text-center">
+            <LockKeyhole
+              className="mx-auto text-ink-faint"
+              aria-hidden="true"
+              size={28}
+            />
+            <h2 className="mt-4 text-lg font-semibold text-ink">
+              No workspaces available for upload
+            </h2>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-ink-muted">
+              Ask a workspace owner for owner or editor access. A platform admin role alone does
+              not grant document access.
+            </p>
+            <a href="/dashboard" className="btn btn-secondary mt-6">
+              View workspaces
+              <ArrowRight aria-hidden="true" size={16} />
+            </a>
+          </div>
+        </Panel>
       ) : (
-        <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
-          <section className="border border-stone-300 bg-white" aria-labelledby="upload-form-title">
-            <div className="border-b border-stone-200 px-5 py-5 sm:px-7">
-              <p className="section-eyebrow">New document</p>
-              <h2 id="upload-form-title" className="mt-1 text-xl font-semibold text-stone-950">Select its destination and file</h2>
-            </div>
-            <form className="space-y-7 px-5 py-6 sm:px-7 sm:py-8" onSubmit={submitUpload}>
+        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+          <Panel>
+            <PanelHeader eyebrow="New document" title="Select its destination and file" />
+            <form className="space-y-6 px-5 py-6" onSubmit={submitUpload}>
               <div>
-                <label htmlFor="upload-workspace" className="field-label">Workspace</label>
+                <label htmlFor="upload-workspace" className="label">
+                  Workspace
+                </label>
                 <select
                   id="upload-workspace"
-                  className="field-input"
+                  className="field"
                   value={workspaceId}
                   disabled={uploading}
                   onChange={(event) => {
@@ -137,84 +148,124 @@ export function UploadContext({ token, workspaces, onUnauthorized }: UploadConte
                 >
                   <option value="">Choose a workspace</option>
                   {availableWorkspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>{workspace.name} · {workspace.slug}</option>
+                    <option key={workspace.id} value={workspace.id}>
+                      {workspace.name} · {workspace.slug}
+                    </option>
                   ))}
                 </select>
                 {selectedWorkspace === undefined ? (
-                  <p className="mt-2 text-xs leading-5 text-stone-600">Only workspaces where you are an owner or editor are shown.</p>
+                  <p className="mt-1.5 text-xs leading-5 text-ink-muted">
+                    Only workspaces where you are an owner or editor are shown.
+                  </p>
                 ) : (
-                  <p className="mt-2 text-xs leading-5 text-stone-600">
-                    {selectedWorkspace.description ?? selectedWorkspace.slug} · Your role: {selectedWorkspace.membership_role}
+                  <p className="mt-1.5 text-xs leading-5 text-ink-muted">
+                    {selectedWorkspace.description ?? selectedWorkspace.slug} · Your role:{' '}
+                    {selectedWorkspace.membership_role}
                   </p>
                 )}
               </div>
 
               <div>
-                <label htmlFor="upload-file" className="field-label">Document</label>
+                <label htmlFor="upload-file" className="label">
+                  Document
+                </label>
                 <input
                   id="upload-file"
                   ref={fileInput}
-                  className="field-input cursor-pointer text-sm file:mr-4 file:cursor-pointer file:border-0 file:border-r file:border-stone-200 file:bg-stone-50 file:px-3 file:py-1 file:text-sm file:font-medium file:text-stone-800"
+                  className="field cursor-pointer text-sm file:mr-3 file:cursor-pointer file:border-0 file:border-r file:border-line file:bg-sunken file:px-3 file:py-1 file:text-sm file:font-medium file:text-ink"
                   type="file"
                   accept=".pdf,.docx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv"
                   aria-describedby="upload-file-help"
                   disabled={uploading}
                   onChange={chooseFile}
                 />
-                <p id="upload-file-help" className="mt-2 text-xs leading-5 text-stone-600">
-                  PDF, DOCX or CSV. The server validates the file and enforces its size limit. A CSV is stored as rows and queried with SQL rather than indexed for meaning, so the agent can count, total and group its lines but not search their wording.
+                <p id="upload-file-help" className="mt-1.5 text-xs leading-5 text-ink-muted">
+                  PDF, DOCX or CSV. The server validates the file and enforces its size limit. A
+                  CSV is stored as rows and queried with SQL rather than indexed for meaning, so
+                  the agent can count, total and group its lines but not search their wording.
                 </p>
                 {file === null ? null : (
-                  <div className="mt-4 flex items-center gap-3 border border-stone-200 bg-stone-50 px-4 py-3 text-sm">
-                    <FileText aria-hidden="true" className="shrink-0 text-emerald-800" size={19} />
-                    <span className="min-w-0 flex-1 truncate text-stone-950">{file.name}</span>
-                    <span className="shrink-0 font-mono text-xs text-stone-600">{formatBytes(file.size)}</span>
+                  <div className="mt-3 flex items-center gap-3 rounded-card border border-line bg-sunken px-3.5 py-2.5 text-sm">
+                    <FileText aria-hidden="true" className="shrink-0 text-accent-ink" size={18} />
+                    <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
+                    <span className="shrink-0 font-mono text-meta text-ink-muted">
+                      {formatBytes(file.size)}
+                    </span>
                   </div>
                 )}
               </div>
 
               {error === null ? null : (
-                <p className="form-error flex items-start gap-2" role="alert"><CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={17} />{error}</p>
+                <p className="error-note" role="alert">
+                  <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
+                  {error}
+                </p>
               )}
 
-              <div className="flex flex-wrap items-center gap-4 border-t border-stone-200 pt-6">
-                <button type="submit" className="button-primary min-w-40" disabled={uploading || file === null || file.size === 0 || !supportedFile.test(file.name) || selectedWorkspace === undefined}>
-                  {uploading ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} /> : <FileUp aria-hidden="true" size={17} />}
+              <div className="flex flex-wrap items-center gap-4 border-t border-line pt-5">
+                <button
+                  type="submit"
+                  className="btn btn-primary min-w-40"
+                  disabled={
+                    uploading ||
+                    file === null ||
+                    file.size === 0 ||
+                    !supportedFile.test(file.name) ||
+                    selectedWorkspace === undefined
+                  }
+                >
+                  {uploading ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+                  ) : (
+                    <FileUp aria-hidden="true" size={17} />
+                  )}
                   {uploading ? 'Uploading…' : 'Upload document'}
                 </button>
-                <p className="text-xs text-stone-600">Context indexing continues after upload.</p>
+                <p className="text-xs text-ink-muted">Context indexing continues after upload.</p>
               </div>
             </form>
-          </section>
+          </Panel>
 
-          <aside className="border border-stone-300 bg-[#17231f] p-6 text-white" aria-label="Upload policy">
-            <ShieldCheck aria-hidden="true" className="text-[#d9f15f]" size={25} />
-            <h2 className="mt-5 text-base font-semibold">Workspace-first access</h2>
-            <p className="mt-2 text-sm leading-6 text-stone-300">
-              Every document belongs to the workspace you choose. Membership is checked again by the API when you submit.
+          <aside className="rounded-card border border-line bg-surface p-5" aria-label="Upload policy">
+            <ShieldCheck aria-hidden="true" className="text-accent-ink" size={22} />
+            <h2 className="mt-3 text-sm font-semibold text-ink">Workspace-first access</h2>
+            <p className="mt-1.5 text-sm leading-6 text-ink-muted">
+              Every document belongs to the workspace you choose. Membership is checked again by
+              the API when you submit.
             </p>
-            <p className="mt-5 border-t border-white/15 pt-5 font-mono text-[0.68rem] uppercase tracking-[0.12em] text-[#d9f15f]">
-              {availableWorkspaces.length} available workspace{availableWorkspaces.length === 1 ? '' : 's'}
+            <p className="mt-4 border-t border-line pt-3 font-mono text-meta text-ink-faint">
+              {availableWorkspaces.length} available workspace
+              {availableWorkspaces.length === 1 ? '' : 's'}
             </p>
           </aside>
         </div>
       )}
 
       {confirmation === null ? null : (
-        <section className="mt-6 border border-emerald-700 bg-emerald-50 px-5 py-5 sm:px-7" role="status" aria-live="polite" aria-labelledby="upload-result-title">
+        <section
+          className="mt-5 rounded-card border border-success/30 bg-success-soft px-5 py-4"
+          role="status"
+          aria-live="polite"
+          aria-labelledby="upload-result-title"
+        >
           <div className="flex items-start gap-3">
-            <CheckCircle2 aria-hidden="true" className="mt-0.5 shrink-0 text-emerald-800" size={21} />
+            <CheckCircle2
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-success"
+              size={20}
+            />
             <div className="min-w-0">
-              <h2 id="upload-result-title" className="font-semibold text-emerald-950">
+              <h2 id="upload-result-title" className="text-sm font-semibold text-success">
                 {confirmation.document.duplicate ? 'Document already exists' : 'Document accepted'}
               </h2>
-              <p className="mt-1 text-sm leading-6 text-emerald-950">
+              <p className="mt-1 text-sm leading-6 text-success">
                 {confirmation.document.duplicate
                   ? 'An identical document already exists in this workspace; no new upload was created.'
                   : 'The file is stored. Extraction and indexing happen asynchronously.'}
               </p>
-              <p className="mt-3 break-all font-mono text-xs text-emerald-900">
-                {confirmation.document.original_filename} · {confirmation.workspaceName} · ID {confirmation.document.id}
+              <p className="mt-2.5 break-all font-mono text-meta text-success">
+                {confirmation.document.original_filename} · {confirmation.workspaceName} · ID{' '}
+                {confirmation.document.id}
               </p>
             </div>
           </div>

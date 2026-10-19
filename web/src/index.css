@@ -1,8 +1,59 @@
 @import "tailwindcss";
 
+/*
+ * One palette, one accent, one type scale.
+ *
+ * The design used to be applied by hand: three brand hexes repeated in
+ * component markup, a hand-tuned type scale, and seven dark panels painted
+ * directly on a light page. That left one colour meaning two things in
+ * different containers and no single place to change a decision.
+ *
+ * Everything below is a token, so a change here changes the whole app. The
+ * accent is the one brand colour: a lime for fills, and a dark olive of the
+ * same hue for text, borders and focus rings, where lime itself would be
+ * unreadable. The status colours are semantic, not brand.
+ */
 @theme {
   --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Fira Code", ui-monospace, monospace;
+
+  /* Surfaces, lightest to darkest. */
+  --color-paper: #f6f4ee;
+  --color-surface: #ffffff;
+  --color-sunken: #f1efe8;
+
+  /* Lines. */
+  --color-line: #e3e0d6;
+  --color-line-strong: #cfcbbe;
+
+  /* Ink. */
+  --color-ink: #1c1e1a;
+  --color-ink-muted: #5d5f58;
+  --color-ink-faint: #8d8f88;
+
+  /* The brand accent: one hue, two tones. */
+  --color-accent: #d9f15f;
+  --color-accent-soft: #f4f9dd;
+  --color-accent-ink: #47520f;
+
+  /* Status. Semantic, not brand. */
+  --color-danger: #a02c2c;
+  --color-danger-soft: #fdf1f1;
+  --color-success: #2f6b3a;
+  --color-success-soft: #eef5ef;
+  --color-warn: #8a5a12;
+  --color-warn-soft: #fbf4e6;
+
+  /* The type scale, once. */
+  --text-eyebrow: 0.6875rem;
+  --text-eyebrow--line-height: 1rem;
+  --tracking-eyebrow: 0.14em;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.1rem;
+
+  --radius-card: 0.5rem;
+  --shadow-card: 0 1px 2px rgb(28 30 26 / 0.05);
+  --shadow-raised: 0 18px 48px rgb(28 30 26 / 0.12);
 }
 
 @layer base {
@@ -19,8 +70,8 @@
     min-width: 320px;
     min-height: 100svh;
     overflow-x: hidden;
-    background: #f4f1e8;
-    color: #292524;
+    background: var(--color-paper);
+    color: var(--color-ink);
     font-family: var(--font-sans);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
@@ -45,228 +96,130 @@
   }
 
   ::selection {
-    background: #d9f15f;
-    color: #17231f;
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
   }
 }
 
+/*
+ * Nine classes carry the whole interface. Everything else is a Tailwind
+ * utility over the tokens above, so a component is described once rather
+ * than restated in a stylesheet.
+ */
 @layer components {
-  .button-primary,
-  .button-secondary,
-  .button-danger {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 border px-4 py-2.5 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-55;
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-quiet,
+  .btn-danger,
+  .btn-icon {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 border text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:cursor-not-allowed disabled:opacity-50;
   }
 
-  .button-primary {
-    @apply border-[#17231f] bg-[#17231f] text-white hover:border-emerald-950 hover:bg-emerald-950 focus-visible:outline-emerald-800;
+  .btn {
+    @apply px-4 py-2.5;
   }
 
-  .button-secondary {
-    @apply border-stone-300 bg-white text-stone-800 hover:border-stone-400 hover:bg-stone-50 focus-visible:outline-emerald-800;
+  .btn-primary {
+    @apply border-ink bg-ink text-white hover:bg-ink/90;
   }
 
-  .button-danger {
-    @apply border-red-800 bg-red-800 text-white hover:bg-red-900 focus-visible:outline-red-700;
+  .btn-secondary {
+    @apply border-line-strong bg-surface text-ink hover:bg-sunken;
   }
 
-  .icon-button {
-    @apply inline-flex h-9 w-9 cursor-pointer items-center justify-center border border-stone-300 bg-white text-stone-600 transition-colors duration-200 hover:border-stone-400 hover:bg-stone-50 hover:text-stone-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50;
+  .btn-quiet {
+    @apply border-transparent bg-transparent px-1 text-ink-muted hover:text-ink;
   }
 
-  .text-button {
-    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 text-sm font-medium text-emerald-900 transition-colors duration-200 hover:text-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-800;
+  .btn-danger {
+    @apply border-danger bg-danger text-white hover:bg-danger/90;
   }
 
-  .field-label {
-    @apply mb-2 block text-sm font-medium text-stone-800;
+  .btn-icon {
+    @apply h-9 w-9 border-line-strong bg-surface text-ink-muted hover:bg-sunken hover:text-ink;
   }
 
-  .field-input {
-    @apply block w-full border border-stone-300 bg-white px-3.5 py-2.5 text-stone-950 outline-none transition-colors placeholder:text-stone-400 hover:border-stone-400 focus:border-emerald-800 focus:ring-1 focus:ring-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-500;
+  .label {
+    @apply mb-2 block text-sm font-medium text-ink;
   }
 
-  .markdown-answer {
-    @apply min-w-0 break-words text-sm leading-7 text-stone-800;
+  .field {
+    @apply block w-full rounded-card border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-ink-faint focus:border-accent-ink focus:ring-1 focus:ring-accent-ink disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-faint;
   }
 
-  .markdown-answer > :first-child {
-    @apply mt-0;
+  .panel {
+    @apply rounded-card border border-line bg-surface;
   }
 
-  .markdown-answer > :last-child {
-    @apply mb-0;
-  }
-
-  .markdown-answer p {
-    @apply my-3;
-  }
-
-  .markdown-answer h1,
-  .markdown-answer h2,
-  .markdown-answer h3,
-  .markdown-answer h4 {
-    @apply mt-5 font-semibold tracking-[-0.02em] text-stone-950;
-  }
-
-  .markdown-answer h1 {
-    @apply text-xl;
-  }
-
-  .markdown-answer h2 {
-    @apply text-lg;
-  }
-
-  .markdown-answer h3,
-  .markdown-answer h4 {
-    @apply text-base;
-  }
-
-  .markdown-answer ul,
-  .markdown-answer ol {
-    @apply my-3 pl-6;
-  }
-
-  .markdown-answer ul {
-    @apply list-disc;
-  }
-
-  .markdown-answer ol {
-    @apply list-decimal;
-  }
-
-  .markdown-answer li {
-    @apply my-1 pl-1;
-  }
-
-  .markdown-answer blockquote {
-    @apply my-4 border-l-2 border-emerald-800 pl-4 text-stone-600;
-  }
-
-  .markdown-answer a {
-    @apply text-emerald-900 underline decoration-emerald-700 underline-offset-2 hover:text-emerald-700;
-  }
-
-  .markdown-answer :not(pre) > code {
-    @apply rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[0.85em] text-emerald-950;
-  }
-
-  .markdown-answer pre {
-    @apply my-4 max-w-full overflow-x-auto border border-stone-800 bg-[#17231f] p-4 text-xs leading-6 text-stone-100;
-  }
-
-  .markdown-answer pre code {
-    @apply font-mono;
-  }
-
-  .markdown-answer table {
-    @apply my-4 block w-full max-w-full overflow-x-auto border-collapse text-left text-xs;
-  }
-
-  .markdown-answer th,
-  .markdown-answer td {
-    @apply whitespace-nowrap border border-stone-300 px-3 py-2 align-top;
-  }
-
-  .markdown-answer th {
-    @apply bg-stone-50 font-semibold text-stone-900;
-  }
-
-  .markdown-answer input[type='checkbox'] {
-    @apply mr-2 accent-emerald-800;
-  }
-
-  .field-icon {
-    @apply pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400;
-  }
-
-  .form-error {
-    @apply border-l-2 border-red-700 bg-red-50 px-4 py-3 text-sm leading-6 text-red-900;
-  }
-
-  .choice-card {
-    @apply grid cursor-pointer gap-1 border border-stone-300 bg-white p-4 transition-colors hover:border-stone-400;
-  }
-
-  .choice-card input {
-    @apply sr-only;
-  }
-
-  .choice-card-active {
-    @apply border-emerald-800 bg-emerald-50 ring-1 ring-emerald-800;
-  }
-
-  .section-eyebrow {
-    @apply font-mono text-[0.65rem] font-semibold uppercase tracking-[0.17em] text-emerald-800;
-  }
-
-  .role-badge {
-    @apply inline-flex border border-stone-300 bg-stone-50 px-2 py-1 font-mono text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-stone-700;
-  }
-
-  .status-dot {
-    @apply inline-flex items-center gap-2 text-sm text-stone-500 before:h-1.5 before:w-1.5 before:rounded-full before:bg-stone-400;
-  }
-
-  .status-active {
-    @apply text-emerald-800 before:bg-emerald-600;
-  }
-
-  .data-table {
+  .table {
     @apply w-full border-collapse text-left;
   }
 
-  .data-table th {
-    @apply border-b border-stone-200 bg-stone-50 px-5 py-3 font-mono text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-stone-500 lg:px-6;
+  .table th {
+    @apply border-b border-line bg-sunken px-5 py-2.5 font-mono text-eyebrow font-semibold uppercase tracking-eyebrow text-ink-faint;
   }
 
-  .data-table td {
-    @apply border-b border-stone-200 px-5 py-4 align-middle text-sm last:border-b-0 lg:px-6;
+  .table td {
+    @apply border-b border-line px-5 py-3 text-sm align-middle text-ink last:border-b-0;
   }
 
-  .data-table tbody tr {
-    @apply transition-colors hover:bg-stone-50/80;
+  .table tbody tr {
+    @apply transition-colors hover:bg-sunken/60;
   }
 
-  .nav-item {
-    @apply mb-1 flex cursor-pointer items-center gap-3 border-l-2 border-transparent px-3 py-2.5 text-sm text-stone-400 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d9f15f];
+  .eyebrow {
+    @apply font-mono text-eyebrow font-semibold uppercase tracking-eyebrow text-ink-faint;
   }
 
-  .nav-item-active {
-    @apply border-[#d9f15f] bg-white/5 text-white;
+  .nav-link {
+    @apply flex cursor-pointer items-center gap-3 rounded-card px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
   }
 
-  .capability-on,
-  .capability-off {
-    @apply inline-flex items-center gap-1;
+  .nav-link-active {
+    @apply bg-accent-soft font-medium text-accent-ink;
   }
 
-  .capability-on {
-    @apply text-emerald-800;
+  .choice {
+    @apply grid cursor-pointer gap-1 rounded-card border border-line-strong bg-surface p-3.5 transition-colors hover:border-ink-faint;
   }
 
-  .capability-off {
-    @apply text-stone-300;
+  .choice-active {
+    @apply border-accent-ink bg-accent-soft;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full border border-line-strong bg-sunken px-2 py-0.5 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-ink-muted;
+  }
+
+  .error-note {
+    @apply flex items-start gap-2 rounded-card border border-danger/30 bg-danger-soft px-4 py-3 text-sm leading-6 text-danger;
+  }
+
+  .empty {
+    @apply rounded-card border border-dashed border-line-strong px-5 py-10 text-center text-sm leading-6 text-ink-muted;
+  }
+
+  .toast {
+    @apply fixed bottom-4 right-4 z-[70] flex max-w-md items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-sm text-ink shadow-raised;
+  }
+
+  .toast-error {
+    @apply border-danger/40 text-danger;
   }
 
   .skip-link {
-    @apply fixed left-3 top-3 z-[100] -translate-y-20 bg-[#d9f15f] px-4 py-2 text-sm font-semibold text-[#17231f] transition-transform focus:translate-y-0;
-  }
-
-  .notice {
-    @apply fixed bottom-4 right-4 z-[70] flex max-w-md items-center gap-3 border border-emerald-800 bg-emerald-950 px-4 py-3 text-sm text-white shadow-xl;
-  }
-
-  .notice-error {
-    @apply border-red-800 bg-red-950;
-  }
-
-  .notice button {
-    @apply ml-2 cursor-pointer text-white/70 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white;
+    @apply fixed left-3 top-3 z-[100] -translate-y-20 rounded-card bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition-transform focus:translate-y-0;
   }
 }
 
+/*
+ * The dialog and the drawer are native <dialog> elements, so the modal
+ * behaviour, the focus trap and the top layer come from the browser. What
+ * is left is the shape.
+ */
 .app-dialog {
-  width: min(calc(100% - 2rem), 36rem);
+  width: min(calc(100% - 2rem), 34rem);
   max-height: min(90svh, 54rem);
   margin: auto;
   padding: 0;
@@ -277,20 +230,21 @@
 }
 
 .app-dialog::backdrop {
-  background: rgb(23 35 31 / 0.62);
+  background: rgb(28 30 26 / 0.45);
   backdrop-filter: blur(2px);
 }
 
 .dialog-surface {
   max-height: inherit;
   overflow-y: auto;
-  border: 1px solid #d6d3d1;
-  background: white;
-  box-shadow: 0 30px 100px rgb(16 24 20 / 0.25);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
 }
 
 .app-drawer {
-  width: min(100%, 46rem);
+  width: min(100%, 44rem);
   height: 100svh;
   max-height: 100svh;
   margin: 0 0 0 auto;
@@ -313,7 +267,7 @@
 
 @media (max-width: 640px) {
   .app-dialog {
-    width: min(calc(100% - 1rem), 36rem);
+    width: min(calc(100% - 1rem), 34rem);
   }
 
   .app-drawer {
@@ -324,7 +278,7 @@
     border-left: 0;
   }
 
-  .notice {
+  .toast {
     right: 0.75rem;
     bottom: 0.75rem;
     left: 0.75rem;
