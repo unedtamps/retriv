@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -149,6 +150,102 @@ def test_a_heading_with_no_body_is_marked_from_parser_labels(
         and not chunk.is_heading_only
         for chunk in result.chunks
     ), "the parent section keeps its own prose in a chunk that is not heading-only"
+
+
+@pytest.mark.integration
+def test_a_long_table_is_split_on_rows_and_repeats_its_header(
+    tmp_path: Path, docling_extractor: DoclingExtractor
+) -> None:
+    """A table is cut on row boundaries, and every part says which columns it holds.
+
+    The chunker used to receive a table as one line of "row, column = value" text, so a
+    table longer than the budget was cut wherever the tokens fell -- inside a cell, in
+    the middle of a number. Measured on this corpus, that was half the table chunks in
+    the 10-K, ending on fragments like "Page No. =".
+
+    A table is written one grid row per line instead, and the chunker cuts on those
+    lines. The header is repeated in every part, because a part that does not say which
+    columns it holds is a table of anonymous numbers.
+    """
+    path = tmp_path / "table.docx"
+    document = Document()
+    document.add_heading("Appendix A", level=1)
+    document.add_paragraph("Paragraf sebelum tabel.")
+    table = document.add_table(rows=61, cols=3)
+    table.cell(0, 0).text = "Posisi"
+    table.cell(0, 1).text = "2025"
+    table.cell(0, 2).text = "2024"
+    for index in range(1, 61):
+        table.cell(index, 0).text = f"Baris {index}"
+        table.cell(index, 1).text = f"nilai {index * 11}"
+        table.cell(index, 2).text = f"nilai {index * 12}"
+    document.add_paragraph("Paragraf selepas tabel.")
+    document.save(path)
+
+    result = docling_extractor.extract(path, media_type=DOCX_MEDIA_TYPE)
+
+    table_chunks = [chunk for chunk in result.chunks if "Posisi | 2025 | 2024" in chunk.text]
+    assert len(table_chunks) > 1, "a table this long does not fit in one chunk"
+
+    seen_rows: list[int] = []
+    for chunk in table_chunks:
+        lines = chunk.text.split("\n")
+        assert "Posisi | 2025 | 2024" in lines, "every part repeats the header"
+        rows = [line for line in lines if " = " in line]
+        assert rows, "a part of a table holds at least one row"
+        for row in rows:
+            # Every row is whole: a cut cell would leave a half-written number.
+            match = re.fullmatch(
+                r"Baris (\d+), 2025 = nilai (\d+)\. Baris \1, 2024 = nilai (\d+)", row
+            )
+            assert match is not None, f"row was cut in half: {row!r}"
+            seen_rows.append(int(match.group(1)))
+
+    assert seen_rows == sorted(seen_rows), "the rows stay in reading order"
+    assert seen_rows == list(range(1, 61)), "every row is present exactly once"
+
+    # The table keeps its place: the prose before it comes first and the prose
+    # after it comes last, with the table's parts in between.
+    order = [
+        "before" if "Paragraf sebelum tabel." in chunk.text else ""
+        for chunk in result.chunks
+    ]
+    assert "before" in order
+    before = order.index("before")
+    assert all(
+        "Posisi | 2025 | 2024" not in chunk.text
+        for chunk in result.chunks[:before]
+    ), "the table does not precede the prose that introduces it"
+
+
+@pytest.mark.integration
+def test_a_table_that_fits_stays_in_one_chunk(
+    tmp_path: Path, docling_extractor: DoclingExtractor
+) -> None:
+    """A small table is not split, and its rows are one line each.
+
+    The row-wise format is not only for tables that have to be cut. A table that fits
+    keeps its rows apart, so a reader can see where one row ends and the next begins.
+    """
+    path = tmp_path / "small_table.docx"
+    document = Document()
+    document.add_heading("Ringkasan", level=1)
+    table = document.add_table(rows=3, cols=2)
+    table.cell(0, 0).text = "Posisi"
+    table.cell(0, 1).text = "Jumlah"
+    table.cell(1, 0).text = "Pendapatan"
+    table.cell(1, 1).text = "1.200"
+    table.cell(2, 0).text = "Beban"
+    table.cell(2, 1).text = "800"
+    document.save(path)
+
+    result = docling_extractor.extract(path, media_type=DOCX_MEDIA_TYPE)
+
+    assert len(result.chunks) == 1
+    lines = result.chunks[0].text.split("\n")
+    assert "Posisi | Jumlah" in lines
+    assert "Pendapatan, Jumlah = 1.200" in lines
+    assert "Beban, Jumlah = 800" in lines
 
 
 @pytest.mark.integration

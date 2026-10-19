@@ -29,6 +29,8 @@ class DoclingExtractor:
             from docling.document_converter import DocumentConverter, PdfFormatOption
             from docling_core.transforms.chunker import HybridChunker
             from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
+
+            from app.extraction.tables import RowWiseSerializerProvider
         except ImportError as exc:
             raise RuntimeError(
                 "Docling extraction dependencies are not installed; "
@@ -67,10 +69,15 @@ class DoclingExtractor:
         # absent leaves no searchable text at all. contextualize() renders these
         # chunks with the heading text itself, so they are not empty and the
         # extractor's empty-chunk guard stays satisfied.
+        #
+        # The serializer writes tables one grid row per line, so the chunker
+        # splits a long table on row boundaries instead of cutting a cell in
+        # half, and repeats the header in every part. See app.extraction.tables.
         self._chunker = HybridChunker(
             tokenizer=self._tokenizer,
             merge_peers=True,
             always_emit_headings=True,
+            serializer_provider=RowWiseSerializerProvider(),
         )
         try:
             self._version = version("docling")
