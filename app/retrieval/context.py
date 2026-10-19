@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import JSON, Uuid, and_, bindparam, or_, select, text
+from sqlalchemy import JSON, Boolean, String, Uuid, and_, bindparam, case, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -17,6 +17,7 @@ from app.db.models import (
     DocumentChunk,
 )
 from app.retrieval.schemas import ContextSource
+from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
 
 PAYLOAD_FIELDS = (
     "workspace_id",
@@ -39,6 +40,8 @@ VALIDATE_CHUNKS = (
         chunk.token_count,
         chunk.content_hash,
         chunk.section_path,
+        chunk.section_key,
+        chunk.is_heading_only,
         chunk.page_numbers,
         document.original_filename AS filename,
         embedding.qdrant_point_id
@@ -71,58 +74,63 @@ VALIDATE_CHUNKS = (
         document_id=Uuid(as_uuid=True),
         processing_run_id=Uuid(as_uuid=True),
         section_path=JSON(),
+        section_key=String(),
+        is_heading_only=Boolean(),
         page_numbers=JSON(),
         qdrant_point_id=Uuid(as_uuid=True),
     )
 )
 
 
-def neighbour_anchors(
-    sources: Sequence[ContextSource],
-    *,
-    max_tokens: int,
-    width: int,
-) -> list[tuple[UUID, int, int]]:
-    """Ordinal ranges to pull in after a heading-only chunk was retrieved.
+def section_anchors(sources: Sequence[ContextSource]) -> list[str]:
+    """Section keys worth completing, in the rank order of the chunks naming them.
 
-    A heading emitted as its own chunk is topically concentrated, so against a vague
-    query it outscores the substantive text belonging to it: on a 57-page regulation
-    document "Article 16: General framework" retrieved at 0.81 while Regulation
-    16.01-16.06 did not appear at all, and the agent reported the article's content as
-    absent from a document that contained it.
+    A heading is topically concentrated, so against a vague query it outscores the
+    prose belonging to it: on a 57-page regulation document "Article 16: General
+    framework" retrieved at 0.81 while Regulation 16.01-16.06 did not appear at all,
+    and the agent reported the article's content as absent from a document that
+    contained it.
 
-    Following the anchor in reading order repairs that -- the heading keeps working as
-    a signpost but stops arriving empty-handed.
+    Reading order does not repair that, because the content is rarely adjacent. When
+    Docling meets "Pasal 16" followed by numbered sub-provisions it files the prose
+    under paths that *end* in "16.01", "16.02" and so on -- none of which equal the
+    article's own key. Completing an anchor therefore means its own section plus
+    every section beneath it, which is a hierarchy question rather than a positional
+    one.
+
+    Every retrieved chunk anchors, not only the bare headings. A parent heading whose
+    intro was merged into one chunk with its lead paragraph is not marked as a
+    heading, yet it is exactly the chunk whose sub-sections went missing.
+
+    A chunk with no headings encodes to the empty array, which has no descendants, so
+    it anchors only itself. In a document that is entirely headingless -- a badly
+    scanned PDF, say -- that degrades to pulling the few chunks that share its key,
+    which is the preamble the match came from and no worse than returning it alone.
     """
-    anchors: list[tuple[UUID, int, int]] = []
-    seen: set[tuple[UUID, int]] = set()
+    anchors: list[str] = []
+    seen: set[str] = set()
     for source in sources:
-        if source.token_count > max_tokens or width <= 0:
-            continue
-        key = (source.document_id, source.ordinal)
-        if key in seen:
+        key = source.section_key
+        if not key or key in seen:
             continue
         seen.add(key)
-        anchors.append(
-            (source.processing_run_id, source.ordinal, source.ordinal + width)
-        )
+        anchors.append(key)
     return anchors
 
 
-def _neighbour_clause(anchors: Sequence[tuple[UUID, int, int]]) -> Any:
-    """Build ``(run, ordinal BETWEEN lo AND hi) OR ...`` for a bounded anchor set.
+def _section_clause(anchors: Sequence[str]) -> Any:
+    """Build ``(key = a OR key LIKE a's descendants) OR ...`` for a bounded anchor set.
 
     Kept as an expression rather than interpolated SQL text so the values stay bound
     parameters and cannot carry identifiers out of the statement.
     """
     return or_(
         *(
-            and_(
-                DocumentChunk.processing_run_id == run_id,
-                DocumentChunk.ordinal > low,
-                DocumentChunk.ordinal <= high,
+            or_(
+                DocumentChunk.section_key == key,
+                DocumentChunk.section_key.like(subtree_pattern(key), escape=LIKE_ESCAPE),
             )
-            for run_id, low, high in anchors
+            for key in anchors
         )
     )
 
@@ -172,14 +180,14 @@ class ContextRetriever:
         *,
         budget: int | None = None,
     ) -> list[ContextSource]:
-        """Return up to ``limit`` vector matches, plus any expansion they justify.
+        """Return up to ``limit`` vector matches, plus the sections they belong to.
 
-        ``budget`` is how many sources the caller can still accept overall. It is
+        ``budget`` is how many sources the caller can accept overall. It is
         distinct from ``limit`` because the two clamp different things: ``limit`` bounds
         how many similarity matches one search may contribute, while ``budget`` bounds
-        the total. Without it, a full page of matches leaves no room to expand -- which
-        is exactly the case that matters, since a heading outranking its own prose is
-        only visible when the search returned its quota.
+        the total. Without it, a full page of matches leaves no room to complete a
+        section -- which is exactly the case that matters, since a section named
+        without its content is only visible when the search returned its quota.
         """
         if not workspace_ids:
             raise RetrievalUnavailable(
@@ -188,16 +196,16 @@ class ContextRetriever:
         if len(workspace_ids) != len(set(workspace_ids)):
             raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
 
-        width = self._settings.heading_expand_chunks
+        width = self._settings.section_expand_chunks
         cap = limit if budget is None else min(limit + width, budget)
 
         try:
             vector = await self._embed_query(query)
             matches = await self._query_qdrant(vector, workspace_ids, limit)
             sources = await self._load_validated_chunks(matches, workspace_ids)
-            neighbours = await self._load_neighbour_chunks(sources, workspace_ids)
+            completed = await self._complete_sections(sources, workspace_ids)
             room = max(0, cap - len(sources))
-            return sources + neighbours[:room]
+            return sources + completed[:room]
         except OutOfScopeSearchResult:
             raise
         except (
@@ -377,6 +385,8 @@ class ContextRetriever:
                     content_hash=str(row["content_hash"]),
                     filename=row["filename"],
                     section_path=list(row["section_path"] or []),
+                    section_key=str(row["section_key"] or ""),
+                    is_heading_only=bool(row["is_heading_only"]),
                     page_numbers=list(row["page_numbers"] or []),
                     text=str(row["text"]),
                     token_count=int(row["token_count"]),
@@ -384,24 +394,25 @@ class ContextRetriever:
             )
         return sources
 
-    async def _load_neighbour_chunks(
+    async def _complete_sections(
         self,
         sources: Sequence[ContextSource],
         workspace_ids: list[UUID],
     ) -> list[ContextSource]:
-        """Load the chunks that follow heading-only anchors, under the same validation.
+        """Fill in the sections the matched chunks belong to, under the same validation.
 
         Every condition ``VALIDATE_CHUNKS`` enforces is repeated here -- workspace scope,
         non-deleted document, active processing run, indexed embedding, matching content
         hash -- because these rows are not backed by a Qdrant match in this search and
         would otherwise reach the model unvetted.
+
+        Each anchor takes at most ``section_expand_chunks``. A large section must not
+        starve the anchors ranked below it just because its own chunks come first in
+        reading order.
         """
-        anchors = neighbour_anchors(
-            sources,
-            max_tokens=self._settings.heading_chunk_max_tokens,
-            width=self._settings.heading_expand_chunks,
-        )
-        if not anchors:
+        anchors = section_anchors(sources)
+        width = self._settings.section_expand_chunks
+        if not anchors or width <= 0:
             return []
 
         existing = {source.chunk_id for source in sources}
@@ -416,6 +427,7 @@ class ContextRetriever:
                 DocumentChunk.token_count,
                 DocumentChunk.content_hash,
                 DocumentChunk.section_path,
+                DocumentChunk.section_key,
                 DocumentChunk.page_numbers,
                 Document.original_filename,
             )
@@ -437,7 +449,7 @@ class ContextRetriever:
                 ),
             )
             .where(
-                _neighbour_clause(anchors),
+                _section_clause(anchors),
                 DocumentChunk.workspace_id.in_(workspace_ids),
                 Document.deleted_at.is_(None),
                 Document.active_processing_run_id == DocumentChunk.processing_run_id,
@@ -447,7 +459,13 @@ class ContextRetriever:
                 ChunkEmbedding.status == EMBEDDING_INDEXED,
                 ChunkEmbedding.content_hash == DocumentChunk.content_hash,
             )
-            .order_by(DocumentChunk.ordinal)
+            # A chunk's own text first, its sub-sections after. The parent's prose is
+            # what answers "what does this article say"; the sub-sections only add the
+            # detail, so they should not displace it when the budget runs short.
+            .order_by(
+                case((DocumentChunk.section_key.in_(anchors), 0), else_=1),
+                DocumentChunk.ordinal,
+            )
         )
 
         async with self._sessions() as session:
@@ -455,14 +473,34 @@ class ContextRetriever:
             rows = result.all()
 
         added: list[ContextSource] = []
+        taken_per_anchor: dict[str, int] = dict.fromkeys(anchors, 0)
         for row in rows:
             chunk_id = row[0]
             if chunk_id in existing:
                 continue
+            section_key = str(row[9])
+            # Attribute the row to the first anchor that claims it. Anchors are
+            # deduped but one section can nest inside another anchor, and the
+            # innermost match is the one that should be charged for the row.
+            owner = next(
+                (
+                    key
+                    for key in anchors
+                    if section_descends_from(section_key, key)
+                ),
+                None,
+            )
+            if owner is None:
+                raise RetrievalUnavailable(
+                    "A completed section row does not descend from any anchor"
+                )
+            if taken_per_anchor[owner] >= width:
+                continue
+            taken_per_anchor[owner] += 1
             text_value = str(row[5])
             if hashlib.sha256(text_value.encode()).hexdigest() != row[7]:
                 raise RetrievalUnavailable(
-                    "PostgreSQL neighbour chunk text does not match its content hash"
+                    "PostgreSQL section chunk text does not match its content hash"
                 )
             added.append(
                 ContextSource(
@@ -471,14 +509,15 @@ class ContextRetriever:
                     processing_run_id=row[3],
                     chunk_id=chunk_id,
                     ordinal=int(row[4]),
-                    # Neighbours were not matched on similarity, so they inherit the
-                    # anchor's score: attributed, not ranked. A low value keeps them from
-                    # outranking genuine vector matches in anything downstream.
+                    # Completed rows were not matched on similarity, so they inherit
+                    # the relevance floor: attributed, not ranked. A low value keeps
+                    # them from outranking genuine vector matches downstream.
                     score=self._settings.min_relevance_score,
                     content_hash=str(row[7]),
-                    filename=row[10],
+                    filename=row[11],
                     section_path=list(row[8] or []),
-                    page_numbers=list(row[9] or []),
+                    section_key=section_key,
+                    page_numbers=list(row[10] or []),
                     text=text_value,
                     token_count=int(row[6]),
                 )

@@ -144,8 +144,15 @@ class Settings(BaseSettings):
     # -- retrieval --------------------------------------------------------
     max_context_chunks: int = Field(default=8, ge=1, le=20)
     min_relevance_score: float = Field(default=0.25, ge=-1.0, le=1.0)
-    heading_expand_chunks: int = Field(default=4, ge=0, le=20)
-    heading_chunk_max_tokens: int = Field(default=12, ge=0, le=64)
+    # How many chunks one anchored section may contribute when the vector search
+    # names a section without returning all of it. Per anchor, not per search,
+    # so a long section cannot starve the ones ranked below it.
+    section_expand_chunks: int = Field(default=4, ge=0, le=20)
+    # Ceiling on total sources one search may return, completed sections included.
+    # Without it, ``budget`` is unset and a search that fills its match quota has
+    # no room left to complete anything -- which is precisely the case section
+    # completion exists to serve.
+    max_context_sources: int = Field(default=12, ge=1, le=40)
     # No DSN means the tool is never registered, so the model cannot reach a
     # table at all. Pointing this at the primary application DSN would work
     # but is a full-privilege connection -- the opposite of the design.

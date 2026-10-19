@@ -64,6 +64,7 @@ class FakeRetriever(ContextRetriever):
 
     def __init__(self) -> None:
         self.calls: list[list[UUID]] = []
+        self.budgets: list[int | None] = []
         self.results: list[list[ContextSource]] = []
 
     async def retrieve(
@@ -74,8 +75,9 @@ class FakeRetriever(ContextRetriever):
         *,
         budget: int | None = None,
     ) -> list[ContextSource]:
-        del query, limit, budget
+        del query, limit
         self.calls.append(list(workspace_ids))
+        self.budgets.append(budget)
         return self.results.pop(0) if self.results else []
 
 
@@ -394,6 +396,20 @@ async def test_search_context_returns_labelled_sources(mcp: McpEnv) -> None:
     assert result["isError"] is False
     assert "<untrusted_document_text>" in text_of(result)
     assert "net revenue" in text_of(result)
+
+
+async def test_search_context_grants_room_for_section_completion(mcp: McpEnv) -> None:
+    """The tool must pass a budget, or section completion can never run.
+
+    ``retrieve`` collapses its cap onto ``limit`` when no budget is given, so a search
+    that filled its quota had nowhere to put a completed section. Every recorded
+    baseline showed zero completed-only hits for exactly this reason. The tool, not
+    the retriever default, is where the room has to come from.
+    """
+    await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+
+    assert mcp.retriever.budgets == [mcp.settings.max_context_sources]
+    assert mcp.settings.max_context_sources > mcp.settings.max_context_chunks
 
 
 async def test_search_context_scope_is_derived_from_the_key(mcp: McpEnv) -> None:
