@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
 from app.retrieval.context import ContextRetriever
+from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.sql import CatalogueReader, RowQuery
 
 if TYPE_CHECKING:
@@ -30,6 +31,8 @@ class McpRuntime:
     settings: Settings
     session_factory: async_sessionmaker[AsyncSession]
     retriever: ContextRetriever
+    # Reading a document in order, which is the other axis from searching it.
+    navigator: DocumentNavigator
     row_query: RowQuery | None
     catalogue_reader: CatalogueReader
     # Only for signing download links. The bytes themselves never travel

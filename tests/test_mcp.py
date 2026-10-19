@@ -32,6 +32,7 @@ from app.main import create_app
 from app.mcp.runtime import McpRuntime
 from app.mcp.server import _instructions
 from app.retrieval.context import ContextRetriever
+from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import (
     Catalogue,
@@ -258,6 +259,7 @@ async def running_mcp(
             settings=settings,
             session_factory=db_session_factory,
             retriever=retriever,
+            navigator=DocumentNavigator(settings, db_session_factory),
             row_query=row_query,
             catalogue_reader=CatalogueReader(db_session_factory),
             storage=storage,
@@ -412,6 +414,40 @@ async def test_search_context_grants_room_for_section_completion(mcp: McpEnv) ->
     assert mcp.settings.max_context_sources > mcp.settings.max_context_chunks
 
 
+async def test_search_context_labels_each_source_with_its_section(mcp: McpEnv) -> None:
+    """The model is told which section a passage came from, not just which page."""
+    source = make_source(mcp.entities.finance.id, text="net revenue")
+    object.__setattr__(source, "section_path", ["PMK", "Pasal 16"])
+    mcp.retriever.results = [[source]]
+
+    result = await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+
+    assert result["isError"] is False
+    body = text_of(result)
+    assert 'section=["PMK", "Pasal 16"]' in body
+
+
+async def test_search_context_marks_a_bare_heading_as_such(mcp: McpEnv) -> None:
+    """A source that reads like a title says so, so it is not read as an empty answer."""
+    source = make_source(mcp.entities.finance.id, text="Pasal 16")
+    object.__setattr__(source, "section_path", ["PMK", "Pasal 16"])
+    object.__setattr__(source, "is_heading_only", True)
+    mcp.retriever.results = [[source]]
+
+    result = await mcp.session.call(mcp.alice_key, "search_context", query="pasal 16")
+
+    assert "kind=heading" in text_of(result)
+
+
+async def test_search_context_omits_section_for_sources_without_one(mcp: McpEnv) -> None:
+    """CSV rows have no section; the label must not claim an empty breadcrumb."""
+    mcp.retriever.results = [[make_source(mcp.entities.finance.id, text="a,b,c")]]
+
+    result = await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+
+    assert "section=" not in text_of(result)
+
+
 async def test_search_context_scope_is_derived_from_the_key(mcp: McpEnv) -> None:
     await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
     await mcp.session.call(mcp.bob_key, "search_context", query="revenue")
@@ -464,11 +500,12 @@ async def test_search_context_reports_an_empty_scope(mcp: McpEnv) -> None:
     assert mcp.retriever.calls == []
 
 
-async def test_tools_are_the_documented_five(mcp: McpEnv) -> None:
+async def test_tools_are_the_documented_six(mcp: McpEnv) -> None:
     listed = await mcp.session.request(mcp.alice_key, "tools/list", {})
     names = {tool["name"] for tool in listed["result"]["tools"]}
     assert names == {
         "search_context",
+        "read_document",
         "query_rows",
         "list_queryable_files",
         "download_document",
@@ -936,6 +973,7 @@ async def test_the_row_tool_is_absent_when_no_reader_is_configured(
     assert "query_rows" not in names
     assert names == {
         "search_context",
+        "read_document",
         "list_queryable_files",
         "download_document",
         "find_documents",

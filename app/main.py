@@ -18,6 +18,7 @@ from app.mcp.endpoint import McpEndpointMiddleware
 from app.mcp.runtime import McpRuntime, McpRuntimeBox
 from app.mcp.server import build_mcp_server
 from app.retrieval.context import ContextRetriever
+from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.sql import CatalogueReader, RowQuery, RowQueryError
 from app.routes import (
     admin,
@@ -43,6 +44,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # connection pools, and building them per request would pay for a
         # handshake on every search.
         retriever = ContextRetriever(settings, engine)
+        # Reading in order borrows the application's session factory and holds
+        # no client of its own.
+        navigator = DocumentNavigator(settings, session_factory)
         # A reader DSN is what enables row queries. With none configured the
         # tool is simply absent, which is the safe default: an unset DSN
         # cannot be misread as "no restriction".
@@ -74,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 settings=settings,
                 session_factory=session_factory,
                 retriever=retriever,
+                navigator=navigator,
                 row_query=rows,
                 catalogue_reader=catalogue_reader,
                 storage=get_object_storage(),

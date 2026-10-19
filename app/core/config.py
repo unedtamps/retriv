@@ -153,6 +153,11 @@ class Settings(BaseSettings):
     # no room left to complete anything -- which is precisely the case section
     # completion exists to serve.
     max_context_sources: int = Field(default=12, ge=1, le=40)
+    # Tokens one read_document window may return. The count of chunks is the
+    # wrong unit to bound on: chunk sizes here run from 5 tokens for a bare
+    # heading to the 700-token ceiling, so any fixed count is either wasteful
+    # on a short-headed document or explosive on a dense one.
+    navigation_token_budget: int = Field(default=8_000, ge=500, le=64_000)
     # No DSN means the tool is never registered, so the model cannot reach a
     # table at all. Pointing this at the primary application DSN would work
     # but is a full-privilege connection -- the opposite of the design.
