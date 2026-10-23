@@ -1,13 +1,13 @@
 #!/bin/sh
 # Create the read-only role the row-query tool connects as.
 #
-# This lives here, next to minio-init, because the alternative is a
-# documented manual step that people skip. Migrations 0002 and 0003 grant to
-# this role *conditionally*: a password must never land in a migration, so the
-# role is created operationally and the GRANT is skipped when it is missing.
-# That made the failure silent and permanent -- skip the CREATE ROLE and the
-# migrations succeed, the app then refuses to start, and nothing in the output
-# says which step was missed.
+# This lives here, next to the other one-shot init service, because the
+# alternative is a documented manual step that people skip. Migrations 0002
+# and 0003 grant to this role *conditionally*: a password must never land in a
+# migration, so the role is created operationally and the GRANT is skipped when
+# it is missing. That made the failure silent and permanent -- skip the CREATE
+# ROLE and the migrations succeed, the app then refuses to start, and nothing
+# in the output says which step was missed.
 #
 # So the grants are applied here too, rather than depending on this running
 # before alembic. Order stops mattering: a fresh database gets its tables from

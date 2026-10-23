@@ -129,6 +129,49 @@ def test_production_requires_https_everywhere() -> None:
         Settings(**{**PRODUCTION_BASE, "embedding_base_url": "http://embeddings.example.test"})
 
 
+def test_s3_endpoint_may_be_unset_for_the_provider_default() -> None:
+    settings = Settings(environment="local", s3_endpoint_url="")
+    assert settings.s3_endpoint_url is None
+
+
+def test_s3_endpoint_must_be_absolute_and_clean() -> None:
+    with pytest.raises(ValidationError, match="absolute"):
+        Settings(environment="local", s3_endpoint_url="objects.example.test")
+
+    with pytest.raises(ValidationError, match="credentials"):
+        Settings(
+            environment="local",
+            s3_endpoint_url="https://user:password@objects.example.test",
+        )
+
+
+def test_s3_addressing_style_is_limited() -> None:
+    settings = Settings(environment="local", s3_addressing_style="path")
+    assert settings.s3_addressing_style == "path"
+
+    with pytest.raises(ValidationError):
+        Settings.model_validate(
+            {"environment": "local", "s3_addressing_style": "bucket"}
+        )
+
+
+def test_production_allows_the_provider_default_s3_endpoint() -> None:
+    settings = Settings(**{**PRODUCTION_BASE, "s3_endpoint_url": None})
+    assert settings.s3_endpoint_url is None
+
+
+def test_an_r2_shaped_configuration_is_accepted() -> None:
+    settings = Settings(
+        environment="local",
+        s3_endpoint_url="https://account.r2.cloudflarestorage.com",
+        s3_region="auto",
+        s3_addressing_style="path",
+    )
+    assert settings.s3_endpoint_url == "https://account.r2.cloudflarestorage.com"
+    assert settings.s3_region == "auto"
+    assert settings.s3_addressing_style == "path"
+
+
 def test_production_worker_requires_baked_docling_artifacts() -> None:
     with pytest.raises(ValidationError, match="Docling artifacts"):
         Settings(

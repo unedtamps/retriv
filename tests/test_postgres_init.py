@@ -105,9 +105,9 @@ def test_identifiers_are_validated_rather_than_escaped(identifier: str) -> None:
     ["change-this", "replace-me", "CHANGE_ME", "development"],
 )
 def test_production_rejects_development_placeholder_passwords(password: str) -> None:
-    """The same guard minio-init applies to its own credentials. A placeholder
-    reaching production is a known-value login on a role that can read every
-    CSV the deployment holds."""
+    """The same placeholder guard applies to the other production secrets. A
+    placeholder reaching production is a known-value login on a role that can
+    read every CSV the deployment holds."""
     result = run_init(
         {**BASE, "RETRIV_ENVIRONMENT": "production", "RETRIV_SQL_READER_PASSWORD": password}
     )

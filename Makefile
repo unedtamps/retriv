@@ -20,7 +20,7 @@ help:
 		'  api       Start the worker without rebuilding, then run only the API' \
 		'  worker    Build and start the processing worker (Docker)' \
 		'  run-worker Start the worker without rebuilding it' \
-		'  infra     Start and wait for PostgreSQL, Qdrant, MinIO, and ClamAV' \
+		'  infra     Start and wait for PostgreSQL, Qdrant, and ClamAV' \
 		'  sql-role  Create or repair the read-only SQL role and its grants' \
 		'  migrate   Apply database migrations' \
 		'  status    Show infrastructure container status' \
@@ -39,8 +39,10 @@ check-env:
 install:
 	uv sync
 
-# Everything except the worker. The worker is a Docker container, so it is
-# started separately by `make run-worker` or `make worker`.
+# Everything except the worker and object storage. The worker is a Docker
+# container, so it is started separately by `make run-worker` or `make worker`.
+# Object storage is an external S3-compatible provider; its buckets must exist
+# before the API or worker can use them.
 #
 # sql-role runs last and as a separate step because `up --wait` is the wrong
 # tool for a one-shot service: it waits for a container to be *running*, and
@@ -49,7 +51,7 @@ install:
 # job to finish and hands back its exit code, which is what a build step needs.
 infra: check-env
 	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) \
-		postgres qdrant minio minio-init clamav
+		postgres qdrant clamav
 	$(MAKE) sql-role
 
 migrate: infra

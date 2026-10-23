@@ -66,6 +66,7 @@ x-worker-environment: &worker-environment
   RETRIV_S3_RAW_BUCKET: ${RETRIV_S3_RAW_BUCKET:-raw-documents}
   RETRIV_S3_ARTIFACT_BUCKET: ${RETRIV_S3_ARTIFACT_BUCKET:-context-documents}
   RETRIV_S3_REGION: ${RETRIV_S3_REGION:-us-east-1}
+  RETRIV_S3_ADDRESSING_STYLE: ${RETRIV_S3_ADDRESSING_STYLE:-auto}
 
 services:
   postgres:
@@ -91,7 +92,7 @@ services:
       - app-net
 
   # Creates the read-only role the row-query tool connects as, and grants it
-  # SELECT on the three tables. Runs once and exits, like minio-init.
+  # SELECT on the three tables. Runs once and exits.
   #
   # It exists because a password must never land in a migration, so 0002 and
   # 0003 grant to this role only if it already exists. Documenting "run this
@@ -136,49 +137,6 @@ services:
     networks:
       - app-net
 
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
-    restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    volumes:
-      - minio_data:/data
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
-    networks:
-      - app-net
-
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
-    restart: "no"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
-      MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL:-http://minio:9000}
-      RETRIV_ENVIRONMENT: ${RETRIV_ENVIRONMENT:?RETRIV_ENVIRONMENT is required}
-      RETRIV_S3_ACCESS_KEY: ${RETRIV_S3_ACCESS_KEY:?RETRIV_S3_ACCESS_KEY is required}
-      RETRIV_S3_SECRET_KEY: ${RETRIV_S3_SECRET_KEY:?RETRIV_S3_SECRET_KEY is required}
-      RETRIV_S3_ARTIFACT_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
-      RETRIV_S3_ARTIFACT_SECRET_KEY: ${RETRIV_S3_ARTIFACT_SECRET_KEY:?RETRIV_S3_ARTIFACT_SECRET_KEY is required}
-      RETRIV_S3_RAW_BUCKET: ${RETRIV_S3_RAW_BUCKET:?RETRIV_S3_RAW_BUCKET is required}
-      RETRIV_S3_ARTIFACT_BUCKET: ${RETRIV_S3_ARTIFACT_BUCKET:?RETRIV_S3_ARTIFACT_BUCKET is required}
-    entrypoint: ["/bin/sh", "/config/init.sh"]
-    depends_on:
-      minio:
-        condition: service_healthy
-    volumes:
-      - ./docker/minio/init.sh:/config/init.sh:ro
-    networks:
-      - app-net
-
   clamav:
     image: clamav/clamav:1.4_base
     restart: unless-stopped
@@ -215,7 +173,7 @@ services:
     command: ["python", "-m", "worker"]
     environment:
       <<: *worker-environment
-      RETRIV_S3_ENDPOINT_URL: ${RETRIV_S3_CONTAINER_ENDPOINT_URL:-http://minio:9000}
+      RETRIV_S3_ENDPOINT_URL: ${RETRIV_S3_ENDPOINT_URL:-}
       RETRIV_S3_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
       RETRIV_S3_SECRET_KEY: ${RETRIV_S3_ARTIFACT_SECRET_KEY:?RETRIV_S3_ARTIFACT_SECRET_KEY is required}
       RETRIV_S3_ARTIFACT_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
@@ -240,5 +198,4 @@ networks:
 volumes:
   postgres_data:
   qdrant_data:
-  minio_data:
   clamav_data:

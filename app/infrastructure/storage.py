@@ -61,9 +61,9 @@ class ObjectStorage(Protocol):
 class ArtifactStorage(Protocol):
     """Extracted-artifact access, used by the worker.
 
-    Separate from ObjectStorage because the two hold different MinIO
+    Separate from ObjectStorage because the two hold different S3
     identities: raw documents and extracted artifacts live in different
-    buckets with different IAM policies.
+    buckets with different access policies.
     """
 
     def download_file(
@@ -97,10 +97,11 @@ class _S3Client:
     def __init__(
         self,
         *,
-        endpoint_url: str,
+        endpoint_url: str | None,
         access_key: str,
         secret_key: str,
         region: str,
+        addressing_style: str,
         read_timeout: int,
     ) -> None:
         self._client: Any = boto3.client(
@@ -112,7 +113,12 @@ class _S3Client:
             config=Config(
                 signature_version="s3v4",
                 retries={"mode": "standard", "total_max_attempts": 4},
-                s3={"addressing_style": "path"},
+                s3={"addressing_style": addressing_style},
+                # R2 rejects the checksum headers boto3 now adds by default.
+                # Asking for them only when the operation requires one keeps
+                # the same client working against AWS, R2 and self-hosted S3.
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
                 connect_timeout=5,
                 read_timeout=read_timeout,
             ),
@@ -133,16 +139,18 @@ class S3ObjectStorage(_S3Client):
     def __init__(
         self,
         *,
-        endpoint_url: str,
+        endpoint_url: str | None,
         access_key: str,
         secret_key: str,
         region: str,
+        addressing_style: str,
     ) -> None:
         super().__init__(
             endpoint_url=endpoint_url,
             access_key=access_key,
             secret_key=secret_key,
             region=region,
+            addressing_style=addressing_style,
             read_timeout=60,
         )
 
@@ -239,16 +247,18 @@ class S3ArtifactStorage(_S3Client):
     def __init__(
         self,
         *,
-        endpoint_url: str,
+        endpoint_url: str | None,
         access_key: str,
         secret_key: str,
         region: str,
+        addressing_style: str,
     ) -> None:
         super().__init__(
             endpoint_url=endpoint_url,
             access_key=access_key,
             secret_key=secret_key,
             region=region,
+            addressing_style=addressing_style,
             read_timeout=120,
         )
 
@@ -369,6 +379,7 @@ def get_object_storage() -> ObjectStorage:
         access_key=settings.s3_access_key,
         secret_key=settings.s3_secret_key.get_secret_value(),
         region=settings.s3_region,
+        addressing_style=settings.s3_addressing_style,
     )
 
 
@@ -385,4 +396,5 @@ def get_artifact_storage() -> ArtifactStorage:
         access_key=settings.s3_artifact_access_key,
         secret_key=settings.s3_artifact_secret_key.get_secret_value(),
         region=settings.s3_region,
+        addressing_style=settings.s3_addressing_style,
     )

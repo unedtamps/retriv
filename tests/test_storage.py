@@ -7,6 +7,7 @@ import pytest
 from app.infrastructure.storage import (
     ObjectTooLargeError,
     S3ArtifactStorage,
+    S3ObjectStorage,
 )
 
 
@@ -81,3 +82,45 @@ def test_streamed_oversized_download_removes_partial_file(tmp_path: Path) -> Non
 
     assert body.closed is True
     assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("endpoint_url", "addressing_style"),
+    [
+        (None, "auto"),
+        ("https://account.r2.cloudflarestorage.com", "path"),
+    ],
+)
+def test_the_client_passes_provider_settings_to_boto3(
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint_url: str | None,
+    addressing_style: str,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_client(service_name: str, **kwargs: Any) -> object:
+        seen["service_name"] = service_name
+        seen["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr("app.infrastructure.storage.boto3.client", fake_client)
+
+    S3ObjectStorage(
+        endpoint_url=endpoint_url,
+        access_key="access-key",
+        secret_key="secret-key",
+        region="auto",
+        addressing_style=addressing_style,
+    )
+
+    assert seen["service_name"] == "s3"
+    kwargs = seen["kwargs"]
+    assert kwargs["endpoint_url"] == endpoint_url
+    assert kwargs["aws_access_key_id"] == "access-key"
+    assert kwargs["aws_secret_access_key"] == "secret-key"
+    assert kwargs["region_name"] == "auto"
+    config = kwargs["config"]
+    assert config.s3 == {"addressing_style": addressing_style}
+    # R2 rejects the checksum headers boto3 adds by default.
+    assert config.request_checksum_calculation == "when_required"
+    assert config.response_checksum_validation == "when_required"

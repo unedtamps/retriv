@@ -58,14 +58,23 @@ class Settings(BaseSettings):
     # raw documents; the worker reads those and writes extracted
     # artifacts. Keeping the credentials separate means a compromise in
     # either component does not grant the other's write access.
-    s3_endpoint_url: str = "http://localhost:9000"
+    #
+    # Empty endpoint means the provider's default endpoint (AWS S3).
+    # Cloudflare R2 and other S3-compatible services set their own.
+    s3_endpoint_url: str | None = None
     s3_access_key: str = "retriv"
-    s3_secret_key: SecretStr = SecretStr("development-minio-secret-placeholder")
+    s3_secret_key: SecretStr = SecretStr("development-s3-secret-placeholder")
     s3_artifact_access_key: str = "retriv-worker"
-    s3_artifact_secret_key: SecretStr = SecretStr("development-minio-worker-secret-placeholder")
+    s3_artifact_secret_key: SecretStr = SecretStr(
+        "development-s3-worker-secret-placeholder"
+    )
     s3_raw_bucket: str = "raw-documents"
     s3_artifact_bucket: str = "context-documents"
     s3_region: str = "us-east-1"
+    # "auto" lets boto3 choose. Path style is what self-hosted S3 services
+    # usually need; virtual is the AWS default. R2 works with either, and
+    # the example config pins path because it is the least surprising.
+    s3_addressing_style: Literal["auto", "path", "virtual"] = "auto"
 
     # -- virus scanning -------------------------------------------------
     antivirus_enabled: bool = True
@@ -300,6 +309,29 @@ class Settings(BaseSettings):
                 normalized_origins.append(origin)
         return normalized_origins
 
+    @field_validator("s3_endpoint_url", mode="before")
+    @classmethod
+    def normalize_s3_endpoint_url(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("s3_endpoint_url")
+    @classmethod
+    def validate_s3_endpoint_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError(
+                "RETRIV_S3_ENDPOINT_URL must be an absolute HTTP(S) URL"
+            )
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError(
+                "RETRIV_S3_ENDPOINT_URL must not contain credentials or query data"
+            )
+        return value.rstrip("/")
+
     @field_validator("embedding_base_url", "qdrant_url", "vlm_base_url")
     @classmethod
     def validate_service_url(cls, value: str) -> str:
@@ -428,7 +460,14 @@ class Settings(BaseSettings):
         if any(
             marker in secret.lower()
             for secret in secrets
-            for marker in ("change-this", "development", "replace", "replace-me")
+            for marker in (
+                "change-this",
+                "change_me",
+                "change-me",
+                "development",
+                "replace",
+                "replace-me",
+            )
         ):
             raise ValueError("Production secrets must not use development placeholders")
 
@@ -441,7 +480,9 @@ class Settings(BaseSettings):
         if not database.password or database.password == database.username:
             raise ValueError("Production database credentials must not use defaults")
 
-        if not self.s3_endpoint_url.startswith("https://"):
+        if self.s3_endpoint_url is not None and not self.s3_endpoint_url.startswith(
+            "https://"
+        ):
             raise ValueError("Production object storage must use HTTPS")
         if any(
             not url.startswith("https://")

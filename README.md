@@ -25,11 +25,11 @@ flowchart LR
     subgraph data["docker, loopback only"]
         DB[("PostgreSQL<br/>:5432")]
         Q[("Qdrant<br/>:6333")]
-        M[("MinIO<br/>:9000")]
         C["ClamAV<br/>:3310"]
     end
     subgraph external["external"]
         L["LM Studio<br/>:1234"]
+        M[("S3-compatible storage<br/>Cloudflare R2")]
         X["MCP client<br/>Claude Code, Codex, custom agent"]
     end
 
@@ -99,6 +99,9 @@ PDF away from the request path.
 - An OpenAI-compatible endpoint for a multimodal model, to describe the pictures in a
   document. Without one, set `RETRIV_IMAGE_PROCESSING_ENABLED=false` and the pictures
   are simply not described.
+- An S3-compatible object storage account with two buckets already created: one for raw
+  documents and one for extracted artifacts. This deployment targets Cloudflare R2, but
+  any S3-compatible provider works.
 - About 4 GiB of RAM for ClamAV on first startup.
 
 ## Running locally
@@ -107,10 +110,11 @@ PDF away from the request path.
 cp .env.example .env
 ```
 
-Fill in every `CHANGE ME`; the generated ones are `openssl rand -hex 32`. There is no
-model-provider key to hunt for: uploads, indexing, and retrieval all work as soon as the
-stack is up. The one exception is the vision endpoint, which is where the pictures in a
-document are described — point it at a gateway that speaks the OpenAI chat API, or
+Fill in every `CHANGE ME`; the generated ones are `openssl rand -hex 32`. The object
+store comes first: create both buckets and the two scoped tokens described below, then
+fill in the endpoint and keys. Uploads, indexing, and retrieval work once those and the
+stack are up. The other exception is the vision endpoint, which is where the pictures in
+a document are described — point it at a gateway that speaks the OpenAI chat API, or
 switch the stage off with `RETRIV_IMAGE_PROCESSING_ENABLED=false`.
 
 ```bash
@@ -130,15 +134,37 @@ cd web && npm ci && npm run dev
 It is at `http://127.0.0.1:5173`.
 
 ClamAV's first start downloads its signature database and can take a few minutes.
-PostgreSQL, Qdrant, MinIO, and ClamAV publish on loopback only.
+PostgreSQL, Qdrant, and ClamAV publish on loopback only.
+
+## Object storage
+
+The API writes raw uploads, the worker reads them and writes extracted artifacts. Both
+buckets must exist before the stack starts; the application never creates them.
+
+| Provider | Endpoint | Region | Addressing | Credentials |
+|---|---|---|---|---|
+| Cloudflare R2 | `https://<account_id>.r2.cloudflarestorage.com` | `auto` | `path` | two bucket-scoped `Object Read & Write` tokens |
+| AWS S3 | leave empty | the bucket's region | `auto` or `virtual` | an IAM user access key/secret |
+| Other S3-compatible | provider endpoint | provider region | provider-dependent | access key/secret |
+
+For R2, create the buckets in the dashboard or with Wrangler, then create two Account API
+tokens:
+
+- **API token** — `Object Read & Write`, applied only to the raw bucket.
+- **Worker token** — `Object Read & Write`, applied to the raw and artifact buckets. R2
+  scopes permissions per bucket and cannot express prefix-level policies, so the worker
+  token is deliberately the practical choice: it can write both buckets.
+
+`RETRIV_S3_ACCESS_KEY` is the API identity and `RETRIV_S3_ARTIFACT_ACCESS_KEY` is the
+worker identity. Both buckets use the same endpoint, so there is no separate
+container-only endpoint setting.
 
 ## Data
 
-Everything is in Docker named volumes under the `retriv-api` project:
+The local stack's state is in Docker named volumes under the `retriv-api` project:
 
 - `retriv-api_postgres_data`
 - `retriv-api_qdrant_data`
-- `retriv-api_minio_data`
 - `retriv-api_clamav_data`
 
 Nothing is bind-mounted. `docker compose down` keeps the data; `docker compose down -v`
@@ -189,20 +215,22 @@ file:
 
 `link` is a SigV4 presigned GET, valid for `mcp_download_link_ttl_seconds` (default 300,
 capped at an hour). It needs no credential at all, which is what makes it usable as a
-plain click, and it points straight at MinIO -- the request never touches this process
-again. The cost is that it is a bearer credential which **cannot be revoked before it
-expires**, so the `download` permission is checked once when it is minted and the window
-is kept short on purpose. `url` is the conservative alternative: slower (bytes stream
-through the API) but revocable, and it works anywhere the API is reachable.
+plain click, and it points straight at the configured S3-compatible endpoint -- the
+request never touches this process again. The cost is that it is a bearer credential
+which **cannot be revoked before it expires**, so the `download` permission is checked
+once when it is minted and the window is kept short on purpose. `url` is the conservative
+alternative: slower (bytes stream through the API) but revocable, and it works anywhere
+the API is reachable.
 
 Because `link` names the object store directly, whoever receives it must be able to
-reach MinIO. Out of the box that is `127.0.0.1:9000`, so the link is usable by an agent
-on this machine and by nobody else; exposing it to a browser elsewhere means putting
-MinIO behind a public TLS hostname, which is an infrastructure decision this tool does
-not make.
+reach that endpoint. For R2 that is
+`https://<account_id>.r2.cloudflarestorage.com`, which is public TLS already. The cost is
+that the bucket is now reachable from wherever the agent runs, so the link's TTL is the
+only bound on a leaked address.
 
 The secret key never appears in a signed URL -- only the access key ID does, which is an
-identifier rather than a credential, and MinIO's IAM policy is what actually bounds it.
+identifier rather than a credential, and the token's bucket scope is what actually
+bounds it.
 
 ```mermaid
 sequenceDiagram
@@ -213,7 +241,7 @@ sequenceDiagram
     participant E as LM Studio
     participant Q as Qdrant
     participant DB as PostgreSQL
-    participant M as MinIO
+    participant M as S3-compatible storage
 
     U->>C: what does the procurement manual say?
     C->>A: POST /mcp, Authorization: Bearer rk_...
@@ -367,13 +395,12 @@ hold `BYPASSRLS`, which would make every layer above irrelevant.
 ### Where the reader role comes from
 
 `FORCE ROW LEVEL SECURITY` is on all three tables and `verify_reader()` refuses a role that
-could ignore it. The role itself is created by `postgres-init`, a one-shot compose service
-that runs on `docker compose up` alongside `minio-init`:
+could ignore it. The role itself is created by `postgres-init`, a one-shot compose service that runs on
+`docker compose up`:
 
 ```mermaid
 flowchart LR
-    U["docker compose up"] --> MI["minio-init<br/>MinIO users and buckets"]
-    U --> PI["postgres-init<br/>retriv_reader + grants"]
+    U["docker compose up"] --> PI["postgres-init<br/>retriv_reader + grants"]
     PI --> R["role created,<br/>NOSUPERUSER NOBYPASSRLS"]
     R --> G["GRANT SELECT on<br/>document_rows, documents,<br/>processing_runs"]
 ```
@@ -440,7 +467,7 @@ sequenceDiagram
     participant W as Dashboard
     participant A as app (FastAPI)
     participant C as ClamAV
-    participant M as MinIO
+    participant M as S3-compatible storage
     participant DB as PostgreSQL
     participant K as worker
     participant L as LM Studio
@@ -627,7 +654,7 @@ sequenceDiagram
     autonumber
     actor U as User
     participant A as app
-    participant M as MinIO
+    participant M as S3-compatible storage
     participant DB as PostgreSQL
     participant K as worker
     participant Q as Qdrant
