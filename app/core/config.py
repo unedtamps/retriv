@@ -131,6 +131,50 @@ class Settings(BaseSettings):
         default=300, ge=1, le=86_400
     )
 
+    # -- vision ---------------------------------------------------------
+    # The pictures inside a document are described by a multimodal model
+    # behind an OpenAI-compatible API, and the description is folded into
+    # the chunk that holds the picture. The endpoint is a full
+    # chat/completions URL because that is the shape an OpenAI-compatible
+    # gateway hands out; a bare API root is also accepted and gets
+    # "/chat/completions" appended.
+    image_processing_enabled: bool = True
+    # How many times larger than the page the picture is rendered. 2.0 puts a
+    # 300x150 point figure at 600x300 pixels, which is enough to read axis
+    # labels. Larger costs the model money and the sandbox memory.
+    image_render_scale: float = Field(default=2.0, gt=0, le=8)
+    # Pictures whose rendered area is below this are not worth an API call:
+    # they are logos, rules, bullets and ornaments. The threshold is in
+    # rendered pixels, so it moves with the render scale.
+    image_min_pixels: int = Field(default=10_000, ge=0)
+    max_image_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
+    max_total_image_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    vlm_base_url: str = "https://zenmux.ai/api/v1/chat/completions"
+    vlm_api_key: SecretStr = SecretStr("development-vlm-api-key-change-this")
+    vlm_model: str = "minimax/minimax-m3.1-flash"
+    vlm_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
+    # The answer budget for one picture, reasoning included. This is a
+    # ceiling, not a limit on how long the model may think: the model stops
+    # on its own well below it. It matters only when it is set below what
+    # the model wanted, because then the endpoint cuts it off mid-thought
+    # and hands back nothing -- and in that case the budget goes up and the
+    # same picture is asked again, up to the ceiling below.
+    vlm_max_tokens: int = Field(default=8192, ge=256, le=131_072)
+    vlm_max_tokens_ceiling: int = Field(default=131_072, ge=256, le=1_048_576)
+    # How many pictures of one document may be described. The rest are left
+    # undescribed rather than paid for. Zero means no cap.
+    vlm_max_images_per_document: int = Field(default=100, ge=0, le=1_000)
+    vlm_max_concurrency: int = Field(default=4, ge=1, le=32)
+    # A description longer than this would push the chunk it lands in well
+    # past the chunking budget, and the extra words are noise.
+    vlm_max_description_chars: int = Field(default=1200, ge=100, le=8000)
+    # How long the vision stage waits for the model to answer before it
+    # gives the run back to the worker for another attempt. The base and
+    # max are the backoff curve between attempts.
+    model_wait_base_seconds: float = Field(default=5.0, gt=0, le=3600)
+    model_wait_max_seconds: float = Field(default=60.0, gt=0, le=3600)
+    model_wait_timeout_seconds: float = Field(default=3600.0, gt=0, le=86_400)
+
     # -- vector store ---------------------------------------------------
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_api_key: SecretStr = SecretStr("development-qdrant-api-key-change-this")
@@ -239,7 +283,7 @@ class Settings(BaseSettings):
                 normalized_origins.append(origin)
         return normalized_origins
 
-    @field_validator("embedding_base_url", "qdrant_url")
+    @field_validator("embedding_base_url", "qdrant_url", "vlm_base_url")
     @classmethod
     def validate_service_url(cls, value: str) -> str:
         parsed = urlsplit(value)
@@ -255,6 +299,7 @@ class Settings(BaseSettings):
         "embedding_api_key",
         "qdrant_api_key",
         "qdrant_read_only_api_key",
+        "vlm_api_key",
     )
     @classmethod
     def validate_secret_length(cls, value: SecretStr) -> SecretStr:
@@ -278,6 +323,26 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("vlm_model")
+    @classmethod
+    def validate_vlm_model(cls, value: str) -> str:
+        """Accept a gateway's model id, which is a namespace and a name.
+
+        The other identifiers are bare words this codebase owns, so they
+        cannot contain a slash. A gateway's model id is somebody else's
+        namespace -- ``minimax/minimax-m3.1-flash`` -- so the shape is
+        wider here: letters, numbers and the separators a provider
+        actually uses, and nothing else.
+        """
+        if not value.strip() or any(character.isspace() for character in value):
+            raise ValueError("Model ids must be non-empty and free of whitespace")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}", value):
+            raise ValueError(
+                "Model ids must contain only letters, numbers, '.', '_', ':', "
+                "'/', or '-'"
+            )
+        return value
+
     @model_validator(mode="after")
     def validate_settings(self) -> "Settings":
         if self.s3_raw_bucket == self.s3_artifact_bucket:
@@ -289,6 +354,19 @@ class Settings(BaseSettings):
         if self.max_artifact_bytes > self.max_chunk_payload_bytes:
             raise ValueError(
                 "RETRIV_MAX_ARTIFACT_BYTES must not exceed RETRIV_MAX_CHUNK_PAYLOAD_BYTES"
+            )
+        if self.max_total_image_bytes < self.max_image_bytes:
+            raise ValueError(
+                "RETRIV_MAX_TOTAL_IMAGE_BYTES must not be below RETRIV_MAX_IMAGE_BYTES"
+            )
+        if self.model_wait_max_seconds < self.model_wait_base_seconds:
+            raise ValueError(
+                "RETRIV_MODEL_WAIT_MAX_SECONDS must be >= RETRIV_MODEL_WAIT_BASE_SECONDS"
+            )
+        if self.vlm_max_tokens_ceiling < self.vlm_max_tokens:
+            raise ValueError(
+                "RETRIV_VLM_MAX_TOKENS_CEILING must not be below "
+                "RETRIV_VLM_MAX_TOKENS"
             )
 
         if self.environment != "production":
@@ -309,6 +387,7 @@ class Settings(BaseSettings):
                 self.s3_artifact_secret_key.get_secret_value(),
                 self.embedding_api_key.get_secret_value(),
                 self.qdrant_api_key.get_secret_value(),
+                self.vlm_api_key.get_secret_value(),
             )
         if any(
             marker in secret.lower()
@@ -329,10 +408,12 @@ class Settings(BaseSettings):
         if not self.s3_endpoint_url.startswith("https://"):
             raise ValueError("Production object storage must use HTTPS")
         if any(
-            urlsplit(url).scheme != "https"
-            for url in (self.embedding_base_url, self.qdrant_url)
+            not url.startswith("https://")
+            for url in (self.embedding_base_url, self.qdrant_url, self.vlm_base_url)
         ):
-            raise ValueError("Production embedding and Qdrant endpoints must use HTTPS")
+            raise ValueError(
+                "Production embedding, Qdrant and vision endpoints must use HTTPS"
+            )
         if self.component == "worker" and self.docling_artifacts_path is None:
             raise ValueError("Production workers require baked Docling artifacts")
         if self.component == "api" and not self.antivirus_enabled:

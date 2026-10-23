@@ -9,6 +9,7 @@ import os
 import tempfile
 from collections.abc import Iterator
 from contextlib import suppress
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
@@ -31,6 +32,7 @@ from app.db.models import (
     RUN_CANCELLED,
     RUN_CHUNKING,
     RUN_DELETING,
+    RUN_DESCRIBING,
     RUN_EMBEDDING,
     RUN_EXTRACTING,
     RUN_FAILED,
@@ -60,13 +62,21 @@ from app.embeddings.base import (
     VectorStore,
     VectorStoreError,
 )
-from app.extraction.base import DocumentExtractor, ExtractionError, ExtractionResult
+from app.extraction.base import (
+    DocumentExtractor,
+    ExtractedChunk,
+    ExtractedImage,
+    ExtractionError,
+    ExtractionResult,
+)
+from app.extraction.images import merge_descriptions, picture_refs
 from app.infrastructure.storage import (
     ArtifactStorage,
     ObjectNotFoundError,
     ObjectTooLargeError,
     StorageError,
 )
+from app.vision.base import VisionProvider, VisionProviderError, build_context
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +116,7 @@ class ProcessingWorker:
         settings: Settings,
         embedding_provider: EmbeddingProvider,
         vector_store: VectorStore,
+        vision_provider: VisionProvider | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._storage = storage
@@ -113,6 +124,7 @@ class ProcessingWorker:
         self._settings = settings
         self._embedding_provider = embedding_provider
         self._vector_store = vector_store
+        self._vision_provider = vision_provider
         self._next_artifact_reconciliation = datetime.min.replace(tzinfo=UTC)
         self._next_embedding_reconciliation = datetime.min.replace(tzinfo=UTC)
 
@@ -132,7 +144,7 @@ class ProcessingWorker:
             logger.warning("Processing lease was lost", extra={"run_id": str(run.id)})
         except (PermanentProcessingError, ObjectNotFoundError, ObjectTooLargeError) as exc:
             await self._record_failure(run, exc, permanent=True)
-        except (EmbeddingProviderError, VectorStoreError) as exc:
+        except (EmbeddingProviderError, VectorStoreError, VisionProviderError) as exc:
             await self._record_failure(run, exc, permanent=not exc.retryable)
         except (StorageError, ExtractionError, OSError, ValueError) as exc:
             await self._record_failure(run, exc, permanent=False)
@@ -491,6 +503,9 @@ class ProcessingWorker:
                 lease_token,
                 temporary_path,
                 media_type=document.detected_media_type,
+            )
+            extraction = await self._describe_images(
+                claimed_run.id, lease_token, extraction
             )
             self._validate_extraction(extraction)
 
@@ -959,8 +974,24 @@ class ProcessingWorker:
                 "content_encoding": "gzip",
                 "sha256": artifact_sha256,
             },
+            "vision": {
+                "enabled": self._settings.image_processing_enabled,
+                "model": self._settings.vlm_model,
+                "images_found": len(extraction.images),
+                "images_described": self._count_described(extraction.chunks),
+            },
             "chunk_count": len(extraction.chunks),
         }
+
+    @staticmethod
+    def _count_described(chunks: list[ExtractedChunk]) -> int:
+        """How many pictures ended up with a description."""
+        return sum(
+            1
+            for chunk in chunks
+            for entry in (chunk.provenance.get("images") or [])
+            if isinstance(entry, dict) and entry.get("described")
+        )
 
     async def _process_embeddings(
         self, claimed_run: ProcessingRun, lease_token: UUID
@@ -1437,6 +1468,116 @@ class ProcessingWorker:
         finally:
             stop_event.set()
             await heartbeat
+
+    async def _describe_images(
+        self,
+        run_id: UUID,
+        lease_token: UUID,
+        extraction: ExtractionResult,
+    ) -> ExtractionResult:
+        """Describe the document's pictures and put the words back in the chunks.
+
+        A picture that the parser found is a picture the search cannot see:
+        a chart's values are in the pixels, not in any text layer, so a
+        question about them has nothing to match against. Each picture is
+        described by the multimodal model and the description is written into
+        the chunk the picture was on, which is then embedded with everything
+        else.
+
+        The stage fails the run rather than skipping the pictures. A
+        document indexed without its figures is a document that looks
+        complete and is not, and nothing downstream can tell the difference.
+        """
+        provider = self._vision_provider
+        images: list[ExtractedImage] = []
+        if self._settings.image_processing_enabled:
+            images = extraction.images
+            # Zero means no cap, the same way the extractor reads it. Slicing
+            # to zero here would drop every picture the extractor collected.
+            if self._settings.vlm_max_images_per_document:
+                images = images[: self._settings.vlm_max_images_per_document]
+        descriptions: dict[str, str] = {}
+        if images:
+            if provider is None:
+                raise PermanentProcessingError(
+                    "Image processing is enabled but no vision provider is configured"
+                )
+            await self._set_phase(run_id, lease_token, RUN_DESCRIBING)
+            stop_event = asyncio.Event()
+            heartbeat = asyncio.create_task(
+                self._heartbeat_lease(run_id, lease_token, stop_event)
+            )
+            try:
+                descriptions = await self._describe_all(provider, extraction, images)
+            finally:
+                stop_event.set()
+                await heartbeat
+        # The merge runs even when nothing was described, because it is what
+        # guarantees that no marker survives into the text that gets
+        # embedded. A marker left in there would be embedded as leftover
+        # syntax and would tell a reader that a picture was where there is
+        # only a picture's name.
+        chunks = merge_descriptions(
+            extraction.chunks,
+            descriptions,
+            tokenizer_name=self._settings.chunk_tokenizer,
+            model=self._settings.vlm_model,
+        )
+        return replace(extraction, chunks=chunks)
+
+    async def _describe_all(
+        self,
+        provider: VisionProvider,
+        extraction: ExtractionResult,
+        images: list[ExtractedImage],
+    ) -> dict[str, str]:
+        """Describe every picture, a few at a time.
+
+        The calls are gathered rather than run one after another because a
+        document with twenty figures would otherwise spend twenty round
+        trips doing it. The concurrency is capped so a busy worker does not
+        open twenty connections to the model at once, and the whole stage is
+        under the processing timeout so a model that never answers cannot
+        hold the run forever.
+        """
+        semaphore = asyncio.Semaphore(self._settings.vlm_max_concurrency)
+
+        async def describe_one(image: ExtractedImage) -> str:
+            async with semaphore:
+                return await provider.describe(
+                    image, context=self._image_context(extraction.chunks, image)
+                )
+
+        try:
+            async with asyncio.timeout(self._settings.processing_timeout_seconds):
+                results = await asyncio.gather(
+                    *(describe_one(image) for image in images),
+                    return_exceptions=True,
+                )
+        except TimeoutError as exc:
+            raise ExtractionError(
+                "Describing the document's pictures exceeded the time limit"
+            ) from exc
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+        return {
+            image.ref: str(description)
+            for image, description in zip(images, results, strict=True)
+        }
+
+    @staticmethod
+    def _image_context(chunks: list[ExtractedChunk], image: ExtractedImage) -> str:
+        """What the model is told about where the picture sits.
+
+        The heading the picture is under and the caption printed next to it
+        say what the picture is of, and a description that knows that is
+        worth several descriptions that do not.
+        """
+        for chunk in chunks:
+            if image.ref in picture_refs(chunk.text):
+                return build_context(chunk.section_path, image.caption)
+        return build_context([], image.caption)
 
     async def _discard_previous_attempt_artifacts(
         self, run: ProcessingRun, lease_token: UUID

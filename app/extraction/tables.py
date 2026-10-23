@@ -36,11 +36,15 @@ from docling_core.transforms.chunker.hierarchical_chunker import (
 )
 from docling_core.transforms.serializer.base import (
     BaseDocSerializer,
+    BasePictureSerializer,
     BaseTableSerializer,
     SerializationResult,
 )
 from docling_core.transforms.serializer.common import create_ser_result
+from docling_core.transforms.serializer.markdown import MarkdownPictureSerializer
 from docling_core.types.doc import DoclingDocument, TableItem
+
+from app.extraction.pictures import RefPictureSerializer
 
 HEADER_SEPARATOR = " | "
 """Between the cells of the header line. A body line never contains it."""
@@ -170,13 +174,57 @@ class RowWiseTableSerializer(BaseTableSerializer):
 
 
 class RowWiseChunkingSerializer(ChunkingDocSerializer):
-    """The chunking serializer, with tables serialized one row per line."""
+    """The chunking serializer, with tables serialized one row per line.
+
+    The picture serializer is set here too, because this is the serializer
+    the pipeline chunks with: a picture is written as a marker naming it, so
+    the chunk knows which picture it holds and the description can be put
+    back on the line the picture was on. Docling's own serializer writes a
+    picture as an empty string, which drops it from the chunk entirely.
+    """
 
     table_serializer: BaseTableSerializer = RowWiseTableSerializer()
+    picture_serializer: BasePictureSerializer = RefPictureSerializer()
+
+
+class UnmarkedChunkingSerializer(RowWiseChunkingSerializer):
+    """The chunking serializer for when the picture stage is off.
+
+    A picture is written as an empty string, exactly as Docling writes it,
+    so the picture contributes nothing to the chunk and the document is
+    indexed the way it was before the stage existed. A marker would be
+    wrong here: nothing would ever come and replace it, and it would be
+    embedded into the document as leftover syntax.
+    """
+
+    picture_serializer: BasePictureSerializer = MarkdownPictureSerializer()
 
 
 class RowWiseSerializerProvider(ChunkingSerializerProvider):
-    """Hands the chunker a serializer that writes tables one row per line."""
+    """Hands the chunker a serializer that writes tables one row per line.
+
+    ``mark_pictures`` decides how pictures are written. Given the pictures
+    that will be described, those are written as markers naming them and the
+    rest are written as caption text only. Given none, every picture is
+    written as nothing at all. Neither is known until the document has been
+    parsed, which is why the provider is stateful.
+    """
+
+    def __init__(self, *, pictures_marked: bool = True) -> None:
+        self._pictures_marked = pictures_marked
+        self._marked_refs: set[str] | None = None
+
+    def mark_pictures(self, refs: set[str]) -> None:
+        """Mark exactly these pictures; leave the others as captions only."""
+        self._marked_refs = set(refs)
+        self._pictures_marked = bool(refs)
 
     def get_serializer(self, doc: DoclingDocument) -> BaseDocSerializer:
-        return RowWiseChunkingSerializer(doc=doc)
+        if self._pictures_marked:
+            return RowWiseChunkingSerializer(
+                doc=doc,
+                picture_serializer=RefPictureSerializer(
+                    marked_refs=self._marked_refs
+                ),
+            )
+        return UnmarkedChunkingSerializer(doc=doc)

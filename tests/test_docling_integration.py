@@ -1,3 +1,4 @@
+import io
 import json
 import re
 import shutil
@@ -9,6 +10,7 @@ import pytest
 
 from app.documents.validation import DOCX_MEDIA_TYPE, PDF_MEDIA_TYPE
 from app.extraction.docling import DoclingExtractor
+from app.extraction.images import picture_refs
 from app.extraction.sandbox import SandboxedDoclingExtractor
 from app.sections import encode_section_key
 
@@ -405,3 +407,184 @@ def text_layer_pdf(lines: list[str]) -> bytes:
 
 def simple_pdf(text: str) -> bytes:
     return text_layer_pdf([text])
+
+
+# --- pictures ------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def picture_extractor() -> DoclingExtractor:
+    return DoclingExtractor(
+        ocr_languages=[available_ocr_language()],
+        chunk_max_tokens=700,
+        tokenizer_name="cl100k_base",
+        picture_images_enabled=True,
+        image_render_scale=2.0,
+        image_min_pixels=10_000,
+        max_images=10,
+    )
+
+
+def pdf_with_a_figure() -> bytes:
+    """A one-page PDF with a figure on it.
+
+    Built with PyMuPDF rather than by hand, because a hand-built PDF with an
+    embedded image is a page of cross-reference offsets, and the parser is
+    not what this test is about.
+    """
+    import pymupdf
+
+    figure = Image.new("RGB", (600, 300), (30, 90, 160))
+    draw = ImageDraw.Draw(figure)
+    draw.ellipse([150, 60, 450, 240], fill=(240, 200, 60))
+    draw.text((210, 265), "REVENUE BY SEGMENT", fill=(255, 255, 255))
+
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 80), "3.2 Financial Performance", fontsize=16, fontname="helv")
+    page.insert_text(
+        (72, 110),
+        "The chart shows net revenue by segment for fiscal 2015.",
+        fontsize=10,
+        fontname="helv",
+    )
+    picture_bytes = io.BytesIO()
+    figure.save(picture_bytes, format="PNG")
+    page.insert_image(pymupdf.Rect(72, 130, 472, 280), stream=picture_bytes.getvalue())
+    page.insert_text(
+        (72, 300),
+        "Figure 1: Net revenue by segment (in millions).",
+        fontsize=9,
+        fontname="helv",
+    )
+    page.insert_text(
+        (72, 330),
+        "Revenue grew across all three reported segments during the year.",
+        fontsize=10,
+        fontname="helv",
+    )
+    output = document.tobytes()
+    document.close()
+    return output
+
+
+@pytest.mark.integration
+def test_a_pdf_with_a_figure_yields_the_picture_and_marks_its_chunk(
+    tmp_path: Path, picture_extractor: DoclingExtractor
+) -> None:
+    """The picture has to survive the parser for anything to be done with it.
+
+    It comes back as bytes the model can look at, and the chunk that holds
+    it says which picture it is holding, so the description can be put back
+    on the line the picture was on.
+    """
+    path = tmp_path / "report.pdf"
+    path.write_bytes(pdf_with_a_figure())
+
+    result = picture_extractor.extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert len(result.images) == 1
+    image = result.images[0]
+    assert image.media_type == "image/png"
+    assert image.data.startswith(b"\x89PNG")
+    assert image.page_number == 1
+    assert image.width > 0 and image.height > 0
+
+    marked = [chunk for chunk in result.chunks if picture_refs(chunk.text)]
+    assert len(marked) == 1
+    assert picture_refs(marked[0].text) == [image.ref]
+    # the picture sits on the page the figure is on
+    assert marked[0].page_numbers == [1]
+
+    # The artifact keeps what the parser made of the file, without the
+    # picture's bytes: the picture is described and then dropped, and a
+    # base64 PNG in the middle of the artifact says nothing the description
+    # does not.
+    assert b"base64" not in result.document_json
+
+
+@pytest.mark.integration
+def test_a_document_indexed_without_the_picture_stage_carries_no_marker(
+    tmp_path: Path,
+) -> None:
+    """With the stage off, nothing about pictures reaches the chunk text.
+
+    A marker would be wrong here: nothing would ever come and replace it,
+    and it would be embedded into the document as leftover syntax.
+    """
+    path = tmp_path / "report.pdf"
+    path.write_bytes(pdf_with_a_figure())
+    extractor = DoclingExtractor(
+        ocr_languages=[available_ocr_language()],
+        chunk_max_tokens=700,
+        tokenizer_name="cl100k_base",
+        picture_images_enabled=False,
+    )
+
+    result = extractor.extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert result.images == []
+    assert all("PICTURE" not in chunk.text for chunk in result.chunks)
+
+
+@pytest.mark.integration
+def test_a_figure_below_the_pixel_floor_is_not_collected(tmp_path: Path) -> None:
+    """A picture that small is a logo, a rule or an ornament.
+
+    It is not worth an API call, and describing it would add noise to the
+    search.
+    """
+    path = tmp_path / "report.pdf"
+    path.write_bytes(pdf_with_a_figure())
+    extractor = DoclingExtractor(
+        ocr_languages=[available_ocr_language()],
+        chunk_max_tokens=700,
+        tokenizer_name="cl100k_base",
+        picture_images_enabled=True,
+        image_render_scale=2.0,
+        # A floor no picture of this size can clear.
+        image_min_pixels=100_000_000,
+        max_images=10,
+    )
+
+    result = extractor.extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert result.images == []
+
+
+@pytest.mark.integration
+def test_the_sandbox_carries_the_picture_back_out(
+    tmp_path: Path, picture_extractor: DoclingExtractor
+) -> None:
+    """The picture has to survive the trip through the sandbox.
+
+    The parser runs in a subprocess, so the picture comes back as a file
+    the parent reads, not as bytes inside the chunk payload.
+    """
+    path = tmp_path / "report.pdf"
+    path.write_bytes(pdf_with_a_figure())
+    extractor = SandboxedDoclingExtractor(
+        ocr_languages=[available_ocr_language()],
+        chunk_max_tokens=700,
+        tokenizer_name="cl100k_base",
+        artifacts_path=None,
+        timeout_seconds=600,
+        memory_limit_bytes=8 * 1024 * 1024 * 1024,
+        max_processes=4096,
+        max_artifact_bytes=10 * 1024 * 1024,
+        max_chunk_payload_bytes=10 * 1024 * 1024,
+        max_extracted_text_bytes=5 * 1024 * 1024,
+        max_chunks=100,
+        picture_images_enabled=True,
+        image_render_scale=2.0,
+        image_min_pixels=10_000,
+        max_images=10,
+        max_image_bytes=5 * 1024 * 1024,
+        max_total_image_bytes=50 * 1024 * 1024,
+    )
+
+    result = extractor.extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert len(result.images) == 1
+    assert result.images[0].data.startswith(b"\x89PNG")
+    assert picture_refs(result.chunks[0].text) == [result.images[0].ref]

@@ -100,6 +100,9 @@ PDF away from the request path.
 - `uv` for local test/lint, or Python 3.12+.
 - An OpenAI-compatible embedding server on `127.0.0.1:1234` that is reachable from the
   worker container.
+- An OpenAI-compatible endpoint for a multimodal model, to describe the pictures in a
+  document. Without one, set `RETRIV_IMAGE_PROCESSING_ENABLED=false` and the pictures
+  are simply not described.
 - About 4 GiB of RAM for ClamAV on first startup.
 
 ## Running locally
@@ -110,7 +113,9 @@ cp .env.example .env
 
 Fill in every `CHANGE ME`; the generated ones are `openssl rand -hex 32`. There is no
 model-provider key to hunt for: uploads, indexing, and retrieval all work as soon as the
-stack is up.
+stack is up. The one exception is the vision endpoint, which is where the pictures in a
+document are described — point it at a gateway that speaks the OpenAI chat API, or
+switch the stage off with `RETRIV_IMAGE_PROCESSING_ENABLED=false`.
 
 ```bash
 make migrate   # start infrastructure and apply the schema
@@ -443,6 +448,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant K as worker
     participant L as LM Studio
+    participant V as vision model
     participant Q as Qdrant
 
     U->>W: choose a PDF, DOCX or CSV
@@ -474,6 +480,13 @@ sequenceDiagram
     K->>M: GET the raw object
     alt PDF or DOCX
         K->>K: Docling extraction in a sandboxed subprocess
+        opt the document has pictures
+            loop a few at a time
+                K->>V: POST /chat/completions with the picture
+                V-->>K: a description of the picture
+            end
+            K->>K: fold each description into the chunk that held its picture
+        end
         K->>M: PUT the artifact and its manifest
         K->>DB: INSERT document_chunks
         loop in batches
@@ -514,7 +527,9 @@ stateDiagram-v2
     queued --> unsupported_format: media type has no text to read
     fetching --> extracting
     extracting --> row_storing: media type is CSV
+    extracting --> describing: the document has pictures
     extracting --> storing_artifact: PDF or DOCX
+    describing --> storing_artifact: every picture described
     row_storing --> ready: rows committed
     storing_artifact --> chunking
     chunking --> embedding
@@ -522,6 +537,7 @@ stateDiagram-v2
     queued --> cancelled: document deleted first
     fetching --> retry_wait: transient failure
     extracting --> retry_wait: transient failure
+    describing --> retry_wait: the model did not answer
     row_storing --> retry_wait: transient failure
     storing_artifact --> retry_wait: transient failure
     chunking --> retry_wait: transient failure
@@ -530,6 +546,7 @@ stateDiagram-v2
     retry_wait --> failed: attempts exhausted
     fetching --> failed: permanent failure
     extracting --> failed: permanent failure
+    describing --> failed: the model refused the request
     queued --> ready: DELETE run
     ready --> [*]
     failed --> [*]
@@ -540,6 +557,70 @@ stateDiagram-v2
 A lease is held for 30 minutes and heartbeated every third of that. A run whose lease
 expired is reclaimed by the next worker, which is what makes a worker crash recoverable
 without a coordinator. Transient failures back off exponentially, capped at 300s.
+
+### The pictures in a document
+
+A PDF can carry information that no text layer holds. A chart's values, a diagram's
+arrows, a photograph's subject: they are pixels, and the parser sees them as pixels.
+A question about what a chart says has nothing in the document to match against, and
+the answer is that the document does not say it — which is not true.
+
+So the pictures are described, and the description is put where the picture was.
+
+Docling's layout model already tells a figure apart from a logo, a rule and page
+furniture, and crops the figure out of the page on its own. The pipeline asks it to
+keep those crops (`generate_picture_images`), and the chunking serializer writes each
+picture into its chunk as a marker naming it — Docling's own serializer writes a
+picture as an empty string, which drops it from the chunk entirely. The marker is
+what lets the description land on the line the picture was on, in the section the
+picture was in, between the sentences that talk about it:
+
+```
+3.2 Financial Performance
+The chart shows net revenue by segment for fiscal 2015.
+[Image description: A bar chart with three vertical bars. 2013: 1,234. 2014: 1,456. 2015: 1,789.]
+Figure 1: Net revenue by segment (in millions).
+Revenue grew across all three reported segments during the year.
+```
+
+That chunk is then embedded by the same text embedding model as everything else, so a
+question about the chart's numbers finds the paragraph that talks about the chart.
+
+The model is a multimodal one behind an OpenAI-compatible API (`RETRIV_VLM_BASE_URL`,
+`RETRIV_VLM_API_KEY`, `RETRIV_VLM_MODEL`). The picture is sent as a `data:` URL, so
+it goes nowhere except to the model that is going to describe it. The response's
+model id is checked against the one that was asked for: a gateway that answers with
+a different model has not done what was asked, and the answer is refused rather than
+indexed.
+
+**The stage fails the run rather than skipping the pictures.** A document indexed
+without its figures is a document that looks complete and is not, and nothing
+downstream can tell the difference. A timeout or a rate limit is retried, within the
+budget `RETRIV_MODEL_WAIT_*` sets; a key the endpoint refuses fails the run outright,
+because retrying that only delays the report that the deployment is misconfigured.
+
+**The model is allowed to think.** `RETRIV_VLM_MAX_TOKENS` is a ceiling on the
+model's whole answer, reasoning included — not a limit on how long it may think. A
+reasoning model stops on its own well below a generous ceiling (the busiest chart in
+the 10-K spent about 2,200 tokens thinking before it wrote a word). The ceiling only
+matters when it is set *below* what the model wanted, because then the endpoint cuts
+it off mid-thought and hands back nothing. In that case the budget goes up and the
+same picture is asked again, up to `RETRIV_VLM_MAX_TOKENS_CEILING` — the model was
+not finished describing the picture, it was cut off, and the picture is not failed
+over a question of budget. The gateway's `reasoning_effort` is left alone: thinking
+less would make the descriptions worse, which is the opposite of the point.
+
+Three settings decide what is worth describing:
+
+| setting | what it does |
+|---|---|
+| `RETRIV_IMAGE_PROCESSING_ENABLED` | off means the parser is not even asked to render pictures, and the document is indexed exactly as it was before this stage existed |
+| `RETRIV_IMAGE_MIN_PIXELS` | pictures whose rendered area is below this are dropped: at that size they are logos, rules and ornaments |
+| `RETRIV_VLM_MAX_IMAGES_PER_DOCUMENT` | how many pictures of one document may cost an API call; 0 means no cap |
+
+The pictures are described in the worker, never in the extraction sandbox. The sandbox
+is a jail for a hostile parser: it has a scrubbed environment, no network, and no
+reason to hold an API key.
 
 ## Deleting a document
 

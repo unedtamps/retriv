@@ -8,6 +8,7 @@ only after the vectors are gone.
 """
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -42,7 +43,8 @@ from app.embeddings.base import (
     VectorPoint,
     VectorStore,
 )
-from app.extraction.base import ExtractedChunk, ExtractionResult
+from app.extraction.base import ExtractedChunk, ExtractedImage, ExtractionResult
+from app.extraction.images import picture_marker
 from app.infrastructure.storage import (
     ArtifactStorage,
     DownloadResult,
@@ -51,6 +53,7 @@ from app.infrastructure.storage import (
 )
 from app.processing.worker import ProcessingWorker, utcnow
 from app.sections import encode_section_key
+from app.vision.base import VisionProviderError
 from tests.conftest import SeededEntities
 from tests.document_samples import (
     csv_bytes,
@@ -119,12 +122,14 @@ class FakeExtractor:
         *,
         ocr_enabled: bool = False,
         source_text_chars: int = 0,
+        images: list[ExtractedImage] | None = None,
     ) -> None:
         self.chunk_texts = chunk_texts or ["Extracted paragraph one."]
         self.calls = 0
         self.media_types: list[str] = []
         self.ocr_enabled = ocr_enabled
         self.source_text_chars = source_text_chars
+        self.images = images or []
 
     def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
         self.calls += 1
@@ -146,7 +151,25 @@ class FakeExtractor:
             extractor_version="test-extractor-1",
             ocr_enabled=self.ocr_enabled,
             source_text_chars=self.source_text_chars,
+            images=list(self.images),
         )
+
+
+class FakeVisionProvider:
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error
+        self.described: list[str] = []
+        self.contexts: list[str] = []
+
+    async def describe(self, image: ExtractedImage, *, context: str = "") -> str:
+        if self._error is not None:
+            raise self._error
+        self.described.append(image.ref)
+        self.contexts.append(context)
+        return f"A description of {image.ref}."
+
+    async def aclose(self) -> None:
+        return
 
 
 class FakeEmbeddingProvider(EmbeddingProvider):
@@ -216,6 +239,7 @@ def build_worker(
     extractor: FakeExtractor | None = None,
     embeddings: FakeEmbeddingProvider | None = None,
     vectors: FakeVectorStore | None = None,
+    vision: FakeVisionProvider | None = None,
 ) -> ProcessingWorker:
     return ProcessingWorker(
         session_factory,
@@ -224,6 +248,7 @@ def build_worker(
         settings,
         embeddings or FakeEmbeddingProvider(),
         vectors or FakeVectorStore(),
+        vision,
     )
 
 
@@ -1172,3 +1197,288 @@ async def test_deleting_a_csv_document_removes_its_rows(
             )
         ).scalars().all()
     assert remaining == []
+
+
+# --- the vision stage ----------------------------------------------------
+
+
+def an_extracted_image(ref: str = "#/pictures/0") -> ExtractedImage:
+    return ExtractedImage(
+        ref=ref,
+        page_number=1,
+        media_type="image/png",
+        data=b"\x89PNG\r\n\x1a\n",
+        caption="Figure 1: Net revenue by segment.",
+        width=600,
+        height=300,
+    )
+
+
+async def test_a_picture_description_is_folded_into_the_chunk_that_held_it(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A chart's values are in the pixels, so they have to become words.
+
+    The description lands in the chunk the picture was on, and that chunk is
+    what gets embedded: a description that was indexed somewhere else would
+    answer a different question than the one that was asked.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=[
+            f"Body text.\n{picture_marker('#/pictures/0')}\nMore body text.",
+        ],
+        images=[an_extracted_image()],
+    )
+    embeddings = FakeEmbeddingProvider()
+    vision = FakeVisionProvider()
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        extractor=extractor,
+        embeddings=embeddings,
+        vision=vision,
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        chunks = (
+            await session.scalars(
+                select(DocumentChunk).where(DocumentChunk.document_id == document.id)
+            )
+        ).all()
+        finished = await session.get(ProcessingRun, run.id)
+
+    assert finished is not None
+    assert finished.status == RUN_READY
+    assert len(chunks) == 1
+    assert "A description of #/pictures/0." in chunks[0].text
+    # and the description is what was embedded, not the picture's absence
+    assert len(embeddings.embedded) == 1
+    assert "A description of #/pictures/0." in embeddings.embedded[0]
+    # the model is told where the picture sits, so it can describe it in context
+    assert vision.described == ["#/pictures/0"]
+    assert "Figure 1: Net revenue by segment." in vision.contexts[0]
+
+
+async def test_a_failing_model_leaves_the_document_unindexed(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A document indexed without its figures is a document that looks
+    complete and is not, and nothing downstream can tell the difference.
+
+    So the run is handed back for another attempt rather than finished with
+    the pictures missing.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
+        images=[an_extracted_image()],
+    )
+    embeddings = FakeEmbeddingProvider()
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        extractor=extractor,
+        embeddings=embeddings,
+        vision=FakeVisionProvider(VisionProviderError("the model is down", retryable=True)),
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        chunks = (
+            await session.scalars(
+                select(DocumentChunk).where(DocumentChunk.document_id == document.id)
+            )
+        ).all()
+        finished = await session.get(ProcessingRun, run.id)
+
+    assert finished is not None
+    assert finished.status == RUN_RETRY_WAIT
+    assert chunks == []
+    assert embeddings.embedded == []
+
+
+async def test_a_rejected_model_key_fails_the_run_outright(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A key the endpoint refuses is a mistake, not a hiccup.
+
+    Retrying it three times would only delay the report that the
+    deployment is misconfigured.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
+        images=[an_extracted_image()],
+    )
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        extractor=extractor,
+        vision=FakeVisionProvider(
+            VisionProviderError("the key was refused", retryable=False)
+        ),
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        finished = await session.get(ProcessingRun, run.id)
+
+    assert finished is not None
+    assert finished.status == RUN_FAILED
+    assert "the key was refused" in (finished.last_error or "")
+
+
+async def test_the_picture_stage_is_skipped_when_it_is_switched_off(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """With the stage off, the document is indexed exactly as it was before
+    the stage existed: no picture is described and no model is called.
+    """
+    off = settings.model_copy(update={"image_processing_enabled": False})
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
+        images=[an_extracted_image()],
+    )
+    vision = FakeVisionProvider()
+    worker = build_worker(
+        db_session_factory,
+        off,
+        storage=storage,
+        extractor=extractor,
+        vision=vision,
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        finished = await session.get(ProcessingRun, run.id)
+        chunks = (
+            await session.scalars(
+                select(DocumentChunk).where(DocumentChunk.document_id == document.id)
+            )
+        ).all()
+
+    assert finished is not None
+    assert finished.status == RUN_READY
+    assert vision.described == []
+    # and the marker never reaches the text that gets embedded
+    assert "PICTURE" not in chunks[0].text
+    assert chunks[0].text == "Body text.\n[Image]"
+
+
+async def test_the_manifest_says_how_many_pictures_were_described(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
+        images=[an_extracted_image()],
+    )
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        extractor=extractor,
+        vision=FakeVisionProvider(),
+    )
+
+    assert await worker.run_once() is True
+
+    manifest = next(
+        data
+        for (bucket, key), data in storage.objects.items()
+        if key.endswith("manifest.json")
+    )
+    payload = json.loads(manifest)
+
+    assert payload["vision"]["enabled"] is True
+    assert payload["vision"]["images_found"] == 1
+    assert payload["vision"]["images_described"] == 1
+    assert payload["vision"]["model"] == settings.vlm_model
+
+
+async def test_zero_max_images_means_no_cap(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Zero is how the extractor spells "no cap".
+
+    The worker has to read it the same way. Slicing the list at zero would
+    throw away every picture the extractor collected, and the document would
+    be indexed with ``[Image]`` lines where its figures were.
+    """
+    no_cap = settings.model_copy(update={"vlm_max_images_per_document": 0})
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        chunk_texts=[
+            f"First figure.\n{picture_marker('#/pictures/0')}\n"
+            f"Second figure.\n{picture_marker('#/pictures/1')}"
+        ],
+        images=[
+            an_extracted_image("#/pictures/0"),
+            an_extracted_image("#/pictures/1"),
+        ],
+    )
+    vision = FakeVisionProvider()
+    worker = build_worker(
+        db_session_factory,
+        no_cap,
+        storage=storage,
+        extractor=extractor,
+        vision=vision,
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        finished = await session.get(ProcessingRun, run.id)
+        chunks = (
+            await session.scalars(
+                select(DocumentChunk).where(DocumentChunk.document_id == document.id)
+            )
+        ).all()
+
+    assert finished is not None
+    assert finished.status == RUN_READY
+    assert vision.described == ["#/pictures/0", "#/pictures/1"]
+    assert "A description of #/pictures/0." in chunks[0].text
+    assert "A description of #/pictures/1." in chunks[0].text
+    assert "[Image]" not in chunks[0].text

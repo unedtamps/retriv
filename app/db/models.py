@@ -29,6 +29,7 @@ JOB_DELETE = "delete"
 RUN_QUEUED = "queued"
 RUN_FETCHING = "fetching"
 RUN_EXTRACTING = "extracting"
+RUN_DESCRIBING = "describing"
 RUN_STORING_ARTIFACT = "storing_artifact"
 RUN_CHUNKING = "chunking"
 RUN_EMBEDDING = "embedding"
@@ -45,6 +46,7 @@ RUN_UNSUPPORTED = "unsupported_format"
 ACTIVE_RUN_STATUSES: tuple[str, ...] = (
     RUN_FETCHING,
     RUN_EXTRACTING,
+    RUN_DESCRIBING,
     RUN_STORING_ARTIFACT,
     RUN_CHUNKING,
     RUN_EMBEDDING,

@@ -13,6 +13,7 @@ from app.embeddings.qdrant import QdrantVectorStore
 from app.extraction.sandbox import SandboxedDoclingExtractor
 from app.infrastructure.storage import get_artifact_storage
 from app.processing.worker import ProcessingWorker
+from app.vision.openai_compatible import OpenAICompatibleVisionProvider
 
 
 async def run_worker() -> None:
@@ -33,6 +34,18 @@ async def run_worker() -> None:
         timeout_seconds=settings.qdrant_timeout_seconds,
         vectors_on_disk=settings.qdrant_vectors_on_disk,
     )
+    vision_provider = OpenAICompatibleVisionProvider(
+        base_url=settings.vlm_base_url,
+        api_key=settings.vlm_api_key.get_secret_value(),
+        model=settings.vlm_model,
+        timeout_seconds=settings.vlm_timeout_seconds,
+        max_tokens=settings.vlm_max_tokens,
+        max_tokens_ceiling=settings.vlm_max_tokens_ceiling,
+        max_description_chars=settings.vlm_max_description_chars,
+        wait_base_seconds=settings.model_wait_base_seconds,
+        wait_max_seconds=settings.model_wait_max_seconds,
+        wait_timeout_seconds=settings.model_wait_timeout_seconds,
+    )
     worker = ProcessingWorker(
         session_factory,
         get_artifact_storage(),
@@ -48,10 +61,17 @@ async def run_worker() -> None:
             max_chunk_payload_bytes=settings.max_chunk_payload_bytes,
             max_extracted_text_bytes=settings.max_extracted_text_bytes,
             max_chunks=settings.max_chunks_per_document,
+            picture_images_enabled=settings.image_processing_enabled,
+            image_render_scale=settings.image_render_scale,
+            image_min_pixels=settings.image_min_pixels,
+            max_images=settings.vlm_max_images_per_document,
+            max_image_bytes=settings.max_image_bytes,
+            max_total_image_bytes=settings.max_total_image_bytes,
         ),
         settings,
         embedding_provider,
         vector_store,
+        vision_provider,
     )
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -63,6 +83,7 @@ async def run_worker() -> None:
     finally:
         await embedding_provider.aclose()
         await vector_store.aclose()
+        await vision_provider.aclose()
 
 
 def harden_worker_process() -> None:

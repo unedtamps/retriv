@@ -43,6 +43,8 @@ WORKER_BASE: dict[str, Any] = {
     "qdrant_api_key": SecretStr("production-qdrant-rw-key-xxxxxxxxxxxxxxxx"),
     "embedding_base_url": "https://embeddings.example.test/v1",
     "embedding_api_key": SecretStr("production-embedding-key-xxxxxxxxxxxxxxxx"),
+    "vlm_base_url": "https://vision.example.test/v1/chat/completions",
+    "vlm_api_key": SecretStr("production-vision-key-xxxxxxxxxxxxxxxxxxxx"),
     "docling_artifacts_path": Path("/opt/docling-models"),
 }
 
@@ -358,3 +360,61 @@ def test_the_check_is_skipped_when_the_tool_is_off() -> None:
 def test_the_check_is_skipped_when_the_reader_password_is_absent() -> None:
     """Also a supported shape: a DSN alone, with the role managed elsewhere."""
     Settings(sql_database_url="postgresql+asyncpg://someone:pw@postgres:5432/retriv")
+
+
+# --- vision --------------------------------------------------------------
+
+
+def test_the_vision_endpoint_must_be_absolute() -> None:
+    with pytest.raises(ValidationError, match="absolute HTTP"):
+        Settings(vlm_base_url="/api/v1/chat/completions")
+
+
+def test_production_requires_https_for_the_vision_endpoint() -> None:
+    with pytest.raises(ValidationError, match="HTTPS"):
+        Settings(
+            **{
+                **WORKER_BASE,
+                "vlm_base_url": "http://vision.example.test/v1/chat/completions",
+            }
+        )
+
+
+def test_a_model_id_may_carry_a_provider_namespace() -> None:
+    """A gateway's model id is somebody else's namespace, not a word this
+    codebase owns, so the slash in it is allowed."""
+    settings = Settings(vlm_model="minimax/minimax-m3.1-flash")
+    assert settings.vlm_model == "minimax/minimax-m3.1-flash"
+
+    with pytest.raises(ValidationError, match="Model ids"):
+        Settings(vlm_model="model with spaces")
+
+
+def test_the_vision_key_must_be_long_enough() -> None:
+    with pytest.raises(ValidationError, match="at least 32"):
+        Settings(vlm_api_key=SecretStr("short"))
+
+
+def test_the_image_budgets_must_be_ordered() -> None:
+    with pytest.raises(ValidationError, match="MAX_TOTAL_IMAGE_BYTES"):
+        Settings(max_image_bytes=1000, max_total_image_bytes=100)
+
+
+def test_the_model_wait_curve_must_be_ordered() -> None:
+    with pytest.raises(ValidationError, match="MODEL_WAIT_MAX_SECONDS"):
+        Settings(model_wait_base_seconds=60, model_wait_max_seconds=5)
+
+
+def test_production_rejects_a_placeholder_vision_key() -> None:
+    with pytest.raises(ValidationError, match="placeholders"):
+        Settings(
+            **{
+                **WORKER_BASE,
+                "vlm_api_key": SecretStr("change-this-vision-key-do-not-use-in-prod"),
+            }
+        )
+
+
+def test_the_token_ceiling_must_not_be_below_the_budget() -> None:
+    with pytest.raises(ValidationError, match="MAX_TOKENS_CEILING"):
+        Settings(vlm_max_tokens=8192, vlm_max_tokens_ceiling=256)

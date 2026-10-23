@@ -8,7 +8,12 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from app.extraction.base import ExtractedChunk, ExtractionError, ExtractionResult
+from app.extraction.base import (
+    ExtractedChunk,
+    ExtractedImage,
+    ExtractionError,
+    ExtractionResult,
+)
 
 SAFE_ENVIRONMENT_KEYS = (
     "HOME",
@@ -40,6 +45,12 @@ class SandboxedDoclingExtractor:
         max_chunk_payload_bytes: int,
         max_extracted_text_bytes: int,
         max_chunks: int,
+        picture_images_enabled: bool = False,
+        image_render_scale: float = 2.0,
+        image_min_pixels: int = 0,
+        max_images: int = 0,
+        max_image_bytes: int = 5 * 1024 * 1024,
+        max_total_image_bytes: int = 50 * 1024 * 1024,
     ) -> None:
         self._ocr_languages = ocr_languages
         self._chunk_max_tokens = chunk_max_tokens
@@ -52,6 +63,12 @@ class SandboxedDoclingExtractor:
         self._max_chunk_payload_bytes = max_chunk_payload_bytes
         self._max_extracted_text_bytes = max_extracted_text_bytes
         self._max_chunks = max_chunks
+        self._picture_images_enabled = picture_images_enabled
+        self._image_render_scale = image_render_scale
+        self._image_min_pixels = image_min_pixels
+        self._max_images = max_images
+        self._max_image_bytes = max_image_bytes
+        self._max_total_image_bytes = max_total_image_bytes
 
     def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
         with tempfile.TemporaryDirectory(
@@ -86,7 +103,23 @@ class SandboxedDoclingExtractor:
                 str(self._max_extracted_text_bytes),
                 "--max-chunks",
                 str(self._max_chunks),
+                "--max-image-bytes",
+                str(self._max_image_bytes),
+                "--max-total-image-bytes",
+                str(self._max_total_image_bytes),
             ]
+            if self._picture_images_enabled:
+                command.append("--picture-images")
+            command.extend(
+                (
+                    "--image-render-scale",
+                    str(self._image_render_scale),
+                    "--image-min-pixels",
+                    str(self._image_min_pixels),
+                    "--max-images",
+                    str(self._max_images),
+                )
+            )
             for language in self._ocr_languages:
                 command.extend(("--ocr-language", language))
             if self._artifacts_path is not None:
@@ -148,6 +181,7 @@ class SandboxedDoclingExtractor:
                 ocr_enabled = result_payload["ocr_enabled"]
                 source_text_chars = result_payload["source_text_chars"]
                 raw_chunks = result_payload["chunks"]
+                raw_images = result_payload.get("images", [])
                 if (
                     not isinstance(extractor_version, str)
                     or not isinstance(ocr_enabled, bool)
@@ -155,11 +189,19 @@ class SandboxedDoclingExtractor:
                     or isinstance(source_text_chars, bool)
                     or source_text_chars < 0
                     or not isinstance(raw_chunks, list)
+                    or not isinstance(raw_images, list)
                 ):
                     raise TypeError
                 chunks = [self._parse_chunk(item) for item in raw_chunks]
+                images = [
+                    self._parse_image(item, output_dir) for item in raw_images
+                ]
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise ExtractionError("Sandbox returned an invalid extraction result") from exc
+            except ExtractionError:
+                # A picture that was too large to read is not an invalid
+                # result: it is a limit that was reached, and it says so.
+                raise
             if len(chunks) > self._max_chunks:
                 raise ExtractionError("Sandbox returned too many chunks")
             if (
@@ -173,6 +215,7 @@ class SandboxedDoclingExtractor:
                 extractor_version=extractor_version,
                 ocr_enabled=ocr_enabled,
                 source_text_chars=source_text_chars,
+                images=images,
             )
 
     @staticmethod
@@ -197,6 +240,54 @@ class SandboxedDoclingExtractor:
                 return error_file.read(1000)
         except OSError:
             return "Document extraction sandbox failed"
+
+    def _parse_image(self, value: Any, output_dir: Path) -> ExtractedImage:
+        """Read one picture back from the sandbox's output directory.
+
+        The bytes are read under the same per-image cap the runner wrote them
+        under, so a sandbox that ignored the cap cannot make the parent hold
+        more than it agreed to.
+        """
+        if not isinstance(value, dict):
+            raise TypeError
+        ref = value.get("ref")
+        page_number = value.get("page_number")
+        media_type = value.get("media_type")
+        caption = value.get("caption", "")
+        width = value.get("width", 0)
+        height = value.get("height", 0)
+        name = value.get("file")
+        if (
+            not isinstance(ref, str)
+            or not ref
+            or not isinstance(page_number, int)
+            or isinstance(page_number, bool)
+            or not isinstance(media_type, str)
+            or not media_type
+            or not isinstance(caption, str)
+            or not isinstance(width, int)
+            or isinstance(width, bool)
+            or not isinstance(height, int)
+            or isinstance(height, bool)
+            or not isinstance(name, str)
+            or not name
+        ):
+            raise TypeError
+        # The name comes from the sandbox, so it is not trusted to stay
+        # inside the output directory.
+        path = (output_dir / name).resolve()
+        if not path.is_relative_to(output_dir.resolve()):
+            raise ValueError("Sandbox returned an image outside its output directory")
+        data = self._read_bounded(path, self._max_image_bytes)
+        return ExtractedImage(
+            ref=ref,
+            page_number=page_number,
+            media_type=media_type,
+            data=data,
+            caption=caption,
+            width=width,
+            height=height,
+        )
 
     @staticmethod
     def _parse_chunk(value: Any) -> ExtractedChunk:

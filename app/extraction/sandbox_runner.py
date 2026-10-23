@@ -4,6 +4,19 @@ import resource
 from dataclasses import asdict
 from pathlib import Path
 
+from app.extraction.base import ExtractedImage
+
+# The extension each media type is written under. The name matters only
+# because the parent reads the files back by name, and a file with the
+# wrong extension is a file nobody can tell apart from a stray one.
+_IMAGE_SUFFIX = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/tiff": ".tiff",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -21,6 +34,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-chunk-payload-bytes", type=int, required=True)
     parser.add_argument("--max-extracted-text-bytes", type=int, required=True)
     parser.add_argument("--max-chunks", type=int, required=True)
+    parser.add_argument("--picture-images", action="store_true")
+    parser.add_argument("--image-render-scale", type=float, default=2.0)
+    parser.add_argument("--image-min-pixels", type=int, default=0)
+    parser.add_argument("--max-images", type=int, default=0)
+    parser.add_argument("--max-image-bytes", type=int, required=True)
+    parser.add_argument("--max-total-image-bytes", type=int, required=True)
     return parser.parse_args()
 
 
@@ -40,6 +59,48 @@ def set_resource_limits(args: argparse.Namespace) -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_bytes, max_file_bytes))
 
 
+def write_images(
+    args: argparse.Namespace, images: list[ExtractedImage]
+) -> list[dict[str, object]]:
+    """Write the pictures out, and say which ones made it.
+
+    The pictures cross the process boundary as files rather than inside the
+    chunk payload: a base64 PNG in a JSON document is a third larger than
+    the PNG and is read, parsed and rewritten for every document that has
+    one. Files are also capped one by one, so one oversized picture cannot
+    take the whole payload with it.
+    """
+    if not images:
+        return []
+    images_dir = args.output_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    written: list[dict[str, object]] = []
+    total_bytes = 0
+    for index, image in enumerate(images):
+        size = len(image.data)
+        if size > args.max_image_bytes:
+            continue
+        if total_bytes + size > args.max_total_image_bytes:
+            break
+        suffix = _IMAGE_SUFFIX.get(image.media_type, ".bin")
+        name = f"image-{index:03d}{suffix}"
+        (images_dir / name).write_bytes(image.data)
+        total_bytes += size
+        written.append(
+            {
+                "ref": image.ref,
+                "page_number": image.page_number,
+                "media_type": image.media_type,
+                "caption": image.caption,
+                "width": image.width,
+                "height": image.height,
+                "file": f"images/{name}",
+                "size_bytes": size,
+            }
+        )
+    return written
+
+
 def run(args: argparse.Namespace) -> None:
     set_resource_limits(args)
     from app.extraction.docling import DoclingExtractor
@@ -49,6 +110,10 @@ def run(args: argparse.Namespace) -> None:
         chunk_max_tokens=args.chunk_max_tokens,
         tokenizer_name=args.tokenizer_name,
         artifacts_path=args.artifacts_path,
+        picture_images_enabled=args.picture_images,
+        image_render_scale=args.image_render_scale,
+        image_min_pixels=args.image_min_pixels,
+        max_images=args.max_images,
     )
     result = extractor.extract(args.input, media_type=args.media_type)
     if len(result.document_json) > args.max_artifact_bytes:
@@ -60,12 +125,14 @@ def run(args: argparse.Namespace) -> None:
         > args.max_extracted_text_bytes
     ):
         raise ValueError("Extracted text exceeds the processing limit")
+    images = write_images(args, result.images)
     chunks_payload = json.dumps(
         {
             "extractor_version": result.extractor_version,
             "ocr_enabled": result.ocr_enabled,
             "source_text_chars": result.source_text_chars,
             "chunks": [asdict(chunk) for chunk in result.chunks],
+            "images": images,
         },
         ensure_ascii=False,
         separators=(",", ":"),
