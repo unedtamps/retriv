@@ -67,7 +67,8 @@ class QdrantVectorStore:
                     )
             self._validate_collection(response)
             for field_name in (
-                "workspace_id",
+                "workspace_ids",
+                "origin_workspace_id",
                 "document_id",
                 "processing_run_id",
                 "chunk_id",
@@ -125,7 +126,7 @@ class QdrantVectorStore:
         )
         self._validate_completed_update(response)
 
-    async def delete_document(self, workspace_id: UUID, document_id: UUID) -> None:
+    async def delete_document(self, document_id: UUID) -> None:
         await self.ensure_collection()
         response = await self._request(
             "POST",
@@ -135,15 +136,37 @@ class QdrantVectorStore:
                 "filter": {
                     "must": [
                         {
-                            "key": "workspace_id",
-                            "match": {"value": str(workspace_id)},
-                        },
-                        {
                             "key": "document_id",
                             "match": {"value": str(document_id)},
                         },
                     ]
                 }
+            },
+        )
+        self._validate_completed_update(response)
+
+    async def set_document_workspaces(
+        self, document_id: UUID, workspace_ids: list[UUID]
+    ) -> None:
+        await self.ensure_collection()
+        response = await self._request(
+            "POST",
+            f"collections/{self._collection}/points/payload",
+            params={"wait": "true"},
+            json={
+                "payload": {
+                    "workspace_ids": sorted(
+                        {str(workspace_id) for workspace_id in workspace_ids}
+                    )
+                },
+                "filter": {
+                    "must": [
+                        {
+                            "key": "document_id",
+                            "match": {"value": str(document_id)},
+                        },
+                    ]
+                },
             },
         )
         self._validate_completed_update(response)
@@ -171,7 +194,7 @@ class QdrantVectorStore:
                 "filter": {
                     "must": [
                         {
-                            "key": "workspace_id",
+                            "key": "workspace_ids",
                             "match": {"any": [str(item) for item in workspace_ids]},
                         },
                         {
@@ -182,7 +205,8 @@ class QdrantVectorStore:
                 },
                 "limit": limit,
                 "with_payload": [
-                    "workspace_id",
+                    "origin_workspace_id",
+                    "workspace_ids",
                     "document_id",
                     "processing_run_id",
                     "chunk_id",

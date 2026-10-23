@@ -187,7 +187,7 @@ def test_an_unknown_failure_stays_generic() -> None:
 
 _ROW_KEYS = (
     "id",
-    "workspace_id",
+    "origin_workspace_id",
     "document_id",
     "processing_run_id",
     "row_number",

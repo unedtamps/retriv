@@ -122,19 +122,24 @@ async def test_qdrant_store_creates_collection_upserts_metadata_and_deletes() ->
         transport=httpx.MockTransport(handler),
     )
     workspace_id = uuid4()
+    second_workspace_id = uuid4()
     document_id = uuid4()
     point = VectorPoint(
         id=uuid4(),
         vector=[1.0, 0.0, 0.0, 0.0],
         payload={
-            "workspace_id": str(workspace_id),
+            "origin_workspace_id": str(workspace_id),
+            "workspace_ids": [str(workspace_id)],
             "document_id": str(document_id),
             "chunk_id": str(uuid4()),
         },
     )
     try:
         await store.upsert([point])
-        await store.delete_document(workspace_id, document_id)
+        await store.set_document_workspaces(
+            document_id, [workspace_id, second_workspace_id]
+        )
+        await store.delete_document(document_id)
     finally:
         await store.aclose()
 
@@ -163,11 +168,20 @@ async def test_qdrant_store_creates_collection_upserts_metadata_and_deletes() ->
     assert delete_request == {
         "filter": {
             "must": [
-                {"key": "workspace_id", "match": {"value": str(workspace_id)}},
                 {"key": "document_id", "match": {"value": str(document_id)}},
             ]
         }
     }
+    payload_request = next(
+        body
+        for method, path, body in requests
+        if method == "POST" and path.endswith("/points/payload")
+    )
+    assert payload_request is not None
+    assert isinstance(payload_request["payload"], dict)
+    assert payload_request["payload"]["workspace_ids"] == sorted(
+        [str(workspace_id), str(second_workspace_id)]
+    )
 
 
 async def test_qdrant_store_rejects_mismatched_collection_dimensions() -> None:
@@ -235,7 +249,8 @@ async def test_qdrant_search_mandates_workspace_and_profile_payload_filters() ->
                             "id": str(point_id),
                             "score": 0.91,
                             "payload": {
-                                "workspace_id": str(workspace_id),
+                                "origin_workspace_id": str(workspace_id),
+                                "workspace_ids": [str(workspace_id)],
                                 "chunk_id": str(chunk_id),
                                 "embedding_profile": "test-profile",
                             },
@@ -272,7 +287,7 @@ async def test_qdrant_search_mandates_workspace_and_profile_payload_filters() ->
         "filter": {
             "must": [
                 {
-                    "key": "workspace_id",
+                    "key": "workspace_ids",
                     "match": {"any": [str(workspace_id)]},
                 },
                 {
@@ -283,7 +298,8 @@ async def test_qdrant_search_mandates_workspace_and_profile_payload_filters() ->
         },
         "limit": 7,
         "with_payload": [
-            "workspace_id",
+            "origin_workspace_id",
+            "workspace_ids",
             "document_id",
             "processing_run_id",
             "chunk_id",

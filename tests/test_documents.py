@@ -11,6 +11,7 @@ from app.db.models import (
     JOB_EXTRACT,
     RUN_QUEUED,
     Document,
+    DocumentWorkspace,
     ProcessingRun,
 )
 from app.infrastructure.scanner import MalwareDetectedError, ScannerUnavailableError
@@ -113,7 +114,7 @@ async def test_upload_enqueues_the_pipeline_in_the_same_transaction(
 
     assert run is not None
     assert run.document_id == document_id
-    assert run.workspace_id == entities.finance.id
+    assert run.origin_workspace_id == entities.finance.id
     assert run.job_kind == JOB_EXTRACT
     assert run.status == RUN_QUEUED
     assert document is not None
@@ -122,23 +123,35 @@ async def test_upload_enqueues_the_pipeline_in_the_same_transaction(
     assert document.object_key.startswith("workspaces/")
 
 
-async def test_same_file_in_different_workspaces_is_stored_separately(
+async def test_the_same_file_in_two_workspaces_is_one_document_with_two_links(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     entities: SeededEntities,
     object_storage: InMemoryObjectStorage,
+    db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     content = pdf_bytes()
     finance = await upload(client, auth_headers, entities.finance.id, "report.pdf", content)
-    legal = await upload(client, auth_headers, entities.legal.id, "report.pdf", content)
+    legal = await upload(client, auth_headers, entities.legal.id, "laporan.pdf", content)
 
     assert finance.status_code == 202
-    assert legal.status_code == 202
-    assert finance.json()["id"] != legal.json()["id"]
-    assert len(object_storage.objects) == 2
-    object_keys = {key for _, key in object_storage.objects}
-    assert any(f"workspaces/{entities.finance.id}/" in key for key in object_keys)
-    assert any(f"workspaces/{entities.legal.id}/" in key for key in object_keys)
+    assert legal.status_code == 200
+    assert finance.json()["id"] == legal.json()["id"]
+    assert legal.json()["duplicate"] is True
+    # The second workspace is a link, not a second object or pipeline.
+    assert len(object_storage.objects) == 1
+    async with db_session_factory() as session:
+        links = (await session.scalars(select(DocumentWorkspace))).all()
+        extract_runs = (
+            await session.scalars(
+                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_EXTRACT)
+            )
+        ).all()
+    assert {(link.workspace_id, link.filename) for link in links} == {
+        (entities.finance.id, "report.pdf"),
+        (entities.legal.id, "laporan.pdf"),
+    }
+    assert len(extract_runs) == 1
 
 
 async def test_document_cannot_be_read_through_another_workspace(
@@ -797,3 +810,135 @@ EXPECTED_INDEXABLE = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/csv",
 }
+
+
+async def test_deleting_one_link_keeps_the_document_for_the_other_workspace(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    object_storage: InMemoryObjectStorage,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    content = pdf_bytes()
+    finance = await upload(
+        client, auth_headers, entities.finance.id, "report.pdf", content
+    )
+    await upload(
+        client, auth_headers, entities.legal.id, "laporan.pdf", content
+    )
+    document_id = UUID(finance.json()["id"])
+
+    deleted = await client.delete(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}",
+        headers=auth_headers,
+    )
+
+    assert deleted.status_code == 204
+    # The object belongs to the canonical document, not to either link.
+    assert len(object_storage.objects) == 1
+    async with db_session_factory() as session:
+        document = await session.get(Document, document_id)
+        finance_link = await session.scalar(
+            select(DocumentWorkspace).where(
+                DocumentWorkspace.workspace_id == entities.finance.id,
+                DocumentWorkspace.document_id == document_id,
+            )
+        )
+        legal_link = await session.scalar(
+            select(DocumentWorkspace).where(
+                DocumentWorkspace.workspace_id == entities.legal.id,
+                DocumentWorkspace.document_id == document_id,
+            )
+        )
+        delete_runs = (
+            await session.scalars(
+                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
+            )
+        ).all()
+    assert document is not None and document.deleted_at is None
+    assert finance_link is not None and finance_link.deleted_at is not None
+    assert legal_link is not None and legal_link.deleted_at is None
+    assert delete_runs == []
+
+    metadata = await client.get(
+        f"/v1/workspaces/{entities.legal.id}/documents/{document_id}",
+        headers=auth_headers,
+    )
+    assert metadata.status_code == 200
+    assert metadata.json()["original_filename"] == "laporan.pdf"
+    assert metadata.json()["status"] == "processing"
+
+
+async def test_deleting_the_last_link_queues_cleanup_and_removes_the_object(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    object_storage: InMemoryObjectStorage,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    content = pdf_bytes()
+    finance = await upload(
+        client, auth_headers, entities.finance.id, "report.pdf", content
+    )
+    await upload(
+        client, auth_headers, entities.legal.id, "laporan.pdf", content
+    )
+    document_id = UUID(finance.json()["id"])
+
+    first = await client.delete(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}",
+        headers=auth_headers,
+    )
+    second = await client.delete(
+        f"/v1/workspaces/{entities.legal.id}/documents/{document_id}",
+        headers=auth_headers,
+    )
+
+    assert first.status_code == second.status_code == 204
+    assert object_storage.objects == {}
+    async with db_session_factory() as session:
+        document = await session.get(Document, document_id)
+        delete_runs = (
+            await session.scalars(
+                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
+            )
+        ).all()
+    assert document is not None and document.deleted_at is not None
+    assert len(delete_runs) == 1
+
+
+async def test_reuploading_to_a_workspace_reactivates_its_deleted_link(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    object_storage: InMemoryObjectStorage,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    content = pdf_bytes()
+    first = await upload(
+        client, auth_headers, entities.finance.id, "report.pdf", content
+    )
+    await upload(client, auth_headers, entities.legal.id, "laporan.pdf", content)
+    document_id = UUID(first.json()["id"])
+
+    await client.delete(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}",
+        headers=auth_headers,
+    )
+    again = await upload(
+        client, auth_headers, entities.finance.id, "report-again.pdf", content
+    )
+
+    assert again.status_code == 200
+    assert again.json()["duplicate"] is True
+    assert len(object_storage.objects) == 1
+    async with db_session_factory() as session:
+        link = await session.scalar(
+            select(DocumentWorkspace).where(
+                DocumentWorkspace.workspace_id == entities.finance.id,
+                DocumentWorkspace.document_id == document_id,
+            )
+        )
+    assert link is not None
+    assert link.deleted_at is None
+    assert link.filename == "report-again.pdf"

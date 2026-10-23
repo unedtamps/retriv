@@ -34,6 +34,7 @@ from app.db.models import (
     Document,
     DocumentChunk,
     DocumentRow,
+    DocumentWorkspace,
     ProcessingRun,
 )
 from app.embeddings.base import (
@@ -51,6 +52,7 @@ from app.infrastructure.storage import (
     ObjectNotFoundError,
     ObjectTooLargeError,
 )
+from app.processing.service import enqueue_access_sync
 from app.processing.worker import ProcessingWorker, utcnow
 from app.sections import encode_section_key
 from app.vision.base import VisionProviderError
@@ -191,8 +193,9 @@ class FakeVectorStore(VectorStore):
     def __init__(self, error: Exception | None = None) -> None:
         self._error = error
         self.points: dict[str, VectorPoint] = {}
-        self.deleted_documents: list[tuple[UUID, UUID]] = []
+        self.deleted_documents: list[UUID] = []
         self.deleted_points: list[UUID] = []
+        self.workspace_payloads: dict[UUID, list[UUID]] = {}
 
     async def ensure_collection(self) -> None:
         return
@@ -208,14 +211,21 @@ class FakeVectorStore(VectorStore):
         for point_id in point_ids:
             self.points.pop(str(point_id), None)
 
-    async def delete_document(self, workspace_id: UUID, document_id: UUID) -> None:
-        self.deleted_documents.append((workspace_id, document_id))
+    async def delete_document(self, document_id: UUID) -> None:
+        self.deleted_documents.append(document_id)
         for key, point in list(self.points.items()):
-            if (
-                point.payload.get("workspace_id") == str(workspace_id)
-                and point.payload.get("document_id") == str(document_id)
-            ):
+            if point.payload.get("document_id") == str(document_id):
                 del self.points[key]
+
+    async def set_document_workspaces(
+        self, document_id: UUID, workspace_ids: list[UUID]
+    ) -> None:
+        self.workspace_payloads[document_id] = list(workspace_ids)
+        for point in self.points.values():
+            if point.payload.get("document_id") == str(document_id):
+                point.payload["workspace_ids"] = [
+                    str(workspace_id) for workspace_id in workspace_ids
+                ]
 
     async def search(
         self,
@@ -267,7 +277,7 @@ async def seed_document(
     object_key = f"workspaces/{workspace_id}/objects/{digest}/{document_id}"
     document = Document(
         id=document_id,
-        workspace_id=workspace_id,
+        origin_workspace_id=workspace_id,
         original_filename=filename,
         detected_media_type=media_type,
         size_bytes=len(content),
@@ -278,16 +288,21 @@ async def seed_document(
     run = ProcessingRun(
         id=uuid4(),
         document_id=document_id,
-        workspace_id=workspace_id,
+        origin_workspace_id=workspace_id,
         job_kind=JOB_EXTRACT,
         pipeline_version="2026.1",
         status=RUN_QUEUED,
     )
     document.active_processing_run_id = run.id
+    link = DocumentWorkspace(
+        workspace_id=workspace_id,
+        document_id=document_id,
+        filename=filename,
+    )
     if storage is not None:
         storage.objects[("raw-documents", object_key)] = content
     async with session_factory() as session, session.begin():
-        session.add_all([document, run])
+        session.add_all([document, link, run])
     return document, run
 
 
@@ -333,8 +348,11 @@ async def test_worker_indexes_a_document_end_to_end(
         key.startswith(f"workspaces/{entities.finance.id}/documents/{document.id}/")
         for _bucket, key in storage.objects
     )
-    # and the vector is in the store
+    # and the vector is in the store, carrying the workspace link array
     assert len(vectors.points) == 1
+    point = next(iter(vectors.points.values()))
+    assert point.payload["origin_workspace_id"] == str(entities.finance.id)
+    assert point.payload["workspace_ids"] == [str(entities.finance.id)]
 
 
 async def test_a_completed_run_records_its_progress_and_its_attempt(
@@ -616,7 +634,7 @@ async def test_delete_removes_vectors_before_the_document_row(
     )
     assert await deleter.run_once() is True
 
-    assert (entities.finance.id, document.id) in vectors.deleted_documents, (
+    assert document.id in vectors.deleted_documents, (
         "the vector store was never told to drop the document's points"
     )
     assert not vectors.points, "no vector survives the delete"
@@ -838,7 +856,7 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
             finished_document_id = uuid4()
             finished_document = Document(
                 id=finished_document_id,
-                workspace_id=entities.finance.id,
+                origin_workspace_id=entities.finance.id,
                 original_filename=f"finished-{index}.pdf",
                 detected_media_type="application/pdf",
                 size_bytes=1,
@@ -855,7 +873,7 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
                 ProcessingRun(
                     id=finished_run_id,
                     document_id=finished_document_id,
-                    workspace_id=entities.finance.id,
+                    origin_workspace_id=entities.finance.id,
                     job_kind=JOB_EXTRACT,
                     pipeline_version="2026.1",
                     status=RUN_READY,
@@ -1013,7 +1031,7 @@ async def test_a_reingest_removes_the_superseded_rows(
     second = ProcessingRun(
         id=uuid4(),
         document_id=document.id,
-        workspace_id=document.workspace_id,
+        origin_workspace_id=document.origin_workspace_id,
         job_kind=JOB_EXTRACT,
         pipeline_version="2026.1",
         status=RUN_QUEUED,
@@ -1181,7 +1199,7 @@ async def test_deleting_a_csv_document_removes_its_rows(
             ProcessingRun(
                 id=uuid4(),
                 document_id=document.id,
-                workspace_id=document.workspace_id,
+                origin_workspace_id=document.origin_workspace_id,
                 job_kind=JOB_DELETE,
                 pipeline_version="2026.1",
                 status=RUN_QUEUED,
@@ -1482,3 +1500,42 @@ async def test_zero_max_images_means_no_cap(
     assert "A description of #/pictures/0." in chunks[0].text
     assert "A description of #/pictures/1." in chunks[0].text
     assert "[Image]" not in chunks[0].text
+
+
+async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    storage = FakeStorage()
+    document, _ = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    vectors = FakeVectorStore()
+    worker = build_worker(
+        db_session_factory, settings, storage=storage, vectors=vectors
+    )
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session, session.begin():
+        stored = await session.get(Document, document.id)
+        assert stored is not None
+        session.add(
+            DocumentWorkspace(
+                workspace_id=entities.legal.id,
+                document_id=document.id,
+                filename="laporan.pdf",
+            )
+        )
+        await enqueue_access_sync(session, stored, settings)
+
+    assert await worker.run_once() is True
+
+    expected = {str(entities.finance.id), str(entities.legal.id)}
+    assert set(vectors.workspace_payloads[document.id]) == {
+        entities.finance.id,
+        entities.legal.id,
+    }
+    assert len(vectors.points) == 1
+    point = next(iter(vectors.points.values()))
+    assert set(point.payload["workspace_ids"]) == expected

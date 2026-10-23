@@ -44,13 +44,13 @@ def make_settings() -> Settings:
     )
 
 
-def tables() -> tuple[MetaData, Table, Table, Table]:
+def tables() -> tuple[MetaData, Table, Table, Table, Table]:
     metadata = MetaData()
     documents = Table(
         "documents",
         metadata,
         Column("id", Uuid(as_uuid=True), primary_key=True),
-        Column("workspace_id", Uuid(as_uuid=True)),
+        Column("origin_workspace_id", Uuid(as_uuid=True)),
         Column("active_processing_run_id", Uuid(as_uuid=True)),
         Column("deleted_at", DateTime(timezone=True)),
         Column("original_filename", String(255)),
@@ -59,7 +59,7 @@ def tables() -> tuple[MetaData, Table, Table, Table]:
         "document_chunks",
         metadata,
         Column("id", Uuid(as_uuid=True), primary_key=True),
-        Column("workspace_id", Uuid(as_uuid=True)),
+        Column("origin_workspace_id", Uuid(as_uuid=True)),
         Column("document_id", Uuid(as_uuid=True)),
         Column("processing_run_id", Uuid(as_uuid=True)),
         Column("ordinal", Integer),
@@ -71,11 +71,19 @@ def tables() -> tuple[MetaData, Table, Table, Table]:
         Column("is_heading_only", Boolean),
         Column("page_numbers", JSON),
     )
+    links = Table(
+        "document_workspaces",
+        metadata,
+        Column("workspace_id", Uuid(as_uuid=True), primary_key=True),
+        Column("document_id", Uuid(as_uuid=True), primary_key=True),
+        Column("filename", String(255)),
+        Column("deleted_at", DateTime(timezone=True)),
+    )
     embeddings = Table(
         "chunk_embeddings",
         metadata,
         Column("chunk_id", Uuid(as_uuid=True), primary_key=True),
-        Column("workspace_id", Uuid(as_uuid=True)),
+        Column("origin_workspace_id", Uuid(as_uuid=True)),
         Column("document_id", Uuid(as_uuid=True)),
         Column("processing_run_id", Uuid(as_uuid=True)),
         Column("embedding_profile", String(255)),
@@ -85,7 +93,7 @@ def tables() -> tuple[MetaData, Table, Table, Table]:
         Column("content_hash", String(64)),
         Column("qdrant_point_id", Uuid(as_uuid=True)),
     )
-    return metadata, documents, chunks, embeddings
+    return metadata, documents, chunks, embeddings, links
 
 
 async def seed_section(
@@ -93,6 +101,7 @@ async def seed_section(
     documents: Table,
     chunks: Table,
     embeddings: Table,
+    links: Table,
     workspace_id: UUID,
     entries: Sequence[tuple[int, str, Sequence[str]]],
     *,
@@ -112,10 +121,18 @@ async def seed_section(
         await connection.execute(
             insert(documents).values(
                 id=document_id,
-                workspace_id=workspace_id,
+                origin_workspace_id=workspace_id,
                 active_processing_run_id=processing_run_id,
                 deleted_at=deleted_at,
                 original_filename="regulations.pdf",
+            )
+        )
+        await connection.execute(
+            insert(links).values(
+                workspace_id=workspace_id,
+                document_id=document_id,
+                filename="regulations.pdf",
+                deleted_at=deleted_at,
             )
         )
         seeded: list[dict[str, UUID | str | int]] = []
@@ -127,7 +144,7 @@ async def seed_section(
             await connection.execute(
                 insert(chunks).values(
                     id=chunk_id,
-                    workspace_id=workspace_id,
+                    origin_workspace_id=workspace_id,
                     document_id=document_id,
                     processing_run_id=processing_run_id,
                     ordinal=ordinal,
@@ -145,7 +162,7 @@ async def seed_section(
             await connection.execute(
                 insert(embeddings).values(
                     chunk_id=chunk_id,
-                    workspace_id=workspace_id,
+                    origin_workspace_id=workspace_id,
                     document_id=document_id,
                     processing_run_id=processing_run_id,
                     embedding_profile="test-profile",
@@ -178,6 +195,7 @@ async def seed_active_chunk(
     documents: Table,
     chunks: Table,
     embeddings: Table,
+    links: Table,
     workspace_id: UUID,
 ) -> dict[str, UUID | str]:
     document_id = uuid4()
@@ -190,16 +208,24 @@ async def seed_active_chunk(
         await connection.execute(
             insert(documents).values(
                 id=document_id,
-                workspace_id=workspace_id,
+                origin_workspace_id=workspace_id,
                 active_processing_run_id=processing_run_id,
                 deleted_at=None,
                 original_filename="report.pdf",
             )
         )
         await connection.execute(
+            insert(links).values(
+                workspace_id=workspace_id,
+                document_id=document_id,
+                filename="report.pdf",
+                deleted_at=None,
+            )
+        )
+        await connection.execute(
             insert(chunks).values(
                 id=chunk_id,
-                workspace_id=workspace_id,
+                origin_workspace_id=workspace_id,
                 document_id=document_id,
                 processing_run_id=processing_run_id,
                 ordinal=2,
@@ -213,7 +239,7 @@ async def seed_active_chunk(
         await connection.execute(
             insert(embeddings).values(
                 chunk_id=chunk_id,
-                workspace_id=workspace_id,
+                origin_workspace_id=workspace_id,
                 document_id=document_id,
                 processing_run_id=processing_run_id,
                 embedding_profile="test-profile",
@@ -234,9 +260,10 @@ async def seed_active_chunk(
     }
 
 
-def qdrant_payload(row: Mapping[str, UUID | str | int]) -> dict[str, str]:
+def qdrant_payload(row: Mapping[str, UUID | str | int]) -> dict[str, object]:
     return {
-        "workspace_id": str(row["workspace_id"]),
+        "origin_workspace_id": str(row["workspace_id"]),
+        "workspace_ids": [str(row["workspace_id"])],
         "document_id": str(row["document_id"]),
         "processing_run_id": str(row["processing_run_id"]),
         "chunk_id": str(row["chunk_id"]),
@@ -304,11 +331,11 @@ async def test_retrieval_filters_qdrant_and_returns_only_validated_postgres_text
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
-    row = await seed_active_chunk(engine, documents, chunks, embeddings, workspace_id)
+    row = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
     point = {
         "id": str(row["qdrant_point_id"]),
         "score": 0.93,
@@ -335,7 +362,8 @@ async def test_retrieval_filters_qdrant_and_returns_only_validated_postgres_text
     assert body["filter"]["must"][0]["match"]["any"] == [str(workspace_id)]
     assert body["filter"]["must"][1]["match"]["value"] == "test-profile"
     assert body["with_payload"] == [
-        "workspace_id",
+        "origin_workspace_id",
+        "workspace_ids",
         "document_id",
         "processing_run_id",
         "chunk_id",
@@ -409,11 +437,11 @@ async def test_qdrant_metadata_mismatch_aborts_retrieval() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
-    row = await seed_active_chunk(engine, documents, chunks, embeddings, workspace_id)
+    row = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
     payload = qdrant_payload(row)
     payload["document_id"] = str(uuid4())
     point = {"id": str(row["qdrant_point_id"]), "score": 0.9, "payload": payload}
@@ -433,11 +461,11 @@ async def test_inactive_document_run_is_never_returned() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
-    row = await seed_active_chunk(engine, documents, chunks, embeddings, workspace_id)
+    row = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
     async with engine.begin() as connection:
         await connection.execute(
             update(documents)
@@ -465,11 +493,11 @@ async def test_chunk_text_must_match_persisted_content_hash() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
-    row = await seed_active_chunk(engine, documents, chunks, embeddings, workspace_id)
+    row = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
     async with engine.begin() as connection:
         await connection.execute(
             update(chunks)
@@ -546,7 +574,7 @@ async def test_a_heading_match_pulls_in_the_subtree_it_heads() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -555,6 +583,7 @@ async def test_a_heading_match_pulls_in_the_subtree_it_heads() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
@@ -616,7 +645,7 @@ async def test_completion_never_reaches_a_cousin_section() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -625,6 +654,7 @@ async def test_completion_never_reaches_a_cousin_section() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
@@ -680,7 +710,7 @@ async def test_an_underscore_in_a_heading_does_not_widen_the_subtree() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -689,6 +719,7 @@ async def test_an_underscore_in_a_heading_does_not_widen_the_subtree() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Ayat (1)_a adalah ketentuan pertama.", ["PMK", "Ayat (1)_a"]),
@@ -731,7 +762,7 @@ async def test_heading_expansion_never_exceeds_the_callers_budget() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -740,6 +771,7 @@ async def test_heading_expansion_never_exceeds_the_callers_budget() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
@@ -806,7 +838,7 @@ async def test_a_fully_matched_section_adds_nothing() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -815,6 +847,7 @@ async def test_a_fully_matched_section_adds_nothing() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Regulation 16.01 body text of ordinary length.", ["PMK", "16.01"]),
@@ -863,7 +896,7 @@ async def test_completion_never_reaches_outside_the_signed_scope() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -873,6 +906,7 @@ async def test_completion_never_reaches_outside_the_signed_scope() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
@@ -888,6 +922,7 @@ async def test_completion_never_reaches_outside_the_signed_scope() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         other_workspace_id,
         [
             (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
@@ -936,7 +971,7 @@ async def test_completion_still_fires_when_qdrant_fills_its_quota() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -945,6 +980,7 @@ async def test_completion_still_fires_when_qdrant_fills_its_quota() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
@@ -1011,7 +1047,7 @@ async def test_completion_is_off_when_no_budget_is_granted() -> None:
         }
     )
     engine = create_async_engine(settings.database_url)
-    metadata, documents, chunks, embeddings = tables()
+    metadata, documents, chunks, embeddings, links = tables()
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     workspace_id = uuid4()
@@ -1020,6 +1056,7 @@ async def test_completion_is_off_when_no_budget_is_granted() -> None:
         documents,
         chunks,
         embeddings,
+        links,
         workspace_id,
         [
             (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
@@ -1052,3 +1089,50 @@ async def test_completion_is_off_when_no_budget_is_granted() -> None:
         "the shipped default must leave room, or the tool can never complete "
         "a section on a full page of matches"
     )
+
+
+async def test_a_document_linked_to_two_workspaces_is_found_from_either() -> None:
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "qdrant_collection": "test-chunks",
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings, links = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    first_workspace = uuid4()
+    second_workspace = uuid4()
+    row = await seed_active_chunk(
+        engine, documents, chunks, embeddings, links, first_workspace
+    )
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(links).values(
+                workspace_id=second_workspace,
+                document_id=row["document_id"],
+                filename="shared.pdf",
+                deleted_at=None,
+            )
+        )
+    payload = qdrant_payload(row)
+    payload["workspace_ids"] = [
+        str(first_workspace),
+        str(second_workspace),
+    ]
+    point = {
+        "id": str(row["qdrant_point_id"]),
+        "score": 0.93,
+        "payload": payload,
+    }
+    retriever, _, _ = await make_retriever(settings, engine, point)
+    try:
+        sources = await retriever.retrieve("question", [second_workspace], 2)
+    finally:
+        await retriever.aclose()
+
+    assert len(sources) == 1
+    assert sources[0].workspace_id == second_workspace
+    assert sources[0].filename == "shared.pdf"

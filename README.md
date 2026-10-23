@@ -81,7 +81,8 @@ PDF away from the request path.
 - Workspace access lives in a membership table with role `owner`, `editor`, or `viewer`.
 - Every authenticated user can see the workspace catalogue; document data requires a
   matching membership.
-- Identical bytes in the same workspace are deduplicated by SHA-256.
+- Identical bytes are one canonical document no matter which workspace uploads them. A
+  second workspace gets a link, not a second object, chunk set, or vector set.
 - Uploads default to 50 MiB and 500 pages; encrypted and macro-enabled documents are
   rejected, and ClamAV scans before anything is stored.
 - `PDF` and `DOCX` are chunked and embedded. `CSV` is stored as rows and queried with
@@ -199,8 +200,9 @@ document_id. Without it a model can only learn an id from a search result or the
 catalogue, so naming a file in a question is not something it can act on. It reports
 each match's status, because `ready` is the difference between a document that answers
 a question and one that returns nothing yet, and each match's size and workspace,
-because **filenames are not unique** -- only content is, per workspace, so two revisions
-of one document both appear and have to be told apart by the caller.
+because **filenames are not unique** and one document can be linked to several
+workspaces with a different name in each. Content is deduplicated globally; the
+workspace and filename on a result come from the link that made it visible.
 
 `download_document` is the way out to the file itself, and it is worth understanding what
 it deliberately does not do: it returns addresses and metadata, never the bytes. A tool
@@ -253,7 +255,7 @@ sequenceDiagram
     C->>A: tools/call search_context(query)
     A->>E: embed the query
     E-->>A: vector
-    A->>Q: search, filter workspace_id IN scope
+    A->>Q: search, filter workspace_ids contains a scope workspace
     A->>DB: re-validate every point against PostgreSQL
     A->>DB: complete each named section, same re-validation
     A-->>C: labelled sources, one citation each
@@ -483,18 +485,22 @@ sequenceDiagram
         A-->>W: 422 malware_detected
     end
     A->>A: validate media type, pages, macros
-    A->>DB: SELECT by (workspace_id, sha256)
-    alt already stored and not being deleted
-        DB-->>A: existing row
+    A->>DB: SELECT the canonical document by sha256
+    alt canonical exists and this workspace has no link
+        DB-->>A: document
+        A->>DB: INSERT document_workspaces
+        A->>DB: INSERT processing_runs (job_kind=access)
         A-->>W: 200 with duplicate=true
+        Note over A,DB: no object, chunk or vector is created again
+    else canonical does not exist
+        A->>M: PUT raw-documents/workspaces/{ws}/objects/{sha}/{id}
+        A->>DB: BEGIN
+        A->>DB: INSERT documents and document_workspaces
+        A->>DB: INSERT processing_runs (status=queued)
+        A->>DB: COMMIT
+        A-->>W: 202 Accepted
+        W-->>U: "processing"
     end
-    A->>M: PUT raw-documents/workspaces/{ws}/objects/{sha}/{id}
-    A->>DB: BEGIN
-    A->>DB: INSERT documents
-    A->>DB: INSERT processing_runs (status=queued)
-    A->>DB: COMMIT
-    A-->>W: 202 Accepted
-    W-->>U: "processing"
 
     loop every 2s
         K->>DB: SELECT ... WHERE status IN (queued, retry_wait) FOR UPDATE SKIP LOCKED
@@ -515,7 +521,7 @@ sequenceDiagram
         loop in batches
             K->>L: POST /embeddings
             L-->>K: vectors
-            K->>Q: upsert points, each payload carrying its workspace and run
+            K->>Q: upsert points, each payload carrying workspace_ids and its run
         end
     else CSV
         K->>K: stdlib csv reader into memory, one dict per row
@@ -532,6 +538,19 @@ A CSV takes the rows path, not the chunk path. It is tabular data the model will
 aggregate rather than prose it will quote, so it is stored verbatim as JSONB and
 queried with SQL. Nothing is embedded, which is why the run reports `row_count = 320`
 rather than a chunk count.
+
+Every vector carries `workspace_ids`, the array of workspaces currently linked to its
+canonical document. A search filters that indexed array rather than a document list, so
+the cost is one keyword lookup no matter how many documents the caller can see. Adding
+or removing a link queues a small `access` run; the worker recomputes the array from
+`document_workspaces` and updates the payload for every chunk of that document in one
+Qdrant call. Nothing is re-chunked or re-embedded. PostgreSQL still validates every
+returned chunk against the live link, so a payload that is a few seconds behind cannot
+leak a workspace that was already unlinked.
+
+Existing Qdrant collections carry the old `workspace_id` payload, so this is a
+breaking index change: drop the collection (or use a new `RETRIV_QDRANT_COLLECTION`)
+and reindex before starting the worker.
 
 A document cannot exist without a way to be processed: the row and the run commit
 together or not at all. There is no outbox and no retry-on-replay, because there is no
@@ -660,35 +679,34 @@ sequenceDiagram
     participant Q as Qdrant
 
     U->>A: DELETE /v1/workspaces/{id}/documents/{id}
-    A->>DB: SELECT ... FOR UPDATE
-    A->>DB: UPDATE documents SET deleted_at
-    A->>DB: CANCEL any in-flight extract run
-    A->>DB: INSERT processing_runs (job_kind=delete, status=queued)
-    A->>DB: COMMIT
-    A->>M: DELETE the raw object
-    A-->>U: 204 No Content
-
-    Note over U,A: the row still exists and the UI shows deleting
-
-    U->>A: re-upload the same bytes
-    A-->>U: 409 document_deletion_in_progress
-
-    K->>Q: delete every point for the document
-    K->>M: delete the artifact prefix
-    K->>DB: DELETE the document row
-    Note right of DB: cascades to chunks and the embedding ledger
-
-    U->>A: re-upload the same bytes
-    A-->>U: 202 Accepted
+    A->>DB: SELECT link and document FOR UPDATE
+    A->>DB: UPDATE document_workspaces SET deleted_at
+    alt other links remain
+        A->>DB: INSERT processing_runs (job_kind=access)
+        A-->>U: 204 No Content
+        Note over A,DB: the document, object and vectors stay alive
+    else this was the last link
+        A->>DB: UPDATE documents SET deleted_at
+        A->>DB: CANCEL any in-flight extract run
+        A->>DB: INSERT processing_runs (job_kind=delete, status=queued)
+        A->>DB: COMMIT
+        A->>M: DELETE the raw object
+        A-->>U: 204 No Content
+        K->>Q: delete every point for the document
+        K->>M: delete the artifact prefix
+        K->>DB: DELETE the document row
+        Note right of DB: cascades to links, chunks and the embedding ledger
+    end
 ```
 
 The Qdrant point IDs live in `chunk_embeddings`, which cascades away with the document.
 Deleting the row first would orphan every vector the document ever produced, with no
 record of where to find them. So the row outlives the request and dies last.
 
-While the cleanup is in flight the `(workspace_id, sha256)` unique constraint still
+While the last-link cleanup is in flight the global `sha256` unique constraint still
 holds the row, which is why an identical re-upload is refused rather than silently
-creating a duplicate.
+creating a duplicate. An upload to a workspace whose link is deleted but whose canonical
+document is still linked elsewhere simply reactivates that link.
 
 ## Authentication and revocation
 
@@ -763,8 +781,9 @@ The admin can create workspaces and assign their first owner through `/v1/admin`
 erDiagram
     users ||--o{ workspace_memberships : "joins"
     workspaces ||--o{ workspace_memberships : "has"
-    workspaces ||--o{ documents : "contains"
-    users ||--o{ documents : "uploaded, nullable"
+    workspaces ||--o{ document_workspaces : "links"
+    documents ||--o{ document_workspaces : "is linked from"
+    users ||--o{ document_workspaces : "added, nullable"
     users ||--o{ api_keys : "owns"
     documents ||--o{ processing_runs : "is processed by"
     processing_runs ||--o{ document_chunks : "produces, PDF or DOCX"
@@ -791,19 +810,26 @@ erDiagram
     }
     documents {
         uuid id PK
-        uuid workspace_id FK
+        uuid origin_workspace_id FK "origin workspace, not access scope"
         uuid created_by_user_id FK "null for external sources"
-        text sha256
+        text sha256 UK "one canonical document per content"
         text bucket
         text object_key
         uuid active_processing_run_id "the run whose chunks are live"
         timestamptz deleted_at "a tombstone, not a hard delete"
     }
+    document_workspaces {
+        uuid workspace_id PK
+        uuid document_id PK
+        text filename "name in this workspace"
+        uuid created_by_user_id FK "null for external sources"
+        timestamptz deleted_at "per-workspace unlink"
+    }
     processing_runs {
         uuid id PK
         uuid document_id FK
-        uuid workspace_id
-        text job_kind "extract or delete"
+        uuid origin_workspace_id
+        text job_kind "extract, delete, or access sync"
         text status "12 states"
         int attempts
         timestamptz lease_until

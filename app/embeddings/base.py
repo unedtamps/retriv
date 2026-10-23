@@ -19,7 +19,7 @@ class VectorStoreError(Exception):
 class VectorPoint:
     id: UUID
     vector: list[float]
-    payload: dict[str, str | int]
+    payload: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,11 @@ class VectorStore(Protocol):
 
     async def delete_points(self, point_ids: list[UUID]) -> None: ...
 
-    async def delete_document(self, workspace_id: UUID, document_id: UUID) -> None: ...
+    async def delete_document(self, document_id: UUID) -> None: ...
+
+    async def set_document_workspaces(
+        self, document_id: UUID, workspace_ids: list[UUID]
+    ) -> None: ...
 
     async def search(
         self,

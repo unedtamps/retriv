@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -7,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
-from app.db.models import Document, User, Workspace
+from app.db.models import Document, DocumentWorkspace, User, Workspace
 from app.db.session import get_session
 from app.infrastructure.scanner import MalwareScanner, get_malware_scanner
 from app.infrastructure.storage import ObjectStorage, get_object_storage
@@ -137,6 +139,84 @@ async def get_admin_user(current_user: CurrentUser) -> User:
     return require_platform_admin(current_user)
 
 
+@dataclass(frozen=True)
+class ScopedDocument:
+    """A canonical document as seen through one workspace link."""
+
+    document: Document
+    link: DocumentWorkspace
+
+    @property
+    def id(self) -> UUID:
+        return self.document.id
+
+    @property
+    def workspace_id(self) -> UUID:
+        return self.link.workspace_id
+
+    @property
+    def original_filename(self) -> str:
+        return self.link.filename
+
+    @property
+    def detected_media_type(self) -> str:
+        return self.document.detected_media_type
+
+    @property
+    def size_bytes(self) -> int:
+        return self.document.size_bytes
+
+    @property
+    def sha256(self) -> str:
+        return self.document.sha256
+
+    @property
+    def bucket(self) -> str:
+        return self.document.bucket
+
+    @property
+    def object_key(self) -> str:
+        return self.document.object_key
+
+    @property
+    def created_by_user_id(self) -> UUID | None:
+        return self.link.created_by_user_id
+
+    @property
+    def created_at(self) -> datetime:
+        return self.link.created_at
+
+    @property
+    def deleted_at(self) -> datetime | None:
+        return self.link.deleted_at or self.document.deleted_at
+
+    @property
+    def active_processing_run_id(self) -> UUID | None:
+        return self.document.active_processing_run_id
+
+
+async def load_scoped_document(
+    session: AsyncSession, *, workspace_id: UUID, document_id: UUID
+) -> ScopedDocument | None:
+    row = (
+        await session.execute(
+            select(Document, DocumentWorkspace)
+            .join(
+                DocumentWorkspace,
+                DocumentWorkspace.document_id == Document.id,
+            )
+            .where(
+                Document.id == document_id,
+                DocumentWorkspace.workspace_id == workspace_id,
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    document, link = row
+    return ScopedDocument(document=document, link=link)
+
+
 WorkspaceContext = Annotated[Workspace, Depends(get_workspace)]
 UploadWorkspaceContext = Annotated[Workspace, Depends(get_upload_workspace)]
 DownloadWorkspaceContext = Annotated[Workspace, Depends(get_download_workspace)]
@@ -153,12 +233,9 @@ async def get_document(
     document_id: UUID,
     workspace: WorkspaceContext,
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> Document:
-    document = await session.scalar(
-        select(Document).where(
-            Document.id == document_id,
-            Document.workspace_id == workspace.id,
-        )
+) -> ScopedDocument:
+    document = await load_scoped_document(
+        session, workspace_id=workspace.id, document_id=document_id
     )
     if document is None:
         raise AppError(
@@ -170,19 +247,16 @@ async def get_document(
     return document
 
 
-DocumentContext = Annotated[Document, Depends(get_document)]
+DocumentContext = Annotated[ScopedDocument, Depends(get_document)]
 
 
 async def get_downloadable_document(
     document_id: UUID,
     workspace: DownloadWorkspaceContext,
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> Document:
-    document = await session.scalar(
-        select(Document).where(
-            Document.id == document_id,
-            Document.workspace_id == workspace.id,
-        )
+) -> ScopedDocument:
+    document = await load_scoped_document(
+        session, workspace_id=workspace.id, document_id=document_id
     )
     if document is None:
         raise AppError(
@@ -198,12 +272,9 @@ async def get_mutable_document(
     document_id: UUID,
     workspace: MutationWorkspaceContext,
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> Document:
-    document = await session.scalar(
-        select(Document).where(
-            Document.id == document_id,
-            Document.workspace_id == workspace.id,
-        )
+) -> ScopedDocument:
+    document = await load_scoped_document(
+        session, workspace_id=workspace.id, document_id=document_id
     )
     if document is None:
         raise AppError(
@@ -216,6 +287,6 @@ async def get_mutable_document(
 
 
 DownloadableDocumentContext = Annotated[
-    Document, Depends(get_downloadable_document)
+    ScopedDocument, Depends(get_downloadable_document)
 ]
-MutableDocumentContext = Annotated[Document, Depends(get_mutable_document)]
+MutableDocumentContext = Annotated[ScopedDocument, Depends(get_mutable_document)]

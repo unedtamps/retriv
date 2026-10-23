@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -41,7 +41,7 @@ if TYPE_CHECKING:  # avoids a cycle: the agent imports this module
 # nothing to cite and nothing to render.
 _REQUIRED_COLUMNS = (
     "id",
-    "workspace_id",
+    "origin_workspace_id",
     "document_id",
     "processing_run_id",
     "row_number",
@@ -191,7 +191,7 @@ class CatalogueReader:
     async def queryable_files(self, *, workspace_ids: tuple[UUID, ...]) -> Catalogue:
         from sqlalchemy import select as sa_select
 
-        from app.db.models import Document, ProcessingRun
+        from app.db.models import Document, DocumentWorkspace, ProcessingRun
 
         if not workspace_ids:
             return Catalogue(entries=[], hidden=0)
@@ -199,20 +199,25 @@ class CatalogueReader:
             rows = await session.execute(
                 sa_select(
                     Document.id,
-                    Document.workspace_id,
+                    DocumentWorkspace.workspace_id,
                     ProcessingRun.id,
-                    Document.original_filename,
+                    DocumentWorkspace.filename,
                     ProcessingRun.row_count,
                     ProcessingRun.csv_columns,
                 )
+                .join(
+                    DocumentWorkspace,
+                    DocumentWorkspace.document_id == Document.id,
+                )
                 .join(ProcessingRun, ProcessingRun.id == Document.active_processing_run_id)
                 .where(
-                    Document.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.deleted_at.is_(None),
                     Document.deleted_at.is_(None),
                     Document.detected_media_type == "text/csv",
                     ProcessingRun.status == "ready",
                 )
-                .order_by(Document.original_filename, Document.id)
+                .order_by(DocumentWorkspace.filename, Document.id)
             )
             found = [tuple(r) for r in rows]
         return Catalogue(
@@ -240,19 +245,29 @@ class CatalogueReader:
         """
         from sqlalchemy import select as sa_select
 
-        from app.db.models import Document
+        from app.db.models import Document, DocumentWorkspace
 
         if not workspace_ids or not document_ids:
             return {}
         async with self._session_factory() as session:
             rows = await session.execute(
-                sa_select(Document.id, Document.original_filename).where(
+                sa_select(Document.id, DocumentWorkspace.filename)
+                .join(
+                    DocumentWorkspace,
+                    DocumentWorkspace.document_id == Document.id,
+                )
+                .where(
                     Document.id.in_(document_ids),
-                    Document.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.deleted_at.is_(None),
                     Document.deleted_at.is_(None),
                 )
+                .order_by(Document.id, DocumentWorkspace.workspace_id)
             )
-            return {document_id: filename for document_id, filename in rows}
+            result: dict[UUID, str] = {}
+            for document_id, filename in rows:
+                result.setdefault(document_id, filename)
+            return result
 
 
 class RowQuery:
@@ -341,12 +356,58 @@ class RowQuery:
                 result = await connection.execute(text(limited))
                 rows = result.fetchall()
                 keys = tuple(result.keys())
+                link_scope = await self._link_scope_map(
+                    connection, rows, keys, workspace_ids
+                )
             except DBAPIError as exc:
                 raise RowQueryError(_explain(exc)) from exc
             finally:
                 await connection.rollback()
 
-        return self._to_results(rows, keys)
+        return self._to_results(rows, keys, link_scope)
+
+    async def _link_scope_map(
+        self,
+        connection: Any,
+        rows: Sequence[Any],
+        keys: tuple[str, ...],
+        workspace_ids: tuple[UUID, ...],
+    ) -> dict[UUID, UUID]:
+        """Pick the workspace link a returned row should cite.
+
+        ``document_rows.origin_workspace_id`` is the document's origin. A shared
+        document may be visible through a different workspace, so the link
+        table is the authority for the label the caller sees.
+        """
+        if "document_id" not in keys:
+            return {}
+        document_ids = {
+            row[keys.index("document_id")]
+            for row in rows
+            if isinstance(row[keys.index("document_id")], UUID)
+        }
+        if not document_ids:
+            return {}
+        result = await connection.execute(
+            text(
+                "select document_id, workspace_id from document_workspaces "
+                "where document_id in :document_ids "
+                "and workspace_id in :workspace_ids "
+                "and deleted_at is null "
+                "order by document_id, workspace_id"
+            ).bindparams(
+                bindparam("document_ids", expanding=True),
+                bindparam("workspace_ids", expanding=True),
+            ),
+            {
+                "document_ids": list(document_ids),
+                "workspace_ids": list(workspace_ids),
+            },
+        )
+        chosen: dict[UUID, UUID] = {}
+        for document_id, workspace_id in result:
+            chosen.setdefault(document_id, workspace_id)
+        return chosen
 
     def _validate(self, sql: str) -> None:
         statement = sql.strip()
@@ -367,7 +428,10 @@ class RowQuery:
                 raise RowQueryError(f"Queries may only read {_sorted_names()}")
 
     def _to_results(
-        self, rows: Sequence[Any], keys: tuple[str, ...]
+        self,
+        rows: Sequence[Any],
+        keys: tuple[str, ...],
+        link_scope: dict[UUID, UUID] | None = None,
     ) -> RowQueryResult:
         sources: list[RowResult] = []
         values: list[dict[str, Any]] = []
@@ -389,7 +453,9 @@ class RowQuery:
             sources.append(
                 RowResult(
                     chunk_id=mapping["id"],
-                    workspace_id=mapping["workspace_id"],
+                    workspace_id=(link_scope or {}).get(
+                        mapping["document_id"], mapping["origin_workspace_id"]
+                    ),
                     document_id=mapping["document_id"],
                     processing_run_id=mapping["processing_run_id"],
                     row_number=int(mapping["row_number"] or 0),
@@ -442,6 +508,7 @@ class RowQuery:
             )
             conditions = [
                 "d.deleted_at is null",
+                "dw.deleted_at is null",
                 "d.detected_media_type = 'text/csv'",
                 # Only a finished run becomes active, so a file still
                 # processing or a re-ingest that failed stays invisible
@@ -492,15 +559,16 @@ def catalogue_statement(conditions: list[str]) -> str:
         # Fragments are literals and values bind as parameters, so nothing
         # model-authored reaches this string. count(*) over () counts past
         # limit/offset, letting the catalogue report what it is not showing.
-        "select d.id, d.workspace_id, pr.id, "  # noqa: S608
-        "d.original_filename, pr.row_count, pr.csv_columns, "
+        "select d.id, dw.workspace_id, pr.id, "  # noqa: S608
+        "dw.filename, pr.row_count, pr.csv_columns, "
         "count(*) over () as total "
         "from documents d "
+        "join document_workspaces dw on dw.document_id = d.id "
         "join processing_runs pr on pr.id = d.active_processing_run_id "
         f"where {' and '.join(conditions)} "
         # A total order, so paging cannot repeat or skip a file when two
         # share a name.
-        "order by d.original_filename, d.id "
+        "order by dw.filename, d.id "
         "limit :limit offset :offset"
     )
 

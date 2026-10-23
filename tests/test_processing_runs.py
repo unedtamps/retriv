@@ -21,6 +21,7 @@ from app.db.models import (
     RUN_QUEUED,
     RUN_READY,
     Document,
+    DocumentWorkspace,
     ProcessingRun,
     WorkspaceMembership,
 )
@@ -39,7 +40,7 @@ async def seed_run(
 ) -> ProcessingRun:
     document = Document(
         id=document_id or uuid4(),
-        workspace_id=workspace_id,
+        origin_workspace_id=workspace_id,
         original_filename=filename,
         detected_media_type="application/pdf",
         size_bytes=2048,
@@ -50,7 +51,7 @@ async def seed_run(
     run = ProcessingRun(
         id=uuid4(),
         document_id=document.id,
-        workspace_id=workspace_id,
+        origin_workspace_id=workspace_id,
         job_kind=JOB_EXTRACT,
         pipeline_version="2026.1",
         status=status,
@@ -59,8 +60,13 @@ async def seed_run(
         started_at=datetime.now(UTC),
         completed_at=datetime.now(UTC) if status == RUN_READY else None,
     )
+    link = DocumentWorkspace(
+        workspace_id=workspace_id,
+        document_id=document.id,
+        filename=filename,
+    )
     async with session_factory() as session:
-        session.add_all([document, run])
+        session.add_all([document, link, run])
         await session.commit()
     return run
 

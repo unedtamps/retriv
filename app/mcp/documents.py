@@ -18,7 +18,7 @@ from uuid import UUID
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Document, ProcessingRun
+from app.db.models import Document, DocumentWorkspace, ProcessingRun
 from app.processing.service import derived_document_status
 
 
@@ -78,9 +78,19 @@ async def find_documents(
     if not workspace_ids:
         return [], 0
 
-    condition = Document.workspace_id.in_(workspace_ids) & Document.deleted_at.is_(None)
+    condition = (
+        DocumentWorkspace.workspace_id.in_(workspace_ids)
+        & DocumentWorkspace.deleted_at.is_(None)
+        & Document.deleted_at.is_(None)
+    )
     statement = (
-        select(Document, ProcessingRun, func.count().over().label("total"))
+        select(
+            Document,
+            DocumentWorkspace,
+            ProcessingRun,
+            func.count().over().label("total"),
+        )
+        .join(DocumentWorkspace, DocumentWorkspace.document_id == Document.id)
         .outerjoin(ProcessingRun, ProcessingRun.id == Document.active_processing_run_id)
         .where(condition)
     )
@@ -88,23 +98,25 @@ async def find_documents(
     if pattern:
         needle = pattern.casefold()
         statement = statement.where(
-            Document.original_filename.ilike(
+            DocumentWorkspace.filename.ilike(
                 f"%{_escape_like(pattern)}%", escape="\\"
             )
         )
         rank = case(
-            (func.lower(Document.original_filename) == needle, 0),
+            (func.lower(DocumentWorkspace.filename) == needle, 0),
             (
-                Document.original_filename.ilike(
+                DocumentWorkspace.filename.ilike(
                     f"{_escape_like(needle)}%", escape="\\"
                 ),
                 1,
             ),
             else_=2,
         )
-        statement = statement.order_by(rank, Document.original_filename, Document.id)
+        statement = statement.order_by(rank, DocumentWorkspace.filename, Document.id)
     else:
-        statement = statement.order_by(Document.created_at.desc(), Document.id)
+        statement = statement.order_by(
+            DocumentWorkspace.created_at.desc(), Document.id
+        )
 
     result = await session.execute(statement.limit(limit))
 
@@ -112,15 +124,15 @@ async def find_documents(
     summaries = [
         DocumentSummary(
             document_id=document.id,
-            workspace_id=document.workspace_id,
-            filename=document.original_filename,
+            workspace_id=link.workspace_id,
+            filename=link.filename,
             media_type=document.detected_media_type,
             size_bytes=document.size_bytes,
             status=derived_document_status(document, run),
             row_count=int(run.row_count or 0) if run is not None else 0,
-            created_at=document.created_at,
+            created_at=link.created_at,
         )
-        for document, run, _ in rows
+        for document, link, run, _ in rows
     ]
 
     return summaries, int(rows[0].total) if rows else 0
@@ -139,9 +151,9 @@ def format_documents(
     and it matches what the other tools return.
 
     Every line carries the workspace, size and date next to the name. Filenames
-    are not unique -- only a document's content is, per workspace -- so two
-    revisions of one file would otherwise be two indistinguishable lines, and
-    the document_id is what download_document and query_rows need anyway.
+    are not unique, and a canonical document may appear once per linked
+    workspace with that workspace's name. The document_id is what
+    download_document and query_rows need anyway.
     """
     if not summaries:
         if pattern:

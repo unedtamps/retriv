@@ -27,6 +27,7 @@ from app.db.models import (
     EMBEDDING_PENDING,
     EMBEDDING_PROCESSING,
     EMBEDDING_RETRY_WAIT,
+    JOB_ACCESS,
     JOB_DELETE,
     JOB_EXTRACT,
     RUN_CANCELLED,
@@ -41,10 +42,12 @@ from app.db.models import (
     RUN_READY,
     RUN_RETRY_WAIT,
     RUN_STORING_ARTIFACT,
+    RUN_SYNCING,
     ChunkEmbedding,
     Document,
     DocumentChunk,
     DocumentRow,
+    DocumentWorkspace,
     ProcessingRun,
 )
 from app.documents.validation import (
@@ -138,6 +141,8 @@ class ProcessingWorker:
         try:
             if run.job_kind == JOB_DELETE:
                 await self._process_delete(run)
+            elif run.job_kind == JOB_ACCESS:
+                await self._process_access_sync(run)
             else:
                 await self._process_extract(run)
         except LeaseLostError:
@@ -260,7 +265,7 @@ class ProcessingWorker:
         )
         async with self._session_factory() as session:
             result = await session.execute(
-                select(Document.workspace_id, Document.id).where(
+                select(Document.origin_workspace_id, Document.id).where(
                     Document.deleted_at.is_not(None)
                 )
             )
@@ -285,7 +290,7 @@ class ProcessingWorker:
                     exc_info=True,
                 )
             try:
-                await self._vector_store.delete_document(workspace_id, document_id)
+                await self._vector_store.delete_document(document_id)
             except VectorStoreError:
                 logger.warning(
                     "Deleted-document vector reconciliation failed",
@@ -344,7 +349,7 @@ class ProcessingWorker:
                     await session.execute(
                         select(
                             DocumentChunk.id,
-                            DocumentChunk.workspace_id,
+                            DocumentChunk.origin_workspace_id,
                             DocumentChunk.document_id,
                             DocumentChunk.processing_run_id,
                             DocumentChunk.content_hash,
@@ -370,7 +375,7 @@ class ProcessingWorker:
                         session.add(
                             self._new_embedding_record(
                                 chunk_id=chunk.id,
-                                workspace_id=chunk.workspace_id,
+                                origin_workspace_id=chunk.origin_workspace_id,
                                 document_id=chunk.document_id,
                                 processing_run_id=chunk.processing_run_id,
                                 content_hash=chunk.content_hash,
@@ -427,6 +432,8 @@ class ProcessingWorker:
                 return None
             if run.job_kind == JOB_DELETE:
                 run.status = RUN_DELETING
+            elif run.job_kind == JOB_ACCESS:
+                run.status = RUN_SYNCING
             elif run.chunk_count and run.artifact_key and run.manifest_key:
                 run.status = RUN_EMBEDDING
             else:
@@ -451,7 +458,7 @@ class ProcessingWorker:
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
         expected_key = (
-            f"workspaces/{document.workspace_id}/objects/"
+            f"workspaces/{document.origin_workspace_id}/objects/"
             f"{document.sha256}/{document.id}"
         )
         if document.object_key != expected_key:
@@ -510,7 +517,7 @@ class ProcessingWorker:
             self._validate_extraction(extraction)
 
             artifact_prefix = (
-                f"workspaces/{document.workspace_id}/documents/{document.id}/"
+                f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
                 f"runs/{claimed_run.id}/attempts/{lease_token}"
             )
             artifact_key = f"{artifact_prefix}/docling-document.json.gz"
@@ -600,7 +607,7 @@ class ProcessingWorker:
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
         expected_key = (
-            f"workspaces/{document.workspace_id}/objects/"
+            f"workspaces/{document.origin_workspace_id}/objects/"
             f"{document.sha256}/{document.id}"
         )
         if document.object_key != expected_key:
@@ -645,7 +652,7 @@ class ProcessingWorker:
             )
 
             artifact_prefix = (
-                f"workspaces/{document.workspace_id}/documents/{document.id}/"
+                f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
                 f"runs/{claimed_run.id}/attempts/{lease_token}"
             )
             manifest_key = f"{artifact_prefix}/manifest.json"
@@ -790,7 +797,7 @@ class ProcessingWorker:
                     batch.append(
                         {
                             "id": uuid5(run_id, str(row_number)),
-                            "workspace_id": stored_document.workspace_id,
+                            "origin_workspace_id": stored_document.origin_workspace_id,
                             "document_id": stored_document.id,
                             "processing_run_id": run_id,
                             "row_number": row_number,
@@ -844,13 +851,49 @@ class ProcessingWorker:
             stop_event.set()
             await heartbeat
 
+    async def _document_workspace_ids(self, document_id: UUID) -> list[str]:
+        """The workspace links a document currently has, for the Qdrant payload."""
+        async with self._session_factory() as session:
+            rows = await session.scalars(
+                select(DocumentWorkspace.workspace_id)
+                .where(
+                    DocumentWorkspace.document_id == document_id,
+                    DocumentWorkspace.deleted_at.is_(None),
+                )
+                .order_by(DocumentWorkspace.workspace_id)
+            )
+            return sorted({str(workspace_id) for workspace_id in rows.all()})
+
+    async def _process_access_sync(self, claimed_run: ProcessingRun) -> None:
+        """Refresh the Qdrant workspace array after a link changed.
+
+        One payload update per document covers every chunk. No chunk is read
+        and no vector is touched.
+        """
+        lease_token = self._require_lease_token(claimed_run)
+        document = await self._load_document(claimed_run)
+        if document.deleted_at is not None:
+            await self._cancel_run(claimed_run.id, lease_token)
+            return
+        workspace_ids = await self._document_workspace_ids(document.id)
+        await self._vector_store.set_document_workspaces(
+            document.id, [UUID(value) for value in workspace_ids]
+        )
+        async with self._session_factory() as session, session.begin():
+            run = await session.get(ProcessingRun, claimed_run.id)
+            if run is None or run.lease_token != lease_token:
+                raise LeaseLostError()
+            run.status = RUN_READY
+            run.lease_until = None
+            run.lease_token = None
+            run.completed_at = utcnow()
+            run.last_error = None
+
     async def _process_delete(self, claimed_run: ProcessingRun) -> None:
         lease_token = self._require_lease_token(claimed_run)
-        await self._vector_store.delete_document(
-            claimed_run.workspace_id, claimed_run.document_id
-        )
+        await self._vector_store.delete_document(claimed_run.document_id)
         artifact_prefix = (
-            f"workspaces/{claimed_run.workspace_id}/documents/"
+            f"workspaces/{claimed_run.origin_workspace_id}/documents/"
             f"{claimed_run.document_id}/"
         )
         await to_thread.run_sync(
@@ -942,7 +985,7 @@ class ProcessingWorker:
         return {
             "artifact_type": "docling-document",
             "artifact_schema_version": 1,
-            "workspace_id": str(document.workspace_id),
+            "workspace_id": str(document.origin_workspace_id),
             "document_id": str(document.id),
             "run_id": str(run.id),
             "source": {
@@ -1014,6 +1057,9 @@ class ProcessingWorker:
                 vectors = await self._embedding_provider.embed(
                     [chunk.text for chunk, _ in batch]
                 )
+                workspace_ids = await self._document_workspace_ids(
+                    claimed_run.document_id
+                )
                 if len(vectors) != len(batch):
                     raise EmbeddingProviderError(
                         "Embedding response count does not match the request",
@@ -1024,7 +1070,8 @@ class ProcessingWorker:
                         id=embedding.qdrant_point_id,
                         vector=vector,
                         payload={
-                            "workspace_id": str(chunk.workspace_id),
+                            "origin_workspace_id": str(chunk.origin_workspace_id),
+                            "workspace_ids": workspace_ids,
                             "document_id": str(chunk.document_id),
                             "processing_run_id": str(chunk.processing_run_id),
                             "chunk_id": str(chunk.id),
@@ -1054,8 +1101,19 @@ class ProcessingWorker:
                 claimed_run.id, lease_token
             )
             if not activated:
-                await self._vector_store.delete_document(
-                    claimed_run.workspace_id, claimed_run.document_id
+                await self._vector_store.delete_document(claimed_run.document_id)
+            else:
+                # A link may have changed while the batches were in flight.
+                # The queue normally carries that change, but a final refresh
+                # makes the completed run's payload authoritative either way.
+                await self._vector_store.set_document_workspaces(
+                    claimed_run.document_id,
+                    [
+                        UUID(value)
+                        for value in await self._document_workspace_ids(
+                            claimed_run.document_id
+                        )
+                    ],
                 )
         finally:
             stop_event.set()
@@ -1249,7 +1307,7 @@ class ProcessingWorker:
                 content_hash = hashlib.sha256(chunk.text.encode()).hexdigest()
                 stored_chunk = DocumentChunk(
                     id=uuid5(run_id, f"{ordinal}:{content_hash}"),
-                    workspace_id=document.workspace_id,
+                    origin_workspace_id=document.origin_workspace_id,
                     document_id=document.id,
                     processing_run_id=run_id,
                     ordinal=ordinal,
@@ -1283,7 +1341,7 @@ class ProcessingWorker:
     def _embedding_record(self, chunk: DocumentChunk) -> ChunkEmbedding:
         return self._new_embedding_record(
             chunk_id=chunk.id,
-            workspace_id=chunk.workspace_id,
+            origin_workspace_id=chunk.origin_workspace_id,
             document_id=chunk.document_id,
             processing_run_id=chunk.processing_run_id,
             content_hash=chunk.content_hash,
@@ -1293,7 +1351,7 @@ class ProcessingWorker:
         self,
         *,
         chunk_id: UUID,
-        workspace_id: UUID,
+        origin_workspace_id: UUID,
         document_id: UUID,
         processing_run_id: UUID,
         content_hash: str,
@@ -1301,7 +1359,7 @@ class ProcessingWorker:
         return ChunkEmbedding(
             chunk_id=chunk_id,
             embedding_profile=self._settings.embedding_profile,
-            workspace_id=workspace_id,
+            origin_workspace_id=origin_workspace_id,
             document_id=document_id,
             processing_run_id=processing_run_id,
             model=self._settings.embedding_model,

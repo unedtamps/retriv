@@ -22,7 +22,7 @@ from app.api.dependencies import (
 from app.api.schemas import DocumentListResponse, DocumentResponse
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
-from app.db.models import Document, ProcessingRun
+from app.db.models import Document, DocumentWorkspace, ProcessingRun
 from app.db.session import get_session
 from app.documents.service import (
     accept_document_delete,
@@ -69,7 +69,9 @@ async def upload_document(
         response.status_code = status.HTTP_200_OK
     else:
         response.status_code = status.HTTP_202_ACCEPTED
-    return document_response(result.document, result.run, duplicate=result.duplicate)
+    return document_response(
+        result.document, result.link, result.run, duplicate=result.duplicate
+    )
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -87,23 +89,34 @@ async def list_documents(
     # after a delete would put it back. The single-document route still
     # answers 200 with status "deleting" so a client holding the id can
     # tell what happened.
-    condition = and_(Document.workspace_id == workspace.id, Document.deleted_at.is_(None))
+    condition = and_(
+        DocumentWorkspace.workspace_id == workspace.id,
+        DocumentWorkspace.deleted_at.is_(None),
+        Document.deleted_at.is_(None),
+    )
     total = await session.scalar(
-        select(func.count()).select_from(Document).where(condition)
+        select(func.count())
+        .select_from(Document)
+        .join(DocumentWorkspace, DocumentWorkspace.document_id == Document.id)
+        .where(condition)
     )
     # The active run is joined rather than fetched per row: the list view
     # needs a status for every document, and a query per document would
     # be one round trip each.
     result = await session.execute(
-        select(Document, ProcessingRun)
+        select(Document, DocumentWorkspace, ProcessingRun)
+        .join(DocumentWorkspace, DocumentWorkspace.document_id == Document.id)
         .outerjoin(ProcessingRun, ProcessingRun.id == Document.active_processing_run_id)
         .where(condition)
-        .order_by(Document.created_at.desc(), Document.id)
+        .order_by(DocumentWorkspace.created_at.desc(), Document.id)
         .offset(offset)
         .limit(limit)
     )
     return DocumentListResponse(
-        items=[document_response(item, run) for item, run in result.all()],
+        items=[
+            document_response(document, link, run)
+            for document, link, run in result.all()
+        ],
         total=total or 0,
         offset=offset,
         limit=limit,
@@ -116,8 +129,8 @@ async def get_document_metadata(
     _current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> DocumentResponse:
-    run = await load_active_run(session, document)
-    return document_response(document, run)
+    run = await load_active_run(session, document.document)
+    return document_response(document.document, document.link, run)
 
 
 @router.get("/{document_id}/download")
@@ -178,29 +191,34 @@ async def delete_document(
         session=session,
         storage=storage,
         settings=settings,
-        document_id=document.id,
-        workspace_id=document.workspace_id,
+        document_id=document.document.id,
+        workspace_id=document.link.workspace_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def document_response(
     document: Document,
+    link: DocumentWorkspace,
     run: ProcessingRun | None = None,
     *,
     duplicate: bool = False,
 ) -> DocumentResponse:
+    if link.deleted_at is not None and document.deleted_at is None:
+        status = "deleting"
+    else:
+        status = derived_document_status(document, run)
     return DocumentResponse(
         id=document.id,
-        workspace_id=document.workspace_id,
-        original_filename=document.original_filename,
+        workspace_id=link.workspace_id,
+        original_filename=link.filename,
         detected_media_type=document.detected_media_type,
         size_bytes=document.size_bytes,
         sha256=document.sha256,
-        status=derived_document_status(document, run),
+        status=status,
         row_count=run.row_count if run is not None else 0,
-        created_by_user_id=document.created_by_user_id,
-        created_at=document.created_at,
+        created_by_user_id=link.created_by_user_id,
+        created_at=link.created_at,
         duplicate=duplicate,
     )
 

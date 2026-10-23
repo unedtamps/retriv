@@ -25,6 +25,7 @@ JSON_TYPE = JSON().with_variant(JSONB(), "postgresql")
 
 JOB_EXTRACT = "extract"
 JOB_DELETE = "delete"
+JOB_ACCESS = "access"
 
 RUN_QUEUED = "queued"
 RUN_FETCHING = "fetching"
@@ -33,6 +34,7 @@ RUN_DESCRIBING = "describing"
 RUN_STORING_ARTIFACT = "storing_artifact"
 RUN_CHUNKING = "chunking"
 RUN_EMBEDDING = "embedding"
+RUN_SYNCING = "syncing"
 RUN_DELETING = "deleting"
 RUN_READY = "ready"
 RUN_RETRY_WAIT = "retry_wait"
@@ -50,6 +52,7 @@ ACTIVE_RUN_STATUSES: tuple[str, ...] = (
     RUN_STORING_ARTIFACT,
     RUN_CHUNKING,
     RUN_EMBEDDING,
+    RUN_SYNCING,
     RUN_DELETING,
 )
 NON_TERMINAL_RUN_STATUSES: tuple[str, ...] = (
@@ -128,7 +131,12 @@ class WorkspaceMembership(Base):
 
 
 class Document(Base):
-    """A document and, once it is enqueued, its pipeline state.
+    """A canonical document and, once it is enqueued, its pipeline state.
+
+    A document is identified by its content hash and is processed once, no
+    matter how many workspaces link to it. ``origin_workspace_id`` says where
+    the raw object and artifacts live, not who may read the document. Access
+    is the set of rows in ``DocumentWorkspace``.
 
     This replaces the two tables the services used to keep in step across
     a database boundary: the API's row and the ingestion service's mirror.
@@ -141,15 +149,18 @@ class Document(Base):
 
     __tablename__ = "documents"
     __table_args__ = (
-        UniqueConstraint(
-            "workspace_id", "sha256", name="uq_documents_workspace_sha256"
-        ),
+        UniqueConstraint("sha256", name="uq_documents_sha256"),
         Index("ix_documents_active_run", "active_processing_run_id"),
-        Index("ix_documents_workspace_created", "workspace_id", "created_at"),
+        Index(
+            "ix_documents_origin_workspace_created",
+            "origin_workspace_id",
+            "created_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    workspace_id: Mapped[UUID] = mapped_column(
+    # Origin workspace, not access scope. See DocumentWorkspace.
+    origin_workspace_id: Mapped[UUID] = mapped_column(
         ForeignKey("workspaces.id", ondelete="RESTRICT"), index=True
     )
     original_filename: Mapped[str] = mapped_column(String(255))
@@ -172,32 +183,79 @@ class Document(Base):
     active_processing_run_id: Mapped[UUID | None] = mapped_column(nullable=True)
 
 
+class DocumentWorkspace(Base):
+    """One workspace's view of a canonical document.
+
+    The filename is per link on purpose: the same bytes may be uploaded as
+    ``report.pdf`` in Finance and ``laporan.pdf`` in Legal. Deleting a link
+    only removes this workspace's access; the canonical document and its
+    vectors are removed when the last link goes away.
+    """
+
+    __tablename__ = "document_workspaces"
+    __table_args__ = (
+        Index(
+            "ix_document_workspaces_workspace_created",
+            "workspace_id",
+            "created_at",
+        ),
+        Index("ix_document_workspaces_document", "document_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    created_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class ProcessingRun(Base):
     """One attempt at bringing a document to (or removing it from) READY.
 
     The lease and retry columns are what let the worker survive a crash:
-    a run whose lease expired is reclaimed by the next worker. Every run
-    carries workspace_id alongside document_id so retrieval can filter on
-    one column and the composite indexes stay narrow.
+    a run whose lease expired is reclaimed by the next worker.
+    ``origin_workspace_id`` is where the document's artifacts live; it is not
+    the set of workspaces that may read the document.
     """
 
     __tablename__ = "processing_runs"
     __table_args__ = (
-        CheckConstraint("job_kind IN ('extract', 'delete')", name="processing_run_kind"),
+        CheckConstraint(
+            "job_kind IN ('extract', 'delete', 'access')",
+            name="processing_run_kind",
+        ),
         UniqueConstraint(
-            "id", "workspace_id", "document_id", name="uq_processing_runs_identity"
+            "id",
+            "origin_workspace_id",
+            "document_id",
+            name="uq_processing_runs_identity",
         ),
         Index("ix_processing_runs_dispatch", "status", "available_at"),
         Index("ix_processing_runs_lease", "status", "lease_until"),
         Index("ix_processing_runs_document", "document_id"),
-        Index("ix_processing_runs_workspace_created", "workspace_id", "created_at"),
+        Index(
+            "ix_processing_runs_origin_workspace_created",
+            "origin_workspace_id",
+            "created_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     document_id: Mapped[UUID] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
-    workspace_id: Mapped[UUID] = mapped_column(nullable=False)
+    origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     job_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     pipeline_version: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(
@@ -248,8 +306,12 @@ class DocumentChunk(Base):
     __tablename__ = "document_chunks"
     __table_args__ = (
         UniqueConstraint("processing_run_id", "ordinal", name="uq_document_chunks_run_ordinal"),
-        Index("ix_document_chunks_document", "workspace_id", "document_id"),
-        Index("ix_document_chunks_active_lookup", "workspace_id", "processing_run_id"),
+        Index("ix_document_chunks_document", "origin_workspace_id", "document_id"),
+        Index(
+            "ix_document_chunks_active_lookup",
+            "origin_workspace_id",
+            "processing_run_id",
+        ),
         # Section completion looks a section up by its own key and its
         # sub-sections by prefix. text_pattern_ops is what makes the prefix
         # form of LIKE indexable; the default ops would force a scan.
@@ -262,7 +324,8 @@ class DocumentChunk(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    workspace_id: Mapped[UUID] = mapped_column(nullable=False)
+    # Origin workspace, not access scope. See DocumentWorkspace.
+    origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(nullable=False)
     processing_run_id: Mapped[UUID] = mapped_column(
         ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False
@@ -308,7 +371,11 @@ class DocumentRow(Base):
         UniqueConstraint(
             "processing_run_id", "row_number", name="uq_document_rows_run_row"
         ),
-        Index("ix_document_rows_active_lookup", "workspace_id", "processing_run_id"),
+        Index(
+            "ix_document_rows_active_lookup",
+            "origin_workspace_id",
+            "processing_run_id",
+        ),
         # The one index that answers the query every caller makes. RowQuery
         # refuses a statement that does not name a document_id, so this
         # predicate is present in every statement it will run -- and without an
@@ -328,7 +395,8 @@ class DocumentRow(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    workspace_id: Mapped[UUID] = mapped_column(nullable=False)
+    # Origin workspace, not access scope. See DocumentWorkspace.
+    origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(nullable=False)
     processing_run_id: Mapped[UUID] = mapped_column(
         ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False
@@ -352,7 +420,7 @@ class ChunkEmbedding(Base):
         ),
         Index(
             "ix_chunk_embeddings_document",
-            "workspace_id",
+            "origin_workspace_id",
             "document_id",
             "embedding_profile",
         ),
@@ -362,7 +430,8 @@ class ChunkEmbedding(Base):
         ForeignKey("document_chunks.id", ondelete="CASCADE"), primary_key=True
     )
     embedding_profile: Mapped[str] = mapped_column(String(255), primary_key=True)
-    workspace_id: Mapped[UUID] = mapped_column(nullable=False)
+    # Origin workspace, not access scope. See DocumentWorkspace.
+    origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(nullable=False)
     processing_run_id: Mapped[UUID] = mapped_column(nullable=False)
     model: Mapped[str] = mapped_column(String(255), nullable=False)

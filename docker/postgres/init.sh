@@ -97,7 +97,7 @@ GRANT USAGE ON SCHEMA public TO :"reader_user";
 -- migrations 0002/0003 grant them, the role already existing by then. Both
 -- paths are covered and neither depends on the other.
 SELECT format('GRANT SELECT ON public.%I TO %I', target, :'reader_user')
-FROM unnest(ARRAY['document_rows', 'documents', 'processing_runs']) AS target
+FROM unnest(ARRAY['document_rows', 'documents', 'document_workspaces', 'processing_runs']) AS target
 WHERE to_regclass('public.' || target) IS NOT NULL
 \gexec
 SQL

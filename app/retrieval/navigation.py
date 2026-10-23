@@ -23,7 +23,7 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, and_, exists, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -33,6 +33,7 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentWorkspace,
 )
 from app.documents.validation import CSV_MEDIA_TYPE
 from app.retrieval.schemas import ContextSource, NavigationWindow
@@ -59,7 +60,7 @@ def _embedding_join() -> Any:
     """Pin a chunk to an embedding row belonging to the same run."""
     return and_(
         ChunkEmbedding.chunk_id == DocumentChunk.id,
-        ChunkEmbedding.workspace_id == DocumentChunk.workspace_id,
+        ChunkEmbedding.origin_workspace_id == DocumentChunk.origin_workspace_id,
         ChunkEmbedding.document_id == DocumentChunk.document_id,
         ChunkEmbedding.processing_run_id == DocumentChunk.processing_run_id,
     )
@@ -100,9 +101,15 @@ class DocumentNavigator:
         try:
             async with self._sessions() as session:
                 document = await session.scalar(
-                    select(Document).where(
+                    select(Document)
+                    .join(
+                        DocumentWorkspace,
+                        DocumentWorkspace.document_id == Document.id,
+                    )
+                    .where(
                         Document.id == document_id,
-                        Document.workspace_id.in_(workspace_ids),
+                        DocumentWorkspace.workspace_id.in_(workspace_ids),
+                        DocumentWorkspace.deleted_at.is_(None),
                     )
                 )
                 if document is None:
@@ -132,7 +139,9 @@ class DocumentNavigator:
                 )
                 rows = (
                     await session.execute(
-                        self._window_query(run_id, start_ordinal, limit)
+                        self._window_query(
+                            run_id, start_ordinal, limit, workspace_ids
+                        )
                     )
                 ).all()
         except (DocumentNotFound, DocumentNotNavigable):
@@ -143,13 +152,39 @@ class DocumentNavigator:
         return self._to_window(rows, total=int(total or 0))
 
     def _window_query(
-        self, run_id: UUID, start_ordinal: int, limit: int
+        self,
+        run_id: UUID,
+        start_ordinal: int,
+        limit: int,
+        workspace_ids: list[UUID],
     ) -> Select[tuple[Any, ...]]:
         embedding_join = _embedding_join()
+        link_workspace = (
+            select(DocumentWorkspace.workspace_id)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
+        link_filename = (
+            select(DocumentWorkspace.filename)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
         return (
             select(
                 DocumentChunk.id,
-                DocumentChunk.workspace_id,
+                link_workspace.label("workspace_id"),
                 DocumentChunk.document_id,
                 DocumentChunk.processing_run_id,
                 DocumentChunk.ordinal,
@@ -160,19 +195,18 @@ class DocumentNavigator:
                 DocumentChunk.section_key,
                 DocumentChunk.is_heading_only,
                 DocumentChunk.page_numbers,
-                Document.original_filename,
+                link_filename.label("filename"),
             )
             .join(ChunkEmbedding, embedding_join)
-            .join(
-                Document,
-                and_(
-                    Document.workspace_id == DocumentChunk.workspace_id,
-                    Document.id == DocumentChunk.document_id,
-                ),
-            )
+            .join(Document, Document.id == DocumentChunk.document_id)
             .where(
                 DocumentChunk.processing_run_id == run_id,
                 DocumentChunk.ordinal >= start_ordinal,
+                exists().where(
+                    DocumentWorkspace.document_id == DocumentChunk.document_id,
+                    DocumentWorkspace.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.deleted_at.is_(None),
+                ),
                 Document.deleted_at.is_(None),
                 Document.active_processing_run_id == DocumentChunk.processing_run_id,
                 ChunkEmbedding.embedding_profile == self._settings.embedding_profile,

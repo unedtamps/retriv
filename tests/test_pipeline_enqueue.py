@@ -40,7 +40,7 @@ def new_document(workspace_id: UUID, media_type: str = PDF_MEDIA_TYPE) -> Docume
     digest = hashlib.sha256(str(uuid4()).encode()).hexdigest()
     return Document(
         id=uuid4(),
-        workspace_id=workspace_id,
+        origin_workspace_id=workspace_id,
         original_filename="report.pdf",
         detected_media_type=media_type,
         size_bytes=1024,
@@ -64,7 +64,7 @@ async def test_enqueue_extract_queues_a_run_and_points_the_document_at_it(
     assert run is not None
     assert run.job_kind == JOB_EXTRACT
     assert run.status == RUN_QUEUED
-    assert run.workspace_id == entities.finance.id
+    assert run.origin_workspace_id == entities.finance.id
     assert run.pipeline_version == settings.pipeline_version
     assert document.active_processing_run_id == run.id
     assert derived_document_status(document, run) == "processing"
@@ -211,7 +211,7 @@ async def test_derived_status_covers_every_run_outcome(
         run = ProcessingRun(
             id=uuid4(),
             document_id=document.id,
-            workspace_id=document.workspace_id,
+            origin_workspace_id=document.origin_workspace_id,
             job_kind=JOB_EXTRACT,
             pipeline_version=settings.pipeline_version,
             status=status,
@@ -222,7 +222,7 @@ async def test_derived_status_covers_every_run_outcome(
     run = ProcessingRun(
         id=uuid4(),
         document_id=document.id,
-        workspace_id=document.workspace_id,
+        origin_workspace_id=document.origin_workspace_id,
         job_kind=JOB_EXTRACT,
         pipeline_version=settings.pipeline_version,
         status="ready",

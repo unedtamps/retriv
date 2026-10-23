@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -12,8 +12,9 @@ from app.api.schemas import (
     ProcessingRunSummary,
 )
 from app.db.models import (
+    JOB_ACCESS,
     NON_TERMINAL_RUN_STATUSES,
-    Document,
+    DocumentWorkspace,
     ProcessingRun,
     WorkspaceMembership,
 )
@@ -41,11 +42,12 @@ async def get_latest_active_processing_run(
     if not workspace_ids:
         return ActiveProcessingRunResponse(item=None)
 
+    link_workspace, link_filename = _link_columns(workspace_ids)
     result = await session.execute(
-        select(ProcessingRun, Document.original_filename)
-        .outerjoin(Document, Document.id == ProcessingRun.document_id)
+        select(ProcessingRun, link_workspace, link_filename)
         .where(
-            ProcessingRun.workspace_id.in_(workspace_ids),
+            link_workspace.is_not(None),
+            ProcessingRun.job_kind != JOB_ACCESS,
             ProcessingRun.status.in_(NON_TERMINAL_RUN_STATUSES),
         )
         .order_by(ProcessingRun.created_at.desc(), ProcessingRun.id.desc())
@@ -53,7 +55,9 @@ async def get_latest_active_processing_run(
     )
     row = result.one_or_none()
     return ActiveProcessingRunResponse(
-        item=processing_run_summary(row[0], row[1]) if row is not None else None
+        item=processing_run_summary(row[0], row[1], row[2])
+        if row is not None
+        else None
     )
 
 
@@ -71,27 +75,65 @@ async def list_recent_processing_runs(
         )
 
     since = datetime.now(UTC) - PROCESSING_RUN_WINDOW
+    link_workspace, link_filename = _link_columns(workspace_ids)
     conditions = (
-        ProcessingRun.workspace_id.in_(workspace_ids),
+        link_workspace.is_not(None),
+        ProcessingRun.job_kind != JOB_ACCESS,
         ProcessingRun.created_at >= since,
     )
     total = int(
         await session.scalar(
-            select(func.count()).select_from(ProcessingRun).where(*conditions)
+            select(func.count())
+            .select_from(ProcessingRun)
+            .where(*conditions)
         )
         or 0
     )
     result = await session.execute(
-        select(ProcessingRun, Document.original_filename)
-        .outerjoin(Document, Document.id == ProcessingRun.document_id)
+        select(ProcessingRun, link_workspace, link_filename)
         .where(*conditions)
         .order_by(ProcessingRun.created_at.desc(), ProcessingRun.id.desc())
     )
     return ProcessingRunListResponse(
-        items=[processing_run_summary(run, filename) for run, filename in result.all()],
+        items=[
+            processing_run_summary(run, workspace_id, filename)
+            for run, workspace_id, filename in result.all()
+        ],
         total=total,
         since=since,
     )
+
+
+def _link_columns(workspace_ids: list[UUID]) -> tuple[Any, Any]:
+    """One deterministic workspace link per document, for run labels.
+
+    A canonical document may be linked to several of the caller's
+    workspaces. The run is still one row; picking the lowest workspace id
+    keeps the label stable without duplicating the run in the feed.
+    """
+    workspace = (
+        select(DocumentWorkspace.workspace_id)
+        .where(
+            DocumentWorkspace.document_id == ProcessingRun.document_id,
+            DocumentWorkspace.workspace_id.in_(workspace_ids),
+            DocumentWorkspace.deleted_at.is_(None),
+        )
+        .order_by(DocumentWorkspace.workspace_id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    filename = (
+        select(DocumentWorkspace.filename)
+        .where(
+            DocumentWorkspace.document_id == ProcessingRun.document_id,
+            DocumentWorkspace.workspace_id.in_(workspace_ids),
+            DocumentWorkspace.deleted_at.is_(None),
+        )
+        .order_by(DocumentWorkspace.workspace_id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    return workspace, filename
 
 
 async def readable_workspace_ids(
@@ -112,11 +154,11 @@ async def readable_workspace_ids(
 
 
 def processing_run_summary(
-    run: ProcessingRun, filename: str | None
+    run: ProcessingRun, workspace_id: UUID, filename: str | None
 ) -> ProcessingRunSummary:
     return ProcessingRunSummary(
         id=run.id,
-        workspace_id=run.workspace_id,
+        workspace_id=workspace_id,
         document_id=run.document_id,
         filename=filename,
         job_kind=run.job_kind,

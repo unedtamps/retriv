@@ -38,7 +38,7 @@ from starlette.applications import Starlette
 
 from app.core.config import Settings
 from app.core.errors import AppError
-from app.db.models import Document
+from app.db.models import Document, DocumentWorkspace
 from app.infrastructure.storage import StorageError
 from app.mcp.auth import McpPrincipal, principal_from_headers, require_workspace
 from app.mcp.documents import find_documents as search_documents
@@ -345,9 +345,10 @@ def build_mcp_server(
         row count and is queryable with query_rows; any other file is read
         with search_context, or fetched whole with download_document.
 
-        Filenames are not unique -- only content is, per workspace -- so two
-        revisions of one file both appear. Compare workspace_id, size and
-        status to pick, and never assume the first line is the one wanted.
+        Filenames are not unique, and one canonical document can appear in
+        several linked workspaces with a different name in each. Compare
+        workspace_id, size and status to pick, and never assume the first
+        line is the one wanted.
         """
         runtime = box.runtime
         principal = await _principal(runtime.session_factory, ctx.headers)
@@ -469,15 +470,26 @@ def build_mcp_server(
                 workspace_id=workspace_id,
                 permission="download",
             )
-            document = await session.scalar(
-                select(Document).where(
-                    Document.id == document_id,
-                    Document.workspace_id == workspace_id,
+            row = (
+                await session.execute(
+                    select(Document, DocumentWorkspace)
+                    .join(
+                        DocumentWorkspace,
+                        DocumentWorkspace.document_id == Document.id,
+                    )
+                    .where(
+                        Document.id == document_id,
+                        DocumentWorkspace.workspace_id == workspace_id,
+                    )
                 )
-            )
-            if document is None:
+            ).one_or_none()
+            if row is None:
                 raise ToolError("No such document in that workspace.")
-            if document.deleted_at is not None:
+            document, document_link = row
+            if (
+                document.deleted_at is not None
+                or document_link.deleted_at is not None
+            ):
                 raise ToolError(
                     "That document is being deleted and can no longer be "
                     "downloaded."
@@ -505,7 +517,7 @@ def build_mcp_server(
                 f"link={link}",
                 f"link_expires_in_seconds={ttl}",
                 f"url=/v1/workspaces/{workspace_id}/documents/{document_id}/download",
-                f"filename={document.original_filename}",
+                f"filename={document_link.filename}",
                 f"media_type={document.detected_media_type}",
                 f"size_bytes={document.size_bytes}",
             )

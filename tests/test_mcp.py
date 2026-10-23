@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
-from app.db.models import ApiKey, Document
+from app.db.models import ApiKey, Document, DocumentWorkspace
 from app.db.session import get_session
 from app.infrastructure.scanner import get_malware_scanner
 from app.infrastructure.storage import get_object_storage
@@ -995,7 +995,7 @@ async def _seed_document(
     object_key = f"raw-documents/{workspace_id}/{uuid4()}"
     async with mcp.session_factory() as session:
         document = Document(
-            workspace_id=workspace_id,
+            origin_workspace_id=workspace_id,
             original_filename=filename,
             detected_media_type=(
                 "text/csv" if filename.lower().endswith(".csv") else "application/pdf"
@@ -1007,6 +1007,15 @@ async def _seed_document(
             created_by_user_id=mcp.entities.user.id,
         )
         session.add(document)
+        await session.flush()
+        session.add(
+            DocumentWorkspace(
+                workspace_id=workspace_id,
+                document_id=document.id,
+                filename=filename,
+                created_by_user_id=mcp.entities.user.id,
+            )
+        )
         await session.commit()
         await session.refresh(document)
         document_id = document.id

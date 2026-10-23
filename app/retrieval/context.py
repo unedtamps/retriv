@@ -5,7 +5,19 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import JSON, Boolean, String, Uuid, and_, bindparam, case, or_, select, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    String,
+    Uuid,
+    and_,
+    bindparam,
+    case,
+    exists,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -15,12 +27,14 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentWorkspace,
 )
 from app.retrieval.schemas import ContextSource
 from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
 
 PAYLOAD_FIELDS = (
-    "workspace_id",
+    "origin_workspace_id",
+    "workspace_ids",
     "document_id",
     "processing_run_id",
     "chunk_id",
@@ -32,7 +46,16 @@ VALIDATE_CHUNKS = (
     text("""
     SELECT
         chunk.id AS chunk_id,
-        chunk.workspace_id,
+        (
+            SELECT link.workspace_id
+            FROM document_workspaces AS link
+            WHERE link.document_id = chunk.document_id
+              AND link.workspace_id IN :workspace_ids
+              AND link.deleted_at IS NULL
+            ORDER BY link.workspace_id
+            LIMIT 1
+        ) AS workspace_id,
+        chunk.origin_workspace_id AS origin_workspace_id,
         chunk.document_id,
         chunk.processing_run_id,
         chunk.ordinal,
@@ -43,19 +66,32 @@ VALIDATE_CHUNKS = (
         chunk.section_key,
         chunk.is_heading_only,
         chunk.page_numbers,
-        document.original_filename AS filename,
+        (
+            SELECT link.filename
+            FROM document_workspaces AS link
+            WHERE link.document_id = chunk.document_id
+              AND link.workspace_id IN :workspace_ids
+              AND link.deleted_at IS NULL
+            ORDER BY link.workspace_id
+            LIMIT 1
+        ) AS filename,
         embedding.qdrant_point_id
     FROM document_chunks AS chunk
     JOIN chunk_embeddings AS embedding
       ON embedding.chunk_id = chunk.id
-     AND embedding.workspace_id = chunk.workspace_id
+     AND embedding.origin_workspace_id = chunk.origin_workspace_id
      AND embedding.document_id = chunk.document_id
      AND embedding.processing_run_id = chunk.processing_run_id
     JOIN documents AS document
-      ON document.workspace_id = chunk.workspace_id
-     AND document.id = chunk.document_id
+      ON document.id = chunk.document_id
     WHERE chunk.id IN :chunk_ids
-      AND chunk.workspace_id IN :workspace_ids
+      AND EXISTS (
+          SELECT 1
+          FROM document_workspaces AS link
+          WHERE link.document_id = chunk.document_id
+            AND link.workspace_id IN :workspace_ids
+            AND link.deleted_at IS NULL
+      )
       AND document.deleted_at IS NULL
       AND document.active_processing_run_id = chunk.processing_run_id
       AND embedding.embedding_profile = :embedding_profile
@@ -71,12 +107,14 @@ VALIDATE_CHUNKS = (
     .columns(
         chunk_id=Uuid(as_uuid=True),
         workspace_id=Uuid(as_uuid=True),
+        origin_workspace_id=Uuid(as_uuid=True),
         document_id=Uuid(as_uuid=True),
         processing_run_id=Uuid(as_uuid=True),
         section_path=JSON(),
         section_key=String(),
         is_heading_only=Boolean(),
         page_numbers=JSON(),
+        filename=String(),
         qdrant_point_id=Uuid(as_uuid=True),
     )
 )
@@ -266,7 +304,7 @@ class ContextRetriever:
                 "filter": {
                     "must": [
                         {
-                            "key": "workspace_id",
+                            "key": "workspace_ids",
                             "match": {
                                 "any": [
                                     str(workspace_id) for workspace_id in workspace_ids
@@ -303,8 +341,10 @@ class ContextRetriever:
             point_payload = match["payload"]
             if not math.isfinite(score) or not isinstance(point_payload, dict):
                 raise ValueError("Qdrant returned invalid score or payload metadata")
-            workspace_id = point_payload.get("workspace_id")
-            if workspace_id not in allowed_workspace_ids:
+            point_workspaces = point_payload.get("workspace_ids")
+            if not isinstance(point_workspaces, list) or not (
+                allowed_workspace_ids & {str(value) for value in point_workspaces}
+            ):
                 raise OutOfScopeSearchResult(
                     f"Qdrant returned point {point_id} outside the signed workspace scope"
                 )
@@ -351,7 +391,7 @@ class ContextRetriever:
                 )
             point_id = UUID(str(match["id"]))
             expected_metadata = {
-                "workspace_id": str(UUID(str(row["workspace_id"]))),
+                "origin_workspace_id": str(UUID(str(row["origin_workspace_id"]))),
                 "document_id": str(UUID(str(row["document_id"]))),
                 "processing_run_id": str(UUID(str(row["processing_run_id"]))),
                 "chunk_id": str(UUID(str(row["chunk_id"]))),
@@ -416,10 +456,32 @@ class ContextRetriever:
             return []
 
         existing = {source.chunk_id for source in sources}
+        link_workspace = (
+            select(DocumentWorkspace.workspace_id)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
+        link_filename = (
+            select(DocumentWorkspace.filename)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
         statement = (
             select(
                 DocumentChunk.id,
-                DocumentChunk.workspace_id,
+                link_workspace.label("workspace_id"),
                 DocumentChunk.document_id,
                 DocumentChunk.processing_run_id,
                 DocumentChunk.ordinal,
@@ -429,13 +491,13 @@ class ContextRetriever:
                 DocumentChunk.section_path,
                 DocumentChunk.section_key,
                 DocumentChunk.page_numbers,
-                Document.original_filename,
+                link_filename.label("filename"),
             )
             .join(
                 ChunkEmbedding,
                 and_(
                     ChunkEmbedding.chunk_id == DocumentChunk.id,
-                    ChunkEmbedding.workspace_id == DocumentChunk.workspace_id,
+                    ChunkEmbedding.origin_workspace_id == DocumentChunk.origin_workspace_id,
                     ChunkEmbedding.document_id == DocumentChunk.document_id,
                     ChunkEmbedding.processing_run_id
                     == DocumentChunk.processing_run_id,
@@ -443,14 +505,15 @@ class ContextRetriever:
             )
             .join(
                 Document,
-                and_(
-                    Document.workspace_id == DocumentChunk.workspace_id,
-                    Document.id == DocumentChunk.document_id,
-                ),
+                Document.id == DocumentChunk.document_id,
             )
             .where(
                 _section_clause(anchors),
-                DocumentChunk.workspace_id.in_(workspace_ids),
+                exists().where(
+                    DocumentWorkspace.document_id == DocumentChunk.document_id,
+                    DocumentWorkspace.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.deleted_at.is_(None),
+                ),
                 Document.deleted_at.is_(None),
                 Document.active_processing_run_id == DocumentChunk.processing_run_id,
                 ChunkEmbedding.embedding_profile == self._settings.embedding_profile,

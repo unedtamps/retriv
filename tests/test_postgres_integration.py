@@ -1,8 +1,8 @@
 """PostgreSQL-only behaviour that SQLite cannot show.
 
 The important one is concurrent identical uploads. SQLite serialises
-writers so it can never reproduce a race, and the unique constraint on
-(workspace_id, sha256) is what actually settles it in production.
+writers so it can never reproduce a race, and the global unique constraint
+on sha256 is what actually settles it in production.
 
 Skipped unless TEST_POSTGRES_URL points at a real database.
 """
@@ -33,10 +33,12 @@ from app.core.config import Settings, get_settings
 from app.db.models import (
     JOB_EXTRACT,
     RUN_CHUNKING,
+    RUN_EMBEDDING,
     ChunkEmbedding,
     Document,
     DocumentChunk,
     DocumentRow,
+    DocumentWorkspace,
     ProcessingRun,
     User,
     Workspace,
@@ -74,6 +76,7 @@ def database_url() -> str:
 
 async def clear_database(session: AsyncSession) -> None:
     for model in (
+        DocumentWorkspace,
         ChunkEmbedding,
         DocumentRow,
         DocumentChunk,
@@ -217,7 +220,7 @@ async def test_chunk_and_embedding_rows_commit_in_foreign_key_order(
             await session.flush()
             document = Document(
                 id=uuid4(),
-                workspace_id=workspace.id,
+                origin_workspace_id=workspace.id,
                 original_filename="report.pdf",
                 detected_media_type="application/pdf",
                 size_bytes=1024,
@@ -228,9 +231,16 @@ async def test_chunk_and_embedding_rows_commit_in_foreign_key_order(
             session.add(document)
             await session.flush()
             session.add(
+                DocumentWorkspace(
+                    workspace_id=document.origin_workspace_id,
+                    document_id=document.id,
+                    filename=document.original_filename,
+                )
+            )
+            session.add(
                 ProcessingRun(
                     id=run_id,
-                    workspace_id=workspace.id,
+                    origin_workspace_id=workspace.id,
                     document_id=document.id,
                     job_kind=JOB_EXTRACT,
                     pipeline_version=worker_settings.pipeline_version,
@@ -261,7 +271,7 @@ async def test_chunk_and_embedding_rows_commit_in_foreign_key_order(
             ).all()
         assert persisted is True
         assert run is not None
-        assert run.status == RUN_CHUNKING
+        assert run.status == RUN_EMBEDDING
         assert [chunk.ordinal for chunk in chunks] == sorted(
             chunk.ordinal for chunk in chunks
         )
@@ -307,8 +317,8 @@ async def test_rls_scopes_csv_rows_to_the_reader_workspace() -> None:
             await conn.execute(text(f"grant usage on schema public to {role}"))
             await conn.execute(
                 text(
-                    f"grant select on document_rows, documents, processing_runs "
-                    f"to {role}"
+                    "grant select on document_rows, documents, "
+                    f"document_workspaces, processing_runs to {role}"
                 )
             )
 
@@ -318,7 +328,7 @@ async def test_rls_scopes_csv_rows_to_the_reader_workspace() -> None:
             first, _ = await seed_owner(session, slug="alpha", username="alice")
             second, _ = await seed_owner(session, slug="beta", username="bob")
             document = Document(
-                workspace_id=first,
+                origin_workspace_id=first,
                 original_filename="s.csv",
                 detected_media_type="text/csv",
                 size_bytes=10,
@@ -330,19 +340,52 @@ async def test_rls_scopes_csv_rows_to_the_reader_workspace() -> None:
             # Python-side uuid4, so it is not populated until insert time.
             session.add(document)
             await session.flush()
+            session.add(
+                DocumentWorkspace(
+                    workspace_id=document.origin_workspace_id,
+                    document_id=document.id,
+                    filename=document.original_filename,
+                )
+            )
             run = ProcessingRun(
                 document_id=document.id,
-                workspace_id=first,
+                origin_workspace_id=first,
                 job_kind="extract",
                 pipeline_version="2026.1",
                 status="ready",
             )
             session.add(run)
+            other_document = Document(
+                origin_workspace_id=second,
+                original_filename="other.csv",
+                detected_media_type="text/csv",
+                size_bytes=10,
+                sha256="e" * 64,
+                bucket="raw",
+                object_key="other",
+            )
+            session.add(other_document)
+            await session.flush()
+            session.add(
+                DocumentWorkspace(
+                    workspace_id=second,
+                    document_id=other_document.id,
+                    filename=other_document.original_filename,
+                )
+            )
+            other_run = ProcessingRun(
+                document_id=other_document.id,
+                origin_workspace_id=second,
+                job_kind="extract",
+                pipeline_version="2026.1",
+                status="ready",
+            )
+            session.add(other_run)
             await session.flush()
             session.add_all(
                 [
                     DocumentRow(
-                        workspace_id=first,
+                        origin_workspace_id=first,
                         document_id=document.id,
                         processing_run_id=run.id,
                         row_number=number,
@@ -352,9 +395,9 @@ async def test_rls_scopes_csv_rows_to_the_reader_workspace() -> None:
                 ]
                 + [
                     DocumentRow(
-                        workspace_id=second,
-                        document_id=document.id,
-                        processing_run_id=run.id,
+                        origin_workspace_id=second,
+                        document_id=other_document.id,
+                        processing_run_id=other_run.id,
                         row_number=number,
                         data={"status": "OPEN"},
                     )
@@ -392,7 +435,7 @@ async def test_rls_scopes_csv_rows_to_the_reader_workspace() -> None:
         async with engine.connect() as conn:
             await conn.execute(
                 text(
-                    f"revoke all on document_rows, documents, processing_runs "
+                    f"revoke all on document_rows, documents, document_workspaces, processing_runs "
                     f"from {role}"
                 )
             )
@@ -417,8 +460,8 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
             await conn.execute(text(f"grant usage on schema public to {role}"))
             await conn.execute(
                 text(
-                    f"grant select on document_rows, documents, processing_runs "
-                    f"to {role}"
+                    "grant select on document_rows, documents, "
+                    f"document_workspaces, processing_runs to {role}"
                 )
             )
 
@@ -427,7 +470,7 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
             await clear_database(session)
             workspace, _ = await seed_owner(session, slug="gamma", username="carol")
             document = Document(
-                workspace_id=workspace,
+                origin_workspace_id=workspace,
                 original_filename="s.csv",
                 detected_media_type="text/csv",
                 size_bytes=10,
@@ -439,9 +482,16 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
             # Python-side uuid4, so it is not populated until insert time.
             session.add(document)
             await session.flush()
+            session.add(
+                DocumentWorkspace(
+                    workspace_id=document.origin_workspace_id,
+                    document_id=document.id,
+                    filename=document.original_filename,
+                )
+            )
             run = ProcessingRun(
                 document_id=document.id,
-                workspace_id=workspace,
+                origin_workspace_id=workspace,
                 job_kind="extract",
                 pipeline_version="2026.1",
                 status="ready",
@@ -453,7 +503,7 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
             document.active_processing_run_id = run.id
             session.add(
                 DocumentRow(
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     document_id=document.id,
                     processing_run_id=run.id,
                     row_number=1,
@@ -464,7 +514,7 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
 
         reader = create_async_engine(reader_url(database_url(), role))
         statements = [
-            "insert into document_rows (id, workspace_id, document_id, "
+            "insert into document_rows (id, origin_workspace_id, document_id, "
             "processing_run_id, row_number, data, created_at) values "
             "(gen_random_uuid(), null, null, null, 1, '{}', now())",
             "delete from document_rows",
@@ -489,7 +539,7 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
         async with engine.connect() as conn:
             await conn.execute(
                 text(
-                    f"revoke all on document_rows, documents, processing_runs "
+                    f"revoke all on document_rows, documents, document_workspaces, processing_runs "
                     f"from {role}"
                 )
             )
@@ -570,8 +620,8 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
             await conn.execute(text(f"grant usage on schema public to {role}"))
             await conn.execute(
                 text(
-                    f"grant select on document_rows, documents, processing_runs "
-                    f"to {role}"
+                    "grant select on document_rows, documents, "
+                    f"document_workspaces, processing_runs to {role}"
                 )
             )
 
@@ -580,7 +630,7 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
             await clear_database(session)
             workspace, _ = await seed_owner(session, slug="rows", username="dana")
             document = Document(
-                workspace_id=workspace,
+                origin_workspace_id=workspace,
                 original_filename="sales.csv",
                 detected_media_type="text/csv",
                 size_bytes=10,
@@ -590,9 +640,16 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
             )
             session.add(document)
             await session.flush()
+            session.add(
+                DocumentWorkspace(
+                    workspace_id=document.origin_workspace_id,
+                    document_id=document.id,
+                    filename=document.original_filename,
+                )
+            )
             run = ProcessingRun(
                 document_id=document.id,
-                workspace_id=workspace,
+                origin_workspace_id=workspace,
                 job_kind="extract",
                 pipeline_version="2026.1",
                 status="ready",
@@ -606,7 +663,7 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
             session.add_all(
                 [
                     DocumentRow(
-                        workspace_id=workspace,
+                        origin_workspace_id=workspace,
                         document_id=document.id,
                         processing_run_id=run.id,
                         row_number=number,
@@ -686,7 +743,7 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
         async with engine.connect() as conn:
             await conn.execute(
                 text(
-                    f"revoke all on document_rows, documents, processing_runs "
+                    f"revoke all on document_rows, documents, document_workspaces, processing_runs "
                     f"from {role}"
                 )
             )
@@ -717,8 +774,8 @@ async def test_the_catalogue_is_scoped_and_the_model_cannot_name_processing_runs
             await conn.execute(text(f"grant usage on schema public to {role}"))
             await conn.execute(
                 text(
-                    f"grant select on document_rows, documents, processing_runs "
-                    f"to {role}"
+                    "grant select on document_rows, documents, "
+                    f"document_workspaces, processing_runs to {role}"
                 )
             )
 
@@ -733,7 +790,7 @@ async def test_the_catalogue_is_scoped_and_the_model_cannot_name_processing_runs
                 (theirs, "theirs.csv", ["secret"]),
             ):
                 document = Document(
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     original_filename=name,
                     detected_media_type="text/csv",
                     size_bytes=10,
@@ -743,9 +800,16 @@ async def test_the_catalogue_is_scoped_and_the_model_cannot_name_processing_runs
                 )
                 session.add(document)
                 await session.flush()
+                session.add(
+                    DocumentWorkspace(
+                        workspace_id=document.origin_workspace_id,
+                        document_id=document.id,
+                        filename=document.original_filename,
+                    )
+                )
                 run = ProcessingRun(
                     document_id=document.id,
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     job_kind="extract",
                     pipeline_version="2026.1",
                     status="ready",
@@ -794,7 +858,10 @@ async def test_the_catalogue_is_scoped_and_the_model_cannot_name_processing_runs
             await reader.dispose()
         async with engine.connect() as conn:
             await conn.execute(
-                text(f"revoke all on document_rows, documents, processing_runs from {role}")
+                text(
+                    f"revoke all on document_rows, documents, "
+                    f"document_workspaces, processing_runs from {role}"
+                )
             )
             await conn.execute(text(f"revoke usage on schema public from {role}"))
             await conn.commit()
@@ -816,7 +883,10 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
             await conn.execute(text(f"create role {role} login password 'rls-probe'"))
             await conn.execute(text(f"grant usage on schema public to {role}"))
             await conn.execute(
-                text(f"grant select on document_rows, documents, processing_runs to {role}")
+                text(
+                    "grant select on document_rows, documents, "
+                    f"document_workspaces, processing_runs to {role}"
+                )
             )
 
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -830,7 +900,7 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
                 ("inflight.csv", "embedding", None),
             ):
                 document = Document(
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     original_filename=name,
                     detected_media_type="text/csv",
                     size_bytes=10,
@@ -841,9 +911,16 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
                 )
                 session.add(document)
                 await session.flush()
+                session.add(
+                    DocumentWorkspace(
+                        workspace_id=document.origin_workspace_id,
+                        document_id=document.id,
+                        filename=document.original_filename,
+                    )
+                )
                 run = ProcessingRun(
                     document_id=document.id,
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     job_kind="extract",
                     pipeline_version="2026.1",
                     status=status,
@@ -866,7 +943,10 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
             await reader.dispose()
         async with engine.connect() as conn:
             await conn.execute(
-                text(f"revoke all on document_rows, documents, processing_runs from {role}")
+                text(
+                    f"revoke all on document_rows, documents, "
+                    f"document_workspaces, processing_runs from {role}"
+                )
             )
             await conn.execute(text(f"revoke usage on schema public from {role}"))
             await conn.commit()
@@ -887,7 +967,10 @@ async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
             await conn.execute(text(f"create role {role} login password 'rls-probe'"))
             await conn.execute(text(f"grant usage on schema public to {role}"))
             await conn.execute(
-                text(f"grant select on document_rows, documents, processing_runs to {role}")
+                text(
+                    "grant select on document_rows, documents, "
+                    f"document_workspaces, processing_runs to {role}"
+                )
             )
 
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -897,7 +980,7 @@ async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
             for index in range(5):
                 name = f"file-{index:02d}.csv"
                 document = Document(
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     original_filename=name,
                     detected_media_type="text/csv",
                     size_bytes=10,
@@ -907,9 +990,16 @@ async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
                 )
                 session.add(document)
                 await session.flush()
+                session.add(
+                    DocumentWorkspace(
+                        workspace_id=document.origin_workspace_id,
+                        document_id=document.id,
+                        filename=document.original_filename,
+                    )
+                )
                 run = ProcessingRun(
                     document_id=document.id,
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     job_kind="extract",
                     pipeline_version="2026.1",
                     status="ready",
@@ -957,7 +1047,10 @@ async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
             await reader.dispose()
         async with engine.connect() as conn:
             await conn.execute(
-                text(f"revoke all on document_rows, documents, processing_runs from {role}")
+                text(
+                    f"revoke all on document_rows, documents, "
+                    f"document_workspaces, processing_runs from {role}"
+                )
             )
             await conn.execute(text(f"revoke usage on schema public from {role}"))
             await conn.commit()
@@ -1235,7 +1328,7 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
                 session, slug="indexprobe", username="indexprobe-user"
             )
             target = Document(
-                workspace_id=workspace,
+                origin_workspace_id=workspace,
                 original_filename="target.csv",
                 detected_media_type="text/csv",
                 size_bytes=10,
@@ -1245,9 +1338,16 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
             )
             session.add(target)
             await session.flush()
+            session.add(
+                DocumentWorkspace(
+                    workspace_id=target.origin_workspace_id,
+                    document_id=target.id,
+                    filename=target.original_filename,
+                )
+            )
             target_run = ProcessingRun(
                 document_id=target.id,
-                workspace_id=workspace,
+                origin_workspace_id=workspace,
                 job_kind="extract",
                 pipeline_version="2026.1",
                 status="ready",
@@ -1259,7 +1359,7 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
             for row_number in range(1, 21):
                 session.add(
                     DocumentRow(
-                        workspace_id=workspace,
+                        origin_workspace_id=workspace,
                         document_id=target.id,
                         processing_run_id=target_run.id,
                         row_number=row_number,
@@ -1271,7 +1371,7 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
             # file" have to look different for the plan to mean anything.
             for index in range(5):
                 other = Document(
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     original_filename=f"other-{index}.csv",
                     detected_media_type="text/csv",
                     size_bytes=10,
@@ -1281,9 +1381,16 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
                 )
                 session.add(other)
                 await session.flush()
+                session.add(
+                    DocumentWorkspace(
+                        workspace_id=other.origin_workspace_id,
+                        document_id=other.id,
+                        filename=other.original_filename,
+                    )
+                )
                 other_run = ProcessingRun(
                     document_id=other.id,
-                    workspace_id=workspace,
+                    origin_workspace_id=workspace,
                     job_kind="extract",
                     pipeline_version="2026.1",
                     status="ready",
@@ -1293,7 +1400,7 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
                 await session.flush()
                 session.add_all(
                     DocumentRow(
-                        workspace_id=workspace,
+                        origin_workspace_id=workspace,
                         document_id=other.id,
                         processing_run_id=other_run.id,
                         row_number=row_number,

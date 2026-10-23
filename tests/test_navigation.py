@@ -27,6 +27,7 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentWorkspace,
     ProcessingRun,
 )
 from app.db.session import Base
@@ -80,7 +81,8 @@ async def seed(
     document_id = uuid4()
     async with factory() as session:
         document = Document(
-            workspace_id=workspace_id,
+            id=document_id,
+            origin_workspace_id=workspace_id,
             original_filename=filename,
             detected_media_type=media_type,
             size_bytes=10,
@@ -92,10 +94,19 @@ async def seed(
         )
         session.add(document)
         await session.flush()
+        session.add(
+            DocumentWorkspace(
+                workspace_id=workspace_id,
+                document_id=document.id,
+                filename=filename,
+                created_by_user_id=uuid4(),
+                deleted_at=deleted_at,
+            )
+        )
 
         run = ProcessingRun(
             document_id=document_id,
-            workspace_id=workspace_id,
+            origin_workspace_id=workspace_id,
             job_kind="extract",
             pipeline_version="test",
             status="ready",
@@ -117,7 +128,7 @@ async def seed(
                 text = f"Provision {ordinal}, edited in place."
             path = [f"Article {ordinal // 3}:"]
             chunk = DocumentChunk(
-                workspace_id=workspace_id,
+                origin_workspace_id=workspace_id,
                 document_id=document_id,
                 processing_run_id=run.id,
                 ordinal=ordinal,
@@ -134,7 +145,7 @@ async def seed(
             session.add(
                 ChunkEmbedding(
                     chunk_id=chunk.id,
-                    workspace_id=workspace_id,
+                    origin_workspace_id=workspace_id,
                     document_id=document_id,
                     processing_run_id=run.id,
                     embedding_profile="test-profile",
