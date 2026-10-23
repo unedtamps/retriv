@@ -21,7 +21,6 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY README.md ./
 COPY app ./app
-COPY provisioning ./provisioning
 COPY worker ./worker
 COPY alembic.ini ./
 COPY alembic ./alembic

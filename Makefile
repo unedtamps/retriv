@@ -9,7 +9,7 @@ WAIT_TIMEOUT ?= 300
 UV_RUN := uv run --env-file $(ENV_FILE) --
 COMPOSE := docker compose --env-file $(ENV_FILE)
 
-.PHONY: help install infra worker run-worker run-build migrate api run provision status logs down test check check-env
+.PHONY: help install infra worker run-worker run-build migrate api run status logs down test check check-env
 
 help:
 	@printf '%s\n' \
@@ -23,7 +23,6 @@ help:
 		'  infra     Start and wait for PostgreSQL, Qdrant, MinIO, and ClamAV' \
 		'  sql-role  Create or repair the read-only SQL role and its grants' \
 		'  migrate   Apply database migrations' \
-		'  provision Apply the provisioning manifest in MinIO (one-shot)' \
 		'  status    Show infrastructure container status' \
 		'  logs      Follow infrastructure logs' \
 		'  down      Stop infrastructure containers' \
@@ -91,26 +90,6 @@ sql-role: check-env
 run-build: worker
 	@$(MAKE) api
 
-# The one-shot that creates the first users and workspaces. Not part of any
-# other target: it writes to every user row and bumps auth_version, which
-# signs live sessions out, so it must be something a person asks for.
-#
-# --env-file is required. The job's settings set env_file=None and read the
-# environment only, so without it every PROVISIONER_* variable is missing and
-# it fails on the first one. All the missing ones are listed at once now.
-#
-# The manifest has to be in MinIO already, under the prefix in
-# PROVISIONER_MANIFEST_PREFIX. Uploading it is a deliberate act: the job
-# trusts whatever it finds there, and migration-reader is read-only by design.
-#
-# Exit 2 means the operator's input was wrong: bad settings, an unreadable
-# manifest, a manifest that failed validation, or a migration id already
-# applied with different content. Each of those names the field or the s3
-# code and prints a hint. Exit 1 is reserved for a genuine bug and prints the
-# traceback.
-provision: migrate
-	$(UV_RUN) python -m provisioning
-
 status: check-env
 	$(COMPOSE) ps
 
@@ -126,4 +105,4 @@ test:
 check:
 	uv run pytest -q
 	uv run ruff check .
-	uv run mypy app provisioning worker alembic tests
+	uv run mypy app worker alembic tests

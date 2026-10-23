@@ -4,12 +4,11 @@ Backend untuk menerima dokumen perusahaan dengan scope per workspace, mengindeks
 menyajikannya sebagai tool MCP: `find_documents` untuk mencari berkas, `search_context`
 untuk prosa, `query_rows` untuk CSV, `download_document` untuk berkas aslinya.
 
-Satu aplikasi. Satu database. Dua entrypoint lain: worker pemrosesan dan provisioning.
+Satu aplikasi. Satu database. Satu entrypoint lain: worker pemrosesan.
 
 ```
 app/          the HTTP application: auth, documents, processing status, the MCP server
 worker/       the extraction worker: Docling, chunking, embedding (separate process)
-provisioning/ the one-shot CLI that creates the first users and workspaces
 alembic/      one migration history, one database
 web/          the dashboard
 ```
@@ -19,7 +18,6 @@ flowchart LR
     subgraph host["host"]
         W["web<br/>Vite :5173"]
         A["app<br/>uvicorn :8000"]
-        P["provisioning<br/>one-shot CLI"]
     end
     subgraph docker["docker"]
         K["worker<br/>python -m worker"]
@@ -46,15 +44,13 @@ flowchart LR
     K -->|artifact bucket| M
     K --> L
     A --> L
-    P -->|manifest, advisory lock| DB
-    P --> M
 
     style A fill:#2d5a3d,color:#fff
     style K fill:#5a452d,color:#fff
 ```
 
 Solid arrows are the only thing crossing a process boundary now, and all of them point
-at infrastructure. The three application processes reach each other through `app/`'s own
+at infrastructure. The two application processes reach each other through `app/`'s own
 imports.
 
 ## Why one application
@@ -79,7 +75,7 @@ PDF away from the request path.
 ## Scope
 
 - JWT access tokens valid for 60 minutes.
-- The first users are created by a one-shot provisioning manifest; later users by a
+- The first admin is created from `RETRIV_BOOTSTRAP_ADMIN_*` on startup; later users by a
   platform admin.
 - `admin` is a platform role for the dashboard and grants no workspace data access.
 - Workspace access lives in a membership table with role `owner`, `editor`, or `viewer`.
@@ -386,7 +382,7 @@ This was a documented manual `CREATE ROLE` once, and that turned out to be the w
 possible place for it. Migrations `0002` and `0003` grant to the role **only if it already
 exists** — a password must never land in a migration, so a GRANT against a role that was
 never created aborts the whole upgrade. Skipping the manual step therefore produced a
-deployment that migrated cleanly, provisioned cleanly, and then refused to start, with
+deployment that migrated cleanly, was configured cleanly, and then refused to start, with
 nothing in the output naming the step that was missed.
 
 The script is idempotent and applies the grants itself rather than relying on migration
@@ -693,9 +689,9 @@ sequenceDiagram
     A-->>W: the request proceeds
 ```
 
-`auth_version` is the reason a password reset or a provisioning change takes effect
-immediately rather than at token expiry: the claim is compared against the row on every
-request, so bumping the counter invalidates every outstanding token at once. The
+`auth_version` is the reason a password reset or a bootstrap-admin password change takes
+effect immediately rather than at token expiry: the claim is compared against the row on
+every request, so bumping the counter invalidates every outstanding token at once. The
 `admin` platform role is orthogonal to workspace roles and grants no data access.
 
 API keys are a second, longer-lived credential for the same user. One is created from the
@@ -717,53 +713,22 @@ do, and it is deliberately weaker than the key: it names one object, cannot be n
 and dies on its own. Revoking the key does not revoke a link already issued, which is
 the one guarantee an operator cannot have here.
 
-## Provisioning
+## The first admin
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor P as Operator
-    participant M as MinIO
-    participant DB as PostgreSQL
-    participant X as the provisioning CLI
+A fresh deployment has no users and no self-registration. The API creates the first
+platform administrator on startup from `RETRIV_BOOTSTRAP_ADMIN_USERNAME` and
+`RETRIV_BOOTSTRAP_ADMIN_PASSWORD`:
 
-    P->>M: upload users-v1.json to the manifest bucket
-    P->>X: run it with the manifest URI
-    X->>M: GET the manifest
-    X->>X: parse and validate, extra="forbid"
-    X->>DB: BEGIN
-    X->>DB: pg_advisory_xact_lock(hash of migration_id)
-    alt migration_id already applied
-        X->>DB: compare the payload hash
-        X-->>P: no-op, or 409 if the content differs
-    end
-    X->>DB: upsert users, upsert workspaces
-    X->>DB: auth_version = auth_version + 1 for every changed user
-    X->>DB: COMMIT
-    X-->>P: a JSON summary
-```
+- the account is created only when the username does not exist;
+- the password is kept in sync with the environment; if it changed, the hash is
+  replaced and `auth_version` is bumped, signing out sessions issued under the old
+  password;
+- role and active flag are left alone, so disabling the account is not undone by a
+  restart;
+- leave both variables empty when the deployment already has its users.
 
-It reads the manifest over S3, using the read-only `migration-reader` identity that
-`minio-init` creates. That identity cannot reach `raw-documents` or
-`context-documents`, so a manifest you have not reviewed cannot read your documents.
-
-```bash
-uv run --env-file .env -- python -m provisioning
-```
-
-The `--env-file` is required and not optional politeness: the job's settings class sets
-`env_file=None`, so it reads the environment and nothing else. A one-shot with write
-access to every user row should not silently pick up credentials because it ran in this
-directory. Its variables carry a `PROVISIONER_` prefix and are in `.env.example`.
-
-Two things to know before you use it:
-
-- **It creates workspaces with no members.** Assigning the first owner is an admin API
-  call: `PUT /v1/admin/workspaces/{id}/members/{user_id}`. A provisioned workspace is
-  otherwise unreachable.
-- **It overwrites credentials.** A username that already exists has its password hash,
-  role, and active flag reset from the manifest, and its `auth_version` bumped, so every
-  live session for that user is signed out.
+The admin can create workspaces and assign their first owner through `/v1/admin`:
+`POST /v1/admin/workspaces` and `PUT /v1/admin/workspaces/{id}/members/{user_id}`.
 
 ## The shape of the data
 

@@ -29,6 +29,7 @@ from app.routes import (
     processing_runs,
     workspaces,
 )
+from app.security.bootstrap import ensure_bootstrap_admin
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        # The first admin comes from the environment, so a fresh database has
+        # somebody who can create users and workspaces. It is a no-op when the
+        # pair is unset or the stored password already matches the env.
+        await ensure_bootstrap_admin(settings, session_factory)
         # The retriever is process-wide: the Qdrant and embedding clients hold
         # connection pools, and building them per request would pay for a
         # handshake on every search.

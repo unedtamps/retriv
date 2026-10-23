@@ -195,11 +195,9 @@ def test_json_settings_survive_both_dotenv_parsers(
 ) -> None:
     """A JSON-array setting has to survive both ways of loading .env.
 
-    The app reads .env through pydantic-settings; the Makefile passes it
-    through uv's parser with --env-file; and the provisioning CLI reads
-    neither, because its settings set env_file=None and depend on the
-    environment uv built. If those two parsers disagree about quoting, a
-    value that is fine under one is broken under the other, and the
+    The app reads .env through pydantic-settings, and the Makefile passes it
+    through uv's parser with --env-file. If those two parsers disagree about
+    quoting, a value that is fine under one is broken under the other, and the
     failure looks like a settings error rather than a quoting error.
 
     Double quotes are the trap. Both parsers treat " as a quote character
@@ -223,56 +221,6 @@ def test_json_settings_survive_both_dotenv_parsers(
     parsed = dotenv_values(tmp_path / ".env")
     assert parsed["RETRIV_CORS_ALLOWED_ORIGINS"] == '["https://a.example.test"]'
     assert parsed["RETRIV_OCR_LANGUAGES"] == '["ind","eng"]'
-
-
-def test_provisioning_does_not_read_dotenv_by_itself(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The one-shot job takes its settings from the environment only.
-
-    A job with write access to every user row should not silently pick up
-    credentials just because it ran in a directory that has a .env, which
-    is why env_file=None. The Makefile-style invocation passes the file
-    explicitly instead.
-    """
-    from provisioning.service import ProvisionerSettings
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env").write_text(
-        "PROVISIONER_S3_ENDPOINT_URL=http://127.0.0.1:9000\n"
-        "PROVISIONER_S3_ACCESS_KEY=migration-reader\n"
-        "PROVISIONER_S3_SECRET_KEY=" + "s" * 40 + "\n"
-        "PROVISIONER_DATABASE_URL=postgresql+asyncpg://retriv:pw@127.0.0.1:5432/retriv\n"
-        "PROVISIONER_RAW_DOCUMENT_BUCKET=raw-documents\n"
-        "PROVISIONER_MANIFEST_URI=s3://migration-manifests/bootstrap/users-v1.json\n"
-    )
-    for name in (
-        "PROVISIONER_S3_ENDPOINT_URL",
-        "PROVISIONER_S3_ACCESS_KEY",
-        "PROVISIONER_S3_SECRET_KEY",
-        "PROVISIONER_DATABASE_URL",
-        "PROVISIONER_RAW_DOCUMENT_BUCKET",
-        "PROVISIONER_MANIFEST_URI",
-    ):
-        monkeypatch.delenv(name, raising=False)
-
-    with pytest.raises(ValidationError, match="PROVISIONER_DATABASE_URL is required"):
-        ProvisionerSettings()
-
-    monkeypatch.setenv("PROVISIONER_S3_ENDPOINT_URL", "http://127.0.0.1:9000")
-    monkeypatch.setenv("PROVISIONER_S3_ACCESS_KEY", "migration-reader")
-    monkeypatch.setenv("PROVISIONER_S3_SECRET_KEY", "s" * 40)
-    monkeypatch.setenv(
-        "PROVISIONER_DATABASE_URL",
-        "postgresql+asyncpg://retriv:pw@127.0.0.1:5432/retriv",
-    )
-    monkeypatch.setenv("PROVISIONER_RAW_DOCUMENT_BUCKET", "raw-documents")
-    monkeypatch.setenv(
-        "PROVISIONER_MANIFEST_URI", "s3://migration-manifests/bootstrap/users-v1.json"
-    )
-    settings = ProvisionerSettings()
-    assert settings.s3_access_key == "migration-reader"
-    assert settings.manifest_bucket == "migration-manifests"
 
 
 def _reader_settings(**overrides: Any) -> dict[str, Any]:
@@ -301,7 +249,7 @@ def test_matching_sql_reader_credentials_are_accepted() -> None:
 def test_sql_reader_password_mismatch_is_named_at_startup() -> None:
     """Rotating one copy of the password is the most likely mistake here.
 
-    Without this the deployment migrates cleanly, provisions cleanly, and then
+    Without this the deployment migrates cleanly, is configured cleanly, and then
     dies in verify_reader() with "RETRIV_SQL_DATABASE_URL is configured but
     unusable" -- which blames the DSN and says nothing about the value that
     actually disagrees with it.
@@ -418,3 +366,42 @@ def test_production_rejects_a_placeholder_vision_key() -> None:
 def test_the_token_ceiling_must_not_be_below_the_budget() -> None:
     with pytest.raises(ValidationError, match="MAX_TOKENS_CEILING"):
         Settings(vlm_max_tokens=8192, vlm_max_tokens_ceiling=256)
+
+
+# --- bootstrap admin ------------------------------------------------------
+
+
+def test_bootstrap_admin_username_is_normalized() -> None:
+    settings = Settings(
+        bootstrap_admin_username=" Admin ",
+        bootstrap_admin_password=SecretStr("correct-password-123"),
+    )
+    assert settings.bootstrap_admin_username == "admin"
+
+
+def test_bootstrap_admin_username_and_password_are_set_together() -> None:
+    with pytest.raises(ValidationError, match="set together"):
+        Settings(bootstrap_admin_username="admin")
+    with pytest.raises(ValidationError, match="set together"):
+        Settings(bootstrap_admin_password=SecretStr("correct-password-123"))
+
+
+def test_bootstrap_admin_password_must_be_long_enough() -> None:
+    with pytest.raises(ValidationError, match="at least 12 bytes"):
+        Settings(
+            bootstrap_admin_username="admin",
+            bootstrap_admin_password=SecretStr("short"),
+        )
+
+
+def test_production_rejects_a_placeholder_bootstrap_password() -> None:
+    with pytest.raises(ValidationError, match="placeholders"):
+        Settings(
+            **{
+                **PRODUCTION_BASE,
+                "bootstrap_admin_username": "admin",
+                "bootstrap_admin_password": SecretStr(
+                    "change-this-bootstrap-admin-password"
+                ),
+            }
+        )

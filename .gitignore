@@ -8,8 +8,6 @@ __pycache__/
 *.egg-info/
 .coverage
 htmlcov/
-migration-manifests/
-*.migration.json
 data
 
 # local model/tessdata caches used by offline diagnostics

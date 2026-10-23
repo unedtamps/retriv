@@ -9,7 +9,6 @@ from alembic import context
 from app.core.config import get_settings
 from app.db import models  # noqa: F401
 from app.db.session import Base
-from provisioning import models as provisioning_models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
