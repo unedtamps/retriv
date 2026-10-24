@@ -1,0 +1,5379 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "type": "frame",
+      "id": "fMNC5",
+      "x": 0,
+      "y": 0,
+      "name": "Retriv / System Architecture",
+      "clip": true,
+      "width": 1480,
+      "height": 540,
+      "fill": "#080908",
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "xZ6yU",
+          "x": 48,
+          "y": 28,
+          "name": "surfaces label",
+          "fill": "#82847F",
+          "content": "01  SURFACES",
+          "fontFamily": "Fira Code",
+          "fontSize": 9,
+          "fontWeight": "600",
+          "letterSpacing": 1.6
+        },
+        {
+          "type": "text",
+          "id": "EVSO0",
+          "x": 328,
+          "y": 28,
+          "name": "application label",
+          "fill": "#82847F",
+          "content": "02  APPLICATION",
+          "fontFamily": "Fira Code",
+          "fontSize": 9,
+          "fontWeight": "600",
+          "letterSpacing": 1.6
+        },
+        {
+          "type": "text",
+          "id": "HeW3z",
+          "x": 668,
+          "y": 28,
+          "name": "data label",
+          "fill": "#82847F",
+          "content": "03  DATA PLANE",
+          "fontFamily": "Fira Code",
+          "fontSize": 9,
+          "fontWeight": "600",
+          "letterSpacing": 1.6
+        },
+        {
+          "type": "text",
+          "id": "j5Rp4",
+          "x": 1048,
+          "y": 28,
+          "name": "runtime label",
+          "fill": "#82847F",
+          "content": "04  RUNTIME",
+          "fontFamily": "Fira Code",
+          "fontSize": 9,
+          "fontWeight": "600",
+          "letterSpacing": 1.6
+        },
+        {
+          "type": "frame",
+          "id": "ZYMbN",
+          "x": 48,
+          "y": 56,
+          "name": "Dashboard card",
+          "width": 220,
+          "height": 76,
+          "fill": "#0D0E0C",
+          "stroke": "#343633",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Z5hAln",
+              "name": "Dashboard heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "GcKFT",
+                  "name": "Dashboard icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "layout-dashboard",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "NtF7D",
+                  "name": "Dashboard title",
+                  "fill": "#F4F4F0",
+                  "content": "Dashboard",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "Uc1Iq",
+                  "name": "Dashboard tag",
+                  "fill": "#777A72",
+                  "content": "React",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "tTJ3J",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Catalogue + uploads.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "x0Uz2s",
+          "x": 48,
+          "y": 156,
+          "name": "MCP client card",
+          "width": 220,
+          "height": 76,
+          "fill": "#0D0E0C",
+          "stroke": "#343633",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "jHp8m",
+              "name": "MCP client heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "RGj31",
+                  "name": "MCP client icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "bot",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "odEA2",
+                  "name": "MCP client title",
+                  "fill": "#F4F4F0",
+                  "content": "MCP client",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "tVqDR",
+                  "name": "MCP client tag",
+                  "fill": "#777A72",
+                  "content": "agent",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "B4knXE",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Read-only agent tools.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "jvAgJ",
+          "x": 328,
+          "y": 56,
+          "name": "API card",
+          "width": 280,
+          "height": 276,
+          "fill": "#0A0B09",
+          "stroke": "#E8E9E3",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "l3OCv",
+              "name": "API heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "H6gik",
+                  "name": "API icon",
+                  "width": 17,
+                  "height": 17,
+                  "icon": "route",
+                  "library": "lucide",
+                  "fill": "#F4F4F0"
+                },
+                {
+                  "type": "text",
+                  "id": "EpAvU",
+                  "name": "API title",
+                  "fill": "#F4F4F0",
+                  "content": "app/",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "grY5n",
+                  "name": "API tag",
+                  "fill": "#A4A69F",
+                  "content": "FastAPI",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "fScfr",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Scoped request router.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "rectangle",
+              "id": "pOy7i",
+              "name": "API divider",
+              "fill": "#2E302D",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "frame",
+              "id": "EHNDp",
+              "name": "module Auth",
+              "width": "fill_container",
+              "gap": 7,
+              "padding": [
+                4,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "q4jdal",
+                  "name": "module icon box",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#171816",
+                  "stroke": "#30322F",
+                  "strokeWidth": 1,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "N0KFT5",
+                      "name": "module icon",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "key-round",
+                      "library": "lucide",
+                      "fill": "#E8E9E3"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Y0HZP",
+                  "name": "module text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "uEjbp",
+                      "name": "module title",
+                      "fill": "#F4F4F0",
+                      "content": "Auth",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 11.5,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "ojyjE",
+                      "name": "module desc",
+                      "fill": "#83867E",
+                      "content": "JWT / roles",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "L9quiU",
+              "name": "module Intake",
+              "width": "fill_container",
+              "gap": 7,
+              "padding": [
+                4,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "WgE52",
+                  "name": "module icon box",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#171816",
+                  "stroke": "#30322F",
+                  "strokeWidth": 1,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "GhvY6",
+                      "name": "module icon",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "file-up",
+                      "library": "lucide",
+                      "fill": "#E8E9E3"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "dX9ND",
+                  "name": "module text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dleBP",
+                      "name": "module title",
+                      "fill": "#F4F4F0",
+                      "content": "Intake",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 11.5,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "WcIYv",
+                      "name": "module desc",
+                      "fill": "#83867E",
+                      "content": "scan + link",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "EgSXk",
+              "name": "module Retrieval",
+              "width": "fill_container",
+              "gap": 7,
+              "padding": [
+                4,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "QFGc8",
+                  "name": "module icon box",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#171816",
+                  "stroke": "#30322F",
+                  "strokeWidth": 1,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "s8J9y0",
+                      "name": "module icon",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "search",
+                      "library": "lucide",
+                      "fill": "#E8E9E3"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "uHNut",
+                  "name": "module text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "U8k1P0",
+                      "name": "module title",
+                      "fill": "#F4F4F0",
+                      "content": "Retrieval",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 11.5,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "hOdsn",
+                      "name": "module desc",
+                      "fill": "#83867E",
+                      "content": "vector + SQL",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "G0hBx",
+              "name": "module MCP",
+              "width": "fill_container",
+              "gap": 7,
+              "padding": [
+                4,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "c7xCU",
+                  "name": "module icon box",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#171816",
+                  "stroke": "#30322F",
+                  "strokeWidth": 1,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "XYxXl",
+                      "name": "module icon",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "radio",
+                      "library": "lucide",
+                      "fill": "#E8E9E3"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "syAXN",
+                  "name": "module text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "v9f60",
+                      "name": "module title",
+                      "fill": "#F4F4F0",
+                      "content": "MCP",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 11.5,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "JEMo8",
+                      "name": "module desc",
+                      "fill": "#83867E",
+                      "content": "6 tools",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "T1FE5O",
+              "name": "API footer",
+              "fill": "#F4F4F0",
+              "content": "Scope comes from membership.",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "SqOdv",
+          "x": 668,
+          "y": 56,
+          "name": "PostgreSQL card",
+          "width": 320,
+          "height": 76,
+          "fill": "#0D0E0C",
+          "stroke": "#343633",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "zlYso",
+              "name": "PostgreSQL heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "kfHPt",
+                  "name": "PostgreSQL icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "database",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "V67jL",
+                  "name": "PostgreSQL title",
+                  "fill": "#F4F4F0",
+                  "content": "PostgreSQL",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "o78bB",
+                  "name": "PostgreSQL tag",
+                  "fill": "#777A72",
+                  "content": "truth",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "pZLtt",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Metadata + queue.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "D3gQX",
+          "x": 668,
+          "y": 156,
+          "name": "Qdrant card",
+          "width": 320,
+          "height": 76,
+          "fill": "#0D0E0C",
+          "stroke": "#343633",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "YnkyM",
+              "name": "Qdrant heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "gaCAx",
+                  "name": "Qdrant icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "boxes",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "Sz3OM",
+                  "name": "Qdrant title",
+                  "fill": "#F4F4F0",
+                  "content": "Qdrant",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "csxSE",
+                  "name": "Qdrant tag",
+                  "fill": "#777A72",
+                  "content": "candidates",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "v4Kny",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Vectors by workspace_ids.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "tvgLV",
+          "x": 668,
+          "y": 256,
+          "name": "S3 card",
+          "width": 320,
+          "height": 76,
+          "fill": "#0D0E0C",
+          "stroke": "#343633",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "wQnaZ",
+              "name": "S3 / R2 heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "iZVi8",
+                  "name": "S3 / R2 icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "cloud",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "rjmpS",
+                  "name": "S3 / R2 title",
+                  "fill": "#F4F4F0",
+                  "content": "S3 / R2",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "A4YYT5",
+                  "name": "S3 / R2 tag",
+                  "fill": "#777A72",
+                  "content": "objects",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "W6zQVv",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Raw objects + artifacts.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "ITvL0",
+          "x": 1048,
+          "y": 56,
+          "name": "Worker card",
+          "width": 360,
+          "height": 276,
+          "fill": "#0A0B09",
+          "stroke": "#E8E9E3",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "MmA7s",
+              "name": "worker/ heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "q2wYZ",
+                  "name": "worker/ icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "cpu",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "mjnYD",
+                  "name": "worker/ title",
+                  "fill": "#F4F4F0",
+                  "content": "worker/",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "nzzA4",
+                  "name": "worker/ tag",
+                  "fill": "#777A72",
+                  "content": "one lease",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "hsDpR",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Extract once. Chunk once.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "bPhnD",
+              "name": "Worker stages",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "rwNZF",
+                  "name": "stage Docling sandbox",
+                  "width": "fill_container",
+                  "gap": 7,
+                  "padding": [
+                    4,
+                    0
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "dwBBg",
+                      "name": "stage icon",
+                      "width": 13,
+                      "height": 13,
+                      "icon": "scan-text",
+                      "library": "lucide",
+                      "fill": "#E8E9E3"
+                    },
+                    {
+                      "type": "text",
+                      "id": "EVr4R",
+                      "name": "stage label",
+                      "fill": "#C7C9C1",
+                      "content": "Docling sandbox",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Ee0N5",
+                  "name": "stage chunk + embed",
+                  "width": "fill_container",
+                  "gap": 7,
+                  "padding": [
+                    4,
+                    0
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "KZm3P",
+                      "name": "stage icon",
+                      "width": 13,
+                      "height": 13,
+                      "icon": "blocks",
+                      "library": "lucide",
+                      "fill": "#E8E9E3"
+                    },
+                    {
+                      "type": "text",
+                      "id": "VpG6a",
+                      "name": "stage label",
+                      "fill": "#C7C9C1",
+                      "content": "chunk + embed",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OBmOB",
+                  "name": "stage access sync",
+                  "width": "fill_container",
+                  "gap": 7,
+                  "padding": [
+                    4,
+                    0
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "z3JowT",
+                      "name": "stage icon",
+                      "width": 13,
+                      "height": 13,
+                      "icon": "refresh-cw",
+                      "library": "lucide",
+                      "fill": "#E8E9E3"
+                    },
+                    {
+                      "type": "text",
+                      "id": "fhJcl",
+                      "name": "stage label",
+                      "fill": "#C7C9C1",
+                      "content": "access sync",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "V6MTj",
+              "name": "Worker footer",
+              "fill": "#82847F",
+              "content": "lease + retry",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "cYPap",
+          "x": 328,
+          "y": 404,
+          "name": "ClamAV card",
+          "width": 280,
+          "height": 76,
+          "fill": "#0D0E0C",
+          "stroke": "#343633",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "NgMLM",
+              "name": "ClamAV heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "QpXH5",
+                  "name": "ClamAV icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "shield-check",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "wu9T2",
+                  "name": "ClamAV title",
+                  "fill": "#F4F4F0",
+                  "content": "ClamAV",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "hFLcp",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Scan before storage.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Zm6v3",
+          "x": 1048,
+          "y": 404,
+          "name": "Model endpoints card",
+          "width": 360,
+          "height": 76,
+          "fill": "#0D0E0C",
+          "stroke": "#343633",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "t9dT3",
+              "name": "LM Studio + VLM heading",
+              "width": "fill_container",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "hxrWD",
+                  "name": "LM Studio + VLM icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "brain",
+                  "library": "lucide",
+                  "fill": "#E8E9E3"
+                },
+                {
+                  "type": "text",
+                  "id": "YGUwC",
+                  "name": "LM Studio + VLM title",
+                  "fill": "#F4F4F0",
+                  "content": "LM Studio + VLM",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "jjpUv",
+              "name": "body",
+              "fill": "#A4A69F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Embed + describe.",
+              "lineHeight": 1.35,
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "rectangle",
+          "id": "EDm9A",
+          "x": 268,
+          "y": 94,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "o67yD",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-right",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "ftdQO",
+          "x": 268,
+          "y": 194,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "GBel0",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-right",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "J8HXq",
+          "x": 608,
+          "y": 94,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "ZMHWQ",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-right",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "UMXJB",
+          "x": 608,
+          "y": 194,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "Eg3pJ",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-right",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "jQlmI",
+          "x": 608,
+          "y": 294,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "ghsDM",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-right",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "EwXnb",
+          "x": 988,
+          "y": 94,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "QRhdj",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-left",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "SVfrb",
+          "x": 988,
+          "y": 194,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "t2Vos",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-left",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "Eq4qD",
+          "x": 988,
+          "y": 294,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 60,
+          "height": 2
+        },
+        {
+          "type": "icon",
+          "id": "EeD3x",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-left",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "b6qvt",
+          "x": 468,
+          "y": 332,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 2,
+          "height": 72
+        },
+        {
+          "type": "icon",
+          "id": "kp9JQ",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-down",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        },
+        {
+          "type": "rectangle",
+          "id": "HZd9R",
+          "x": 1228,
+          "y": 332,
+          "name": "connector",
+          "opacity": 0.45,
+          "fill": "#FFFFFF",
+          "width": 2,
+          "height": 72
+        },
+        {
+          "type": "icon",
+          "id": "gDDfI",
+          "x": 0,
+          "y": 0,
+          "name": "arrow",
+          "width": 11,
+          "height": 11,
+          "icon": "arrow-down",
+          "library": "lucide",
+          "fill": "#E8E9E3"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "GZPqn",
+      "x": 1600,
+      "y": 0,
+      "name": "Retriv Web / Workspace overview",
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "#F7F5EF",
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "G1sUr9",
+          "x": 0,
+          "y": 0,
+          "name": "Sidebar",
+          "clip": true,
+          "width": 232,
+          "height": 900,
+          "fill": "#FFFFFF",
+          "layout": "none",
+          "children": [
+            {
+              "type": "rectangle",
+              "id": "Ax8s4",
+              "x": 231,
+              "y": 0,
+              "name": "Sidebar edge",
+              "fill": "#E3E0D6",
+              "width": 1,
+              "height": 900
+            },
+            {
+              "type": "frame",
+              "id": "KCiE3",
+              "x": 20,
+              "y": 20,
+              "name": "Brand mark",
+              "width": 32,
+              "height": 32,
+              "fill": "#D9F15F",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "Hslpv",
+                  "name": "Brand icon",
+                  "width": 17,
+                  "height": 17,
+                  "icon": "layers",
+                  "library": "lucide",
+                  "fill": "#47520F"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "g4eWS",
+              "x": 62,
+              "y": 22,
+              "name": "Brand name",
+              "fill": "#1C1E1A",
+              "content": "Retriv",
+              "fontFamily": "Fira Sans",
+              "fontSize": 15,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "RZqAC",
+              "x": 62,
+              "y": 40,
+              "name": "Brand sub",
+              "fill": "#8D8F88",
+              "content": "CONTROL PLANE",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "600",
+              "letterSpacing": 1.4
+            },
+            {
+              "type": "frame",
+              "id": "ahJTS",
+              "x": 14,
+              "y": 82,
+              "name": "Workspace switcher",
+              "width": 204,
+              "height": 56,
+              "fill": "#F1EFE8",
+              "cornerRadius": 8,
+              "gap": 10,
+              "padding": [
+                0,
+                12
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "KZzqi",
+                  "name": "Workspace icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "building-2",
+                  "library": "lucide",
+                  "fill": "#B7791F"
+                },
+                {
+                  "type": "frame",
+                  "id": "Y8jSmF",
+                  "name": "Workspace text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "hooo9",
+                      "name": "Workspace name",
+                      "fill": "#1C1E1A",
+                      "content": "Finance",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "B1Oim",
+                      "name": "Workspace meta",
+                      "fill": "#5D5F58",
+                      "content": "Owner · 12 members",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "icon",
+                  "id": "Q0VdSz",
+                  "name": "Switcher chevron",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "chevron-down",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "CoKJp",
+              "x": 20,
+              "y": 164,
+              "name": "Nav label",
+              "fill": "#8D8F88",
+              "content": "WORKSPACE",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1.4
+            },
+            {
+              "type": "frame",
+              "id": "R7P8Gv",
+              "x": 12,
+              "y": 184,
+              "name": "Nav Overview",
+              "width": 208,
+              "height": 34,
+              "fill": "#F4F9DD",
+              "cornerRadius": 7,
+              "gap": 10,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "wky08",
+                  "name": "Nav icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "layout-grid",
+                  "library": "lucide",
+                  "fill": "#47520F"
+                },
+                {
+                  "type": "text",
+                  "id": "QZ5pR",
+                  "name": "Nav text",
+                  "fill": "#47520F",
+                  "content": "Overview",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "MEULn",
+              "x": 12,
+              "y": 222,
+              "name": "Nav Documents",
+              "width": 208,
+              "height": 34,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 10,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "l8uY43",
+                  "name": "Nav icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "files",
+                  "library": "lucide",
+                  "fill": "#5D5F58"
+                },
+                {
+                  "type": "text",
+                  "id": "V8nIeO",
+                  "name": "Nav text",
+                  "fill": "#5D5F58",
+                  "content": "Documents",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "T3RsB",
+              "x": 12,
+              "y": 260,
+              "name": "Nav Upload",
+              "width": 208,
+              "height": 34,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 10,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "l9YYEc",
+                  "name": "Nav icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "upload",
+                  "library": "lucide",
+                  "fill": "#5D5F58"
+                },
+                {
+                  "type": "text",
+                  "id": "DSACV",
+                  "name": "Nav text",
+                  "fill": "#5D5F58",
+                  "content": "Upload",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "IdemO",
+              "x": 12,
+              "y": 298,
+              "name": "Nav Members",
+              "width": 208,
+              "height": 34,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 10,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "I78MsH",
+                  "name": "Nav icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "users",
+                  "library": "lucide",
+                  "fill": "#5D5F58"
+                },
+                {
+                  "type": "text",
+                  "id": "hckOU",
+                  "name": "Nav text",
+                  "fill": "#5D5F58",
+                  "content": "Members",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "TfObb",
+              "x": 12,
+              "y": 336,
+              "name": "Nav Settings",
+              "width": 208,
+              "height": 34,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 10,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "hMuFr",
+                  "name": "Nav icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "settings",
+                  "library": "lucide",
+                  "fill": "#5D5F58"
+                },
+                {
+                  "type": "text",
+                  "id": "bmmVI",
+                  "name": "Nav text",
+                  "fill": "#5D5F58",
+                  "content": "Settings",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "TGXgv",
+              "x": 20,
+              "y": 390,
+              "name": "Directory label",
+              "fill": "#8D8F88",
+              "content": "YOUR WORKSPACES",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1.4
+            },
+            {
+              "type": "frame",
+              "id": "y7gmW",
+              "x": 12,
+              "y": 410,
+              "name": "Workspace Finance",
+              "width": 208,
+              "height": 32,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 9,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "UPOo1",
+                  "name": "Workspace dot",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "#B7791F",
+                  "cornerRadius": 2
+                },
+                {
+                  "type": "text",
+                  "id": "K1bkMr",
+                  "name": "Workspace label",
+                  "fill": "#5D5F58",
+                  "content": "Finance",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "JPGCk",
+              "x": 12,
+              "y": 446,
+              "name": "Workspace Legal",
+              "width": 208,
+              "height": 32,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 9,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "eO7IC",
+                  "name": "Workspace dot",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "#3B6FB6",
+                  "cornerRadius": 2
+                },
+                {
+                  "type": "text",
+                  "id": "mru5g",
+                  "name": "Workspace label",
+                  "fill": "#5D5F58",
+                  "content": "Legal",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "xdchq",
+              "x": 12,
+              "y": 482,
+              "name": "Workspace Product",
+              "width": 208,
+              "height": 32,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 9,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "k2tO6",
+                  "name": "Workspace dot",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "#6F56A8",
+                  "cornerRadius": 2
+                },
+                {
+                  "type": "text",
+                  "id": "ySZFD",
+                  "name": "Workspace label",
+                  "fill": "#5D5F58",
+                  "content": "Product",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "tI9lQ",
+              "x": 12,
+              "y": 530,
+              "name": "New workspace",
+              "width": 208,
+              "height": 32,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "gap": 9,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center"
+            },
+            {
+              "type": "icon",
+              "id": "S7caL",
+              "x": 0,
+              "y": 0,
+              "name": "New workspace icon",
+              "width": 15,
+              "height": 15,
+              "icon": "plus",
+              "library": "lucide",
+              "fill": "#8D8F88"
+            },
+            {
+              "type": "text",
+              "id": "p8pYde",
+              "x": 43,
+              "y": 537,
+              "name": "New workspace text",
+              "fill": "#8D8F88",
+              "content": "New workspace",
+              "fontFamily": "Fira Sans",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "rectangle",
+              "id": "HpDiz",
+              "x": 16,
+              "y": 792,
+              "name": "Sidebar footer rule",
+              "fill": "#E3E0D6",
+              "width": 200,
+              "height": 1
+            },
+            {
+              "type": "frame",
+              "id": "sUL8H",
+              "x": 20,
+              "y": 816,
+              "name": "User avatar",
+              "width": 32,
+              "height": 32,
+              "fill": "#F1EDF9",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "k3cUA",
+                  "name": "Avatar initials",
+                  "fill": "#6F56A8",
+                  "content": "UN",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 10,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "WoxQK",
+              "x": 62,
+              "y": 818,
+              "name": "User name",
+              "fill": "#1C1E1A",
+              "content": "unedo",
+              "fontFamily": "Fira Sans",
+              "fontSize": 12,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "Fki6P",
+              "x": 62,
+              "y": 834,
+              "name": "User role",
+              "fill": "#8D8F88",
+              "content": "Platform admin",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "icon",
+              "id": "G4G5Qq",
+              "x": 198,
+              "y": 824,
+              "name": "Sign out",
+              "width": 14,
+              "height": 14,
+              "icon": "log-out",
+              "library": "lucide",
+              "fill": "#8D8F88"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "FMWWS",
+          "x": 232,
+          "y": 0,
+          "name": "Top bar",
+          "width": 1208,
+          "height": 64,
+          "fill": "#F7F5EF",
+          "layout": "none",
+          "children": [
+            {
+              "type": "rectangle",
+              "id": "mgaoE",
+              "x": 0,
+              "y": 63,
+              "name": "Top bar rule",
+              "fill": "#E3E0D6",
+              "width": 1208,
+              "height": 1
+            },
+            {
+              "type": "text",
+              "id": "U3VVq",
+              "x": 32,
+              "y": 24,
+              "name": "Breadcrumb",
+              "fill": "#8D8F88",
+              "content": "Workspaces  /  Finance",
+              "fontFamily": "Fira Code",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "JqJQz",
+              "x": 356,
+              "y": 16,
+              "name": "Global search",
+              "width": 340,
+              "height": 32,
+              "fill": "#FFFFFF",
+              "cornerRadius": 8,
+              "stroke": "#E3E0D6",
+              "strokeWidth": 1,
+              "gap": 8,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "V1YKFv",
+                  "name": "Search icon",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "search",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "text",
+                  "id": "Rq8N3",
+                  "name": "Search placeholder",
+                  "fill": "#8D8F88",
+                  "content": "Search documents, workspaces…",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "wt2Ur",
+                  "name": "Search shortcut",
+                  "fill": "#CFCBBE",
+                  "content": "⌘ K",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "tiHZA",
+              "x": 860,
+              "y": 17,
+              "name": "Processing pill",
+              "width": 132,
+              "height": 30,
+              "fill": "#FDF4E5",
+              "cornerRadius": 999,
+              "stroke": "#E9D2A8",
+              "strokeWidth": 1,
+              "gap": 7,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "su6nt",
+                  "name": "Processing icon",
+                  "width": 13,
+                  "height": 13,
+                  "icon": "loader-circle",
+                  "library": "lucide",
+                  "fill": "#B7791F"
+                },
+                {
+                  "type": "text",
+                  "id": "p99R7",
+                  "name": "Processing text",
+                  "fill": "#8A5A12",
+                  "content": "2 processing",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 9,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "icon",
+              "id": "pzUjJ",
+              "x": 1024,
+              "y": 21,
+              "name": "Notifications",
+              "width": 17,
+              "height": 17,
+              "icon": "bell",
+              "library": "lucide",
+              "fill": "#5D5F58"
+            },
+            {
+              "type": "frame",
+              "id": "rDRIJ",
+              "x": 1035,
+              "y": 18,
+              "name": "Notification dot",
+              "width": 6,
+              "height": 6,
+              "fill": "#B44B3F",
+              "cornerRadius": 999
+            },
+            {
+              "type": "frame",
+              "id": "uqsxK",
+              "x": 1060,
+              "y": 15,
+              "name": "Top avatar",
+              "width": 34,
+              "height": 34,
+              "fill": "#F1EDF9",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "B0Acl",
+                  "name": "Top avatar initials",
+                  "fill": "#6F56A8",
+                  "content": "UN",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 10,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "rsLXU",
+          "x": 264,
+          "y": 96,
+          "name": "Header eyebrow",
+          "fill": "#B7791F",
+          "content": "WORKSPACE  /  FINANCE",
+          "fontFamily": "Fira Code",
+          "fontSize": 9,
+          "fontWeight": "600",
+          "letterSpacing": 1.5
+        },
+        {
+          "type": "text",
+          "id": "mmwfb",
+          "x": 264,
+          "y": 114,
+          "name": "Header title",
+          "fill": "#1C1E1A",
+          "content": "Finance workspace",
+          "fontFamily": "Fira Sans",
+          "fontSize": 28,
+          "fontWeight": "600",
+          "letterSpacing": -0.6
+        },
+        {
+          "type": "text",
+          "id": "syeae",
+          "x": 264,
+          "y": 154,
+          "name": "Header description",
+          "fill": "#5D5F58",
+          "content": "Annual reports, board packs, and operating context — scoped to the Finance team.",
+          "lineHeight": 1.4,
+          "fontFamily": "Fira Sans",
+          "fontSize": 13,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "pkoQ8",
+          "x": 264,
+          "y": 178,
+          "name": "Role chip",
+          "height": 24,
+          "fill": "#F1EDF9",
+          "cornerRadius": 999,
+          "gap": 5,
+          "padding": [
+            0,
+            9
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "W44dcs",
+              "name": "Role chip text",
+              "fill": "#6F56A8",
+              "content": "OWNER",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "dceac",
+          "x": 336,
+          "y": 178,
+          "name": "Members chip",
+          "height": 24,
+          "fill": "#F1EFE8",
+          "cornerRadius": 999,
+          "gap": 5,
+          "padding": [
+            0,
+            9
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "NcXrL",
+              "name": "Members chip text",
+              "fill": "#5D5F58",
+              "content": "12 MEMBERS",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "SLf75",
+          "x": 438,
+          "y": 178,
+          "name": "Updated chip",
+          "height": 24,
+          "fill": "#F1EFE8",
+          "cornerRadius": 999,
+          "gap": 5,
+          "padding": [
+            0,
+            9
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "rAEgO",
+              "name": "Updated chip text",
+              "fill": "#8D8F88",
+              "content": "UPDATED 2H AGO",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "oA9rb",
+          "x": 1038,
+          "y": 112,
+          "name": "Manage access button",
+          "width": 126,
+          "height": 34,
+          "fill": "#FFFFFF",
+          "cornerRadius": 8,
+          "stroke": "#CFCBBE",
+          "strokeWidth": 1,
+          "gap": 7,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon",
+              "id": "wzl8P",
+              "name": "Manage icon",
+              "width": 15,
+              "height": 15,
+              "icon": "users",
+              "library": "lucide",
+              "fill": "#5D5F58"
+            },
+            {
+              "type": "text",
+              "id": "hpzjt",
+              "name": "Manage text",
+              "fill": "#1C1E1A",
+              "content": "Manage access",
+              "fontFamily": "Fira Sans",
+              "fontSize": 12,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "BW1jQ",
+          "x": 1180,
+          "y": 112,
+          "name": "Upload primary",
+          "width": 162,
+          "height": 34,
+          "fill": "#D9F15F",
+          "cornerRadius": 8,
+          "gap": 7,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon",
+              "id": "AI9NM",
+              "name": "Upload icon",
+              "width": 16,
+              "height": 16,
+              "icon": "file-up",
+              "library": "lucide",
+              "fill": "#47520F"
+            },
+            {
+              "type": "text",
+              "id": "c4j7Mz",
+              "name": "Upload text",
+              "fill": "#47520F",
+              "content": "Upload document",
+              "fontFamily": "Fira Sans",
+              "fontSize": 12,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "l94HK",
+          "x": 264,
+          "y": 224,
+          "name": "Documents stat",
+          "width": 270,
+          "height": 92,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "pFVwk",
+              "x": 16,
+              "y": 16,
+              "name": "Documents stat icon tile",
+              "width": 34,
+              "height": 34,
+              "fill": "#EAF1FB",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "v3nqmE",
+                  "name": "Documents stat icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "files",
+                  "library": "lucide",
+                  "fill": "#3B6FB6"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "ZtkFs",
+              "x": 62,
+              "y": 14,
+              "name": "Documents stat label",
+              "fill": "#8D8F88",
+              "content": "DOCUMENTS",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "zUPco",
+              "x": 62,
+              "y": 27,
+              "name": "Documents stat value",
+              "fill": "#1C1E1A",
+              "content": "128",
+              "fontFamily": "Fira Sans",
+              "fontSize": 22,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "T0iXtP",
+              "x": 16,
+              "y": 66,
+              "name": "Documents stat sub",
+              "fill": "#8D8F88",
+              "content": "Across 4 file types",
+              "fontFamily": "Fira Sans",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "ItixE",
+          "x": 550,
+          "y": 224,
+          "name": "Ready stat",
+          "width": 270,
+          "height": 92,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Xrcmk",
+              "x": 16,
+              "y": 16,
+              "name": "Ready stat icon tile",
+              "width": 34,
+              "height": 34,
+              "fill": "#EEF5EF",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "PET2F",
+                  "name": "Ready stat icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "circle-check",
+                  "library": "lucide",
+                  "fill": "#2F6B3A"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "sqG27",
+              "x": 62,
+              "y": 14,
+              "name": "Ready stat label",
+              "fill": "#8D8F88",
+              "content": "READY",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "BtCnl",
+              "x": 62,
+              "y": 27,
+              "name": "Ready stat value",
+              "fill": "#1C1E1A",
+              "content": "112",
+              "fontFamily": "Fira Sans",
+              "fontSize": 22,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "MXzSK",
+              "x": 16,
+              "y": 66,
+              "name": "Ready stat sub",
+              "fill": "#8D8F88",
+              "content": "87% of corpus",
+              "fontFamily": "Fira Sans",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "NVQ9O",
+          "x": 836,
+          "y": 224,
+          "name": "Processing stat",
+          "width": 270,
+          "height": 92,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Mgfqh",
+              "x": 16,
+              "y": 16,
+              "name": "Processing stat icon tile",
+              "width": 34,
+              "height": 34,
+              "fill": "#FDF4E5",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "jlL6n",
+                  "name": "Processing stat icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "loader-circle",
+                  "library": "lucide",
+                  "fill": "#B7791F"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "NZk0j",
+              "x": 62,
+              "y": 14,
+              "name": "Processing stat label",
+              "fill": "#8D8F88",
+              "content": "PROCESSING",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "biYnx",
+              "x": 62,
+              "y": 27,
+              "name": "Processing stat value",
+              "fill": "#1C1E1A",
+              "content": "9",
+              "fontFamily": "Fira Sans",
+              "fontSize": 22,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "U9gxP9",
+              "x": 16,
+              "y": 66,
+              "name": "Processing stat sub",
+              "fill": "#8D8F88",
+              "content": "2 queued · 7 running",
+              "fontFamily": "Fira Sans",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "mZ1fG",
+          "x": 1122,
+          "y": 224,
+          "name": "Storage stat",
+          "width": 270,
+          "height": 92,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "I2o7e",
+              "x": 16,
+              "y": 16,
+              "name": "Storage stat icon tile",
+              "width": 34,
+              "height": 34,
+              "fill": "#F1EDF9",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "Z9vXW",
+                  "name": "Storage stat icon",
+                  "width": 16,
+                  "height": 16,
+                  "icon": "hard-drive",
+                  "library": "lucide",
+                  "fill": "#6F56A8"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "xkGyL",
+              "x": 62,
+              "y": 14,
+              "name": "Storage stat label",
+              "fill": "#8D8F88",
+              "content": "STORAGE",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "IODul",
+              "x": 62,
+              "y": 27,
+              "name": "Storage stat value",
+              "fill": "#1C1E1A",
+              "content": "4.2 GB",
+              "fontFamily": "Fira Sans",
+              "fontSize": 22,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "NLkAB",
+              "x": 16,
+              "y": 66,
+              "name": "Storage stat sub",
+              "fill": "#8D8F88",
+              "content": "Raw + artifacts",
+              "fontFamily": "Fira Sans",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "rvVgp",
+          "x": 264,
+          "y": 340,
+          "name": "Documents panel",
+          "clip": true,
+          "width": 800,
+          "height": 520,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "text",
+              "id": "A3iQjw",
+              "x": 20,
+              "y": 17,
+              "name": "Documents title",
+              "fill": "#1C1E1A",
+              "content": "Documents",
+              "fontFamily": "Fira Sans",
+              "fontSize": 17,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "Wtkfu",
+              "x": 112,
+              "y": 18,
+              "name": "Document count",
+              "height": 22,
+              "fill": "#F1EFE8",
+              "cornerRadius": 6,
+              "gap": 5,
+              "padding": [
+                0,
+                8
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "bU0kr",
+                  "name": "Document count text",
+                  "fill": "#5D5F58",
+                  "content": "128",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "Hcnmp",
+              "x": 20,
+              "y": 42,
+              "name": "Documents sub",
+              "fill": "#8D8F88",
+              "content": "Everything indexed in Finance",
+              "fontFamily": "Fira Sans",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "ukkuu",
+              "x": 552,
+              "y": 14,
+              "name": "Document search",
+              "width": 228,
+              "height": 30,
+              "fill": "#F7F5EF",
+              "cornerRadius": 7,
+              "stroke": "#E3E0D6",
+              "strokeWidth": 1,
+              "gap": 7,
+              "padding": [
+                0,
+                9
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "X4yBk",
+                  "name": "Search icon",
+                  "width": 13,
+                  "height": 13,
+                  "icon": "search",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "text",
+                  "id": "HpChF",
+                  "name": "Search text",
+                  "fill": "#8D8F88",
+                  "content": "Filter documents…",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "q65XX",
+              "x": 20,
+              "y": 72,
+              "name": "Tab All",
+              "height": 22,
+              "fill": "#1C1E1A",
+              "cornerRadius": 6,
+              "stroke": "#1C1E1A",
+              "strokeWidth": 1,
+              "gap": 5,
+              "padding": [
+                0,
+                8
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "mxJ8C",
+                  "name": "tab text",
+                  "fill": "#FFFFFF",
+                  "content": "All",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "TtBb9",
+              "x": 60,
+              "y": 72,
+              "name": "Tab Ready",
+              "height": 22,
+              "fill": "#FFFFFF",
+              "cornerRadius": 6,
+              "stroke": "#E3E0D6",
+              "strokeWidth": 1,
+              "gap": 5,
+              "padding": [
+                0,
+                8
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "bJrTt",
+                  "name": "tab dot",
+                  "width": 5,
+                  "height": 5,
+                  "fill": "#2F6B3A",
+                  "cornerRadius": 999
+                },
+                {
+                  "type": "text",
+                  "id": "AdLzw",
+                  "name": "tab text",
+                  "fill": "#5D5F58",
+                  "content": "Ready",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "DSKev",
+              "x": 112,
+              "y": 72,
+              "name": "Tab Processing",
+              "height": 22,
+              "fill": "#FFFFFF",
+              "cornerRadius": 6,
+              "stroke": "#E3E0D6",
+              "strokeWidth": 1,
+              "gap": 5,
+              "padding": [
+                0,
+                8
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "A8i8h",
+                  "name": "tab dot",
+                  "width": 5,
+                  "height": 5,
+                  "fill": "#B7791F",
+                  "cornerRadius": 999
+                },
+                {
+                  "type": "text",
+                  "id": "F3M5c",
+                  "name": "tab text",
+                  "fill": "#5D5F58",
+                  "content": "Processing",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "CYwix",
+              "x": 190,
+              "y": 72,
+              "name": "Tab CSV",
+              "height": 22,
+              "fill": "#FFFFFF",
+              "cornerRadius": 6,
+              "stroke": "#E3E0D6",
+              "strokeWidth": 1,
+              "gap": 5,
+              "padding": [
+                0,
+                8
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "fcxXH",
+                  "name": "tab dot",
+                  "width": 5,
+                  "height": 5,
+                  "fill": "#2F8F83",
+                  "cornerRadius": 999
+                },
+                {
+                  "type": "text",
+                  "id": "iuAaj",
+                  "name": "tab text",
+                  "fill": "#5D5F58",
+                  "content": "CSV",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "fTrr0",
+              "x": 232,
+              "y": 72,
+              "name": "Tab Failed",
+              "height": 22,
+              "fill": "#FFFFFF",
+              "cornerRadius": 6,
+              "stroke": "#E3E0D6",
+              "strokeWidth": 1,
+              "gap": 5,
+              "padding": [
+                0,
+                8
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "M1OVJ",
+                  "name": "tab dot",
+                  "width": 5,
+                  "height": 5,
+                  "fill": "#A02C2C",
+                  "cornerRadius": 999
+                },
+                {
+                  "type": "text",
+                  "id": "Ni5uB",
+                  "name": "tab text",
+                  "fill": "#5D5F58",
+                  "content": "Failed",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "sucCV",
+              "x": 0,
+              "y": 106,
+              "name": "Table head",
+              "fill": "#F7F5EF",
+              "width": 800,
+              "height": 30
+            },
+            {
+              "type": "text",
+              "id": "enKH6",
+              "x": 16,
+              "y": 116,
+              "name": "Head DOCUMENT",
+              "fill": "#8D8F88",
+              "content": "DOCUMENT",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "mBH6y",
+              "x": 330,
+              "y": 116,
+              "name": "Head TYPE",
+              "fill": "#8D8F88",
+              "content": "TYPE",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "TuiTo",
+              "x": 410,
+              "y": 116,
+              "name": "Head STATUS",
+              "fill": "#8D8F88",
+              "content": "STATUS",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "phLHE",
+              "x": 530,
+              "y": 116,
+              "name": "Head UPDATED",
+              "fill": "#8D8F88",
+              "content": "UPDATED",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "gSLzd",
+              "x": 752,
+              "y": 116,
+              "name": "Head ",
+              "fill": "#8D8F88",
+              "fontFamily": "Fira Code",
+              "fontSize": 8,
+              "fontWeight": "600",
+              "letterSpacing": 1
+            },
+            {
+              "type": "frame",
+              "id": "Ws76v",
+              "x": 0,
+              "y": 136,
+              "name": "Document row annual-report-2025.pdf",
+              "width": 800,
+              "height": 54,
+              "fill": "#FFFFFF",
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "E6tve",
+                  "x": 16,
+                  "y": 11,
+                  "name": "File tile",
+                  "width": 30,
+                  "height": 30,
+                  "fill": "#FBEDEA",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "d0dNt",
+                      "name": "File icon",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "file-text",
+                      "library": "lucide",
+                      "fill": "#B44B3F"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "NIgxr",
+                  "x": 56,
+                  "y": 9,
+                  "name": "File name",
+                  "fill": "#1C1E1A",
+                  "content": "annual-report-2025.pdf",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "n4BBWB",
+                  "x": 56,
+                  "y": 27,
+                  "name": "File meta",
+                  "fill": "#8D8F88",
+                  "content": "24 pages · 2.4 MB",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "Yub7k",
+                  "x": 330,
+                  "y": 16,
+                  "name": "Type PDF",
+                  "height": 20,
+                  "fill": "#FBEDEA",
+                  "cornerRadius": 6,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "AzRMv",
+                      "name": "Type PDF text",
+                      "fill": "#B44B3F",
+                      "content": "PDF",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "p3B5i",
+                  "x": 410,
+                  "y": 16,
+                  "name": "Status Ready",
+                  "height": 22,
+                  "fill": "#EEF5EF",
+                  "cornerRadius": 999,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Rz5Cv",
+                      "name": "status dot",
+                      "width": 5,
+                      "height": 5,
+                      "fill": "#2F6B3A",
+                      "cornerRadius": 999
+                    },
+                    {
+                      "type": "text",
+                      "id": "GH2jK",
+                      "name": "status text",
+                      "fill": "#2F6B3A",
+                      "content": "Ready",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "Uh8c6",
+                  "x": 530,
+                  "y": 20,
+                  "name": "Updated",
+                  "fill": "#8D8F88",
+                  "content": "2 min ago",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "icon",
+                  "id": "Qw5qV",
+                  "x": 762,
+                  "y": 20,
+                  "name": "Row menu",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "ellipsis",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "pPVgc",
+                  "x": 0,
+                  "y": 53,
+                  "name": "Row rule",
+                  "fill": "#F1EFE8",
+                  "width": 800,
+                  "height": 1
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "IX3vi",
+              "x": 0,
+              "y": 190,
+              "name": "Document row board-pack-q4.docx",
+              "width": 800,
+              "height": 54,
+              "fill": "#FFFFFF",
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "KdXkt",
+                  "x": 16,
+                  "y": 11,
+                  "name": "File tile",
+                  "width": 30,
+                  "height": 30,
+                  "fill": "#EAF1FB",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "h7JRB",
+                      "name": "File icon",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "file-type",
+                      "library": "lucide",
+                      "fill": "#3B6FB6"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "DAzwW",
+                  "x": 56,
+                  "y": 9,
+                  "name": "File name",
+                  "fill": "#1C1E1A",
+                  "content": "board-pack-q4.docx",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "E8jnV",
+                  "x": 56,
+                  "y": 27,
+                  "name": "File meta",
+                  "fill": "#8D8F88",
+                  "content": "18 pages · 1.1 MB",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "grNFU",
+                  "x": 330,
+                  "y": 16,
+                  "name": "Type DOCX",
+                  "height": 20,
+                  "fill": "#EAF1FB",
+                  "cornerRadius": 6,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "m0w4C",
+                      "name": "Type DOCX text",
+                      "fill": "#3B6FB6",
+                      "content": "DOCX",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "O9rkH",
+                  "x": 410,
+                  "y": 16,
+                  "name": "Status Processing",
+                  "height": 22,
+                  "fill": "#FDF4E5",
+                  "cornerRadius": 999,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "u3r11n",
+                      "name": "status dot",
+                      "width": 5,
+                      "height": 5,
+                      "fill": "#B7791F",
+                      "cornerRadius": 999
+                    },
+                    {
+                      "type": "text",
+                      "id": "NqCni",
+                      "name": "status text",
+                      "fill": "#8A5A12",
+                      "content": "Processing",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "ThhvK",
+                  "x": 530,
+                  "y": 20,
+                  "name": "Updated",
+                  "fill": "#8D8F88",
+                  "content": "1 min ago",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "icon",
+                  "id": "JXcUP",
+                  "x": 762,
+                  "y": 20,
+                  "name": "Row menu",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "ellipsis",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "itKOg",
+                  "x": 0,
+                  "y": 53,
+                  "name": "Row rule",
+                  "fill": "#F1EFE8",
+                  "width": 800,
+                  "height": 1
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ZX5Vp",
+              "x": 0,
+              "y": 244,
+              "name": "Document row revenue-ledger.csv",
+              "width": 800,
+              "height": 54,
+              "fill": "#FFFFFF",
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "bUKDE",
+                  "x": 16,
+                  "y": 11,
+                  "name": "File tile",
+                  "width": 30,
+                  "height": 30,
+                  "fill": "#E7F5F2",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "v7vzdF",
+                      "name": "File icon",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "table-2",
+                      "library": "lucide",
+                      "fill": "#2F8F83"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "igJYB",
+                  "x": 56,
+                  "y": 9,
+                  "name": "File name",
+                  "fill": "#1C1E1A",
+                  "content": "revenue-ledger.csv",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "TA8sk",
+                  "x": 56,
+                  "y": 27,
+                  "name": "File meta",
+                  "fill": "#8D8F88",
+                  "content": "1,248 rows · 82 KB",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "Yz2UK",
+                  "x": 330,
+                  "y": 16,
+                  "name": "Type CSV",
+                  "height": 20,
+                  "fill": "#E7F5F2",
+                  "cornerRadius": 6,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "h0Eir0",
+                      "name": "Type CSV text",
+                      "fill": "#2F8F83",
+                      "content": "CSV",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "noUdL",
+                  "x": 410,
+                  "y": 16,
+                  "name": "Status Ready",
+                  "height": 22,
+                  "fill": "#EEF5EF",
+                  "cornerRadius": 999,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Z3Ibl",
+                      "name": "status dot",
+                      "width": 5,
+                      "height": 5,
+                      "fill": "#2F6B3A",
+                      "cornerRadius": 999
+                    },
+                    {
+                      "type": "text",
+                      "id": "y28Xj",
+                      "name": "status text",
+                      "fill": "#2F6B3A",
+                      "content": "Ready",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "BDjMf",
+                  "x": 530,
+                  "y": 20,
+                  "name": "Updated",
+                  "fill": "#8D8F88",
+                  "content": "12 min ago",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "icon",
+                  "id": "GmKV1",
+                  "x": 762,
+                  "y": 20,
+                  "name": "Row menu",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "ellipsis",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "xh1Un",
+                  "x": 0,
+                  "y": 53,
+                  "name": "Row rule",
+                  "fill": "#F1EFE8",
+                  "width": 800,
+                  "height": 1
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "UlCIO",
+              "x": 0,
+              "y": 298,
+              "name": "Document row vendor-agreement.pdf",
+              "width": 800,
+              "height": 54,
+              "fill": "#FFFFFF",
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "zFfwQ",
+                  "x": 16,
+                  "y": 11,
+                  "name": "File tile",
+                  "width": 30,
+                  "height": 30,
+                  "fill": "#FBEDEA",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "rNKqT",
+                      "name": "File icon",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "file-text",
+                      "library": "lucide",
+                      "fill": "#B44B3F"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "z1znCi",
+                  "x": 56,
+                  "y": 9,
+                  "name": "File name",
+                  "fill": "#1C1E1A",
+                  "content": "vendor-agreement.pdf",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "Dm0cA",
+                  "x": 56,
+                  "y": 27,
+                  "name": "File meta",
+                  "fill": "#8D8F88",
+                  "content": "9 pages · 640 KB",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "v6agC",
+                  "x": 330,
+                  "y": 16,
+                  "name": "Type PDF",
+                  "height": 20,
+                  "fill": "#FBEDEA",
+                  "cornerRadius": 6,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "h1NPd",
+                      "name": "Type PDF text",
+                      "fill": "#B44B3F",
+                      "content": "PDF",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "jFInB",
+                  "x": 410,
+                  "y": 16,
+                  "name": "Status Failed",
+                  "height": 22,
+                  "fill": "#FDF1F1",
+                  "cornerRadius": 999,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "cx4bH",
+                      "name": "status dot",
+                      "width": 5,
+                      "height": 5,
+                      "fill": "#A02C2C",
+                      "cornerRadius": 999
+                    },
+                    {
+                      "type": "text",
+                      "id": "R72Xg",
+                      "name": "status text",
+                      "fill": "#A02C2C",
+                      "content": "Failed",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "osgsE",
+                  "x": 530,
+                  "y": 20,
+                  "name": "Updated",
+                  "fill": "#8D8F88",
+                  "content": "1 hour ago",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "icon",
+                  "id": "yQaRy",
+                  "x": 762,
+                  "y": 20,
+                  "name": "Row menu",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "ellipsis",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "v5PHH",
+                  "x": 0,
+                  "y": 53,
+                  "name": "Row rule",
+                  "fill": "#F1EFE8",
+                  "width": 800,
+                  "height": 1
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Nee8s",
+              "x": 0,
+              "y": 352,
+              "name": "Document row operating-plan.docx",
+              "width": 800,
+              "height": 54,
+              "fill": "#FFFFFF",
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ifZUX",
+                  "x": 16,
+                  "y": 11,
+                  "name": "File tile",
+                  "width": 30,
+                  "height": 30,
+                  "fill": "#EAF1FB",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "eBoMP",
+                      "name": "File icon",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "file-type",
+                      "library": "lucide",
+                      "fill": "#3B6FB6"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "Wikgh",
+                  "x": 56,
+                  "y": 9,
+                  "name": "File name",
+                  "fill": "#1C1E1A",
+                  "content": "operating-plan.docx",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "m1NUn",
+                  "x": 56,
+                  "y": 27,
+                  "name": "File meta",
+                  "fill": "#8D8F88",
+                  "content": "32 pages · 2.0 MB",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "b9dmS",
+                  "x": 330,
+                  "y": 16,
+                  "name": "Type DOCX",
+                  "height": 20,
+                  "fill": "#EAF1FB",
+                  "cornerRadius": 6,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "lvf2m",
+                      "name": "Type DOCX text",
+                      "fill": "#3B6FB6",
+                      "content": "DOCX",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "riy9R",
+                  "x": 410,
+                  "y": 16,
+                  "name": "Status Ready",
+                  "height": 22,
+                  "fill": "#EEF5EF",
+                  "cornerRadius": 999,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "rNdWr",
+                      "name": "status dot",
+                      "width": 5,
+                      "height": 5,
+                      "fill": "#2F6B3A",
+                      "cornerRadius": 999
+                    },
+                    {
+                      "type": "text",
+                      "id": "DboD4",
+                      "name": "status text",
+                      "fill": "#2F6B3A",
+                      "content": "Ready",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "zCXa0",
+                  "x": 530,
+                  "y": 20,
+                  "name": "Updated",
+                  "fill": "#8D8F88",
+                  "content": "3 hours ago",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "icon",
+                  "id": "jE21m",
+                  "x": 762,
+                  "y": 20,
+                  "name": "Row menu",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "ellipsis",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "N7tHA",
+                  "x": 0,
+                  "y": 53,
+                  "name": "Row rule",
+                  "fill": "#F1EFE8",
+                  "width": 800,
+                  "height": 1
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "vophb",
+              "x": 0,
+              "y": 406,
+              "name": "Document row legal-memo.pdf",
+              "width": 800,
+              "height": 54,
+              "fill": "#FFFFFF",
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "VOhq2",
+                  "x": 16,
+                  "y": 11,
+                  "name": "File tile",
+                  "width": 30,
+                  "height": 30,
+                  "fill": "#FBEDEA",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "Uq4Mj",
+                      "name": "File icon",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "file-text",
+                      "library": "lucide",
+                      "fill": "#B44B3F"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "rm5ej",
+                  "x": 56,
+                  "y": 9,
+                  "name": "File name",
+                  "fill": "#1C1E1A",
+                  "content": "legal-memo.pdf",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 12.5,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "zt0vs",
+                  "x": 56,
+                  "y": 27,
+                  "name": "File meta",
+                  "fill": "#8D8F88",
+                  "content": "6 pages · 410 KB",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "V2kEA",
+                  "x": 330,
+                  "y": 16,
+                  "name": "Type PDF",
+                  "height": 20,
+                  "fill": "#FBEDEA",
+                  "cornerRadius": 6,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Ak6x5",
+                      "name": "Type PDF text",
+                      "fill": "#B44B3F",
+                      "content": "PDF",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "mEbbF",
+                  "x": 410,
+                  "y": 16,
+                  "name": "Status Ready",
+                  "height": 22,
+                  "fill": "#EEF5EF",
+                  "cornerRadius": 999,
+                  "gap": 5,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "U5i9gj",
+                      "name": "status dot",
+                      "width": 5,
+                      "height": 5,
+                      "fill": "#2F6B3A",
+                      "cornerRadius": 999
+                    },
+                    {
+                      "type": "text",
+                      "id": "J4mbOT",
+                      "name": "status text",
+                      "fill": "#2F6B3A",
+                      "content": "Ready",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "a8QR8z",
+                  "x": 530,
+                  "y": 20,
+                  "name": "Updated",
+                  "fill": "#8D8F88",
+                  "content": "Yesterday",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "icon",
+                  "id": "D88XrS",
+                  "x": 762,
+                  "y": 20,
+                  "name": "Row menu",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "ellipsis",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "yPHiZ",
+                  "x": 0,
+                  "y": 53,
+                  "name": "Row rule",
+                  "fill": "#F1EFE8",
+                  "width": 800,
+                  "height": 1
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "XBWly",
+              "x": 20,
+              "y": 486,
+              "name": "Table footer",
+              "fill": "#8D8F88",
+              "content": "Showing 6 of 128 documents",
+              "fontFamily": "Fira Code",
+              "fontSize": 9,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "l0hRIB",
+              "x": 706,
+              "y": 486,
+              "name": "Table footer link",
+              "fill": "#47520F",
+              "content": "View all  →",
+              "fontFamily": "Fira Code",
+              "fontSize": 9,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "gsXR8",
+          "x": 1080,
+          "y": 340,
+          "name": "Pipeline panel",
+          "clip": true,
+          "width": 328,
+          "height": 160,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "text",
+              "id": "Bcgz5",
+              "x": 16,
+              "y": 16,
+              "name": "Pipeline title",
+              "fill": "#1C1E1A",
+              "content": "Pipeline",
+              "fontFamily": "Fira Sans",
+              "fontSize": 15,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "vZ0LZ",
+              "x": 254,
+              "y": 14,
+              "name": "Live chip",
+              "width": 58,
+              "height": 20,
+              "fill": "#EEF5EF",
+              "cornerRadius": 999,
+              "gap": 5,
+              "padding": [
+                0,
+                7
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ylF5z",
+                  "name": "Live dot",
+                  "width": 5,
+                  "height": 5,
+                  "fill": "#2F6B3A",
+                  "cornerRadius": 999
+                },
+                {
+                  "type": "text",
+                  "id": "xh86L",
+                  "name": "Live text",
+                  "fill": "#2F6B3A",
+                  "content": "LIVE",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "YSjuU",
+              "x": 16,
+              "y": 40,
+              "name": "Pipeline sub",
+              "fill": "#8D8F88",
+              "content": "9 documents moving through indexing",
+              "fontFamily": "Fira Sans",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "jmafq",
+              "x": 16,
+              "y": 66,
+              "name": "Pipe label Processing",
+              "fill": "#5D5F58",
+              "content": "Processing",
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "yC1Mf",
+              "x": 282,
+              "y": 66,
+              "name": "Pipe count Processing",
+              "fill": "#B7791F",
+              "content": "6",
+              "fontFamily": "Fira Code",
+              "fontSize": 9,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 999,
+              "id": "aQEMM",
+              "x": 16,
+              "y": 85,
+              "name": "Pipe track Processing",
+              "fill": "#F1EFE8",
+              "width": 290,
+              "height": 4
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 999,
+              "id": "cJFgN",
+              "x": 16,
+              "y": 85,
+              "name": "Pipe fill Processing",
+              "fill": "#B7791F",
+              "width": 190,
+              "height": 4
+            },
+            {
+              "type": "text",
+              "id": "F188hw",
+              "x": 16,
+              "y": 100,
+              "name": "Pipe label Queued",
+              "fill": "#5D5F58",
+              "content": "Queued",
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "PO6AM",
+              "x": 282,
+              "y": 100,
+              "name": "Pipe count Queued",
+              "fill": "#3B6FB6",
+              "content": "2",
+              "fontFamily": "Fira Code",
+              "fontSize": 9,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 999,
+              "id": "u5cYY",
+              "x": 16,
+              "y": 119,
+              "name": "Pipe track Queued",
+              "fill": "#F1EFE8",
+              "width": 290,
+              "height": 4
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 999,
+              "id": "Kz4kI",
+              "x": 16,
+              "y": 119,
+              "name": "Pipe fill Queued",
+              "fill": "#3B6FB6",
+              "width": 80,
+              "height": 4
+            },
+            {
+              "type": "text",
+              "id": "ppE04",
+              "x": 16,
+              "y": 134,
+              "name": "Pipe label Failed",
+              "fill": "#5D5F58",
+              "content": "Failed",
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "n21uRc",
+              "x": 282,
+              "y": 134,
+              "name": "Pipe count Failed",
+              "fill": "#A02C2C",
+              "content": "1",
+              "fontFamily": "Fira Code",
+              "fontSize": 9,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 999,
+              "id": "bWeVf",
+              "x": 16,
+              "y": 153,
+              "name": "Pipe track Failed",
+              "fill": "#F1EFE8",
+              "width": 290,
+              "height": 4
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 999,
+              "id": "jlwfJ",
+              "x": 16,
+              "y": 153,
+              "name": "Pipe fill Failed",
+              "fill": "#A02C2C",
+              "width": 36,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "K1kK3n",
+          "x": 1080,
+          "y": 516,
+          "name": "Quick upload panel",
+          "clip": true,
+          "width": 328,
+          "height": 190,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "text",
+              "id": "NHkCa",
+              "x": 16,
+              "y": 16,
+              "name": "Quick title",
+              "fill": "#1C1E1A",
+              "content": "Quick upload",
+              "fontFamily": "Fira Sans",
+              "fontSize": 15,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "Wf1mJ",
+              "x": 16,
+              "y": 38,
+              "name": "Quick sub",
+              "fill": "#8D8F88",
+              "content": "Add directly to Finance",
+              "fontFamily": "Fira Sans",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "bbkqh",
+              "x": 16,
+              "y": 60,
+              "name": "Drop zone",
+              "width": 296,
+              "height": 74,
+              "fill": "#F4F9DD",
+              "cornerRadius": 8,
+              "stroke": "#D9F15F",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "cBHnk",
+                  "name": "Drop icon",
+                  "width": 19,
+                  "height": 19,
+                  "icon": "file-up",
+                  "library": "lucide",
+                  "fill": "#47520F"
+                },
+                {
+                  "type": "text",
+                  "id": "MaFcq",
+                  "name": "Drop title",
+                  "fill": "#47520F",
+                  "content": "Drop a file or browse",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 10.5,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "F4LML8",
+                  "name": "Drop formats",
+                  "fill": "#7E8B45",
+                  "content": "PDF  ·  DOCX  ·  CSV",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "COxcI",
+              "x": 16,
+              "y": 146,
+              "name": "Quick upload button",
+              "width": 296,
+              "height": 30,
+              "fill": "#1C1E1A",
+              "cornerRadius": 7,
+              "gap": 7,
+              "padding": [
+                0,
+                10
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "g9y20",
+                  "name": "Quick upload icon",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "upload",
+                  "library": "lucide",
+                  "fill": "#D9F15F"
+                },
+                {
+                  "type": "text",
+                  "id": "Cd52o",
+                  "name": "Quick upload text",
+                  "fill": "#FFFFFF",
+                  "content": "Upload document",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 11.5,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "JxY2C",
+          "x": 1080,
+          "y": 722,
+          "name": "Access panel",
+          "clip": true,
+          "width": 328,
+          "height": 138,
+          "fill": "#FFFFFF",
+          "cornerRadius": 10,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "layout": "none",
+          "children": [
+            {
+              "type": "text",
+              "id": "RI2gQ",
+              "x": 16,
+              "y": 16,
+              "name": "Access title",
+              "fill": "#1C1E1A",
+              "content": "Access",
+              "fontFamily": "Fira Sans",
+              "fontSize": 15,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "A8BXw",
+              "x": 250,
+              "y": 20,
+              "name": "Access members",
+              "fill": "#8D8F88",
+              "content": "12 members",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "B0c1Ud",
+              "x": 16,
+              "y": 46,
+              "name": "Member avatar 0",
+              "width": 28,
+              "height": 28,
+              "fill": "#6F56A8",
+              "cornerRadius": 999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "megf1",
+                  "name": "Member initials",
+                  "fill": "#FFFFFF",
+                  "content": "UN",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 7.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "dJ3Q7",
+              "x": 40,
+              "y": 46,
+              "name": "Member avatar 1",
+              "width": 28,
+              "height": 28,
+              "fill": "#3B6FB6",
+              "cornerRadius": 999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "PbaPY",
+                  "name": "Member initials",
+                  "fill": "#FFFFFF",
+                  "content": "AR",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 7.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "l3Dge2",
+              "x": 64,
+              "y": 46,
+              "name": "Member avatar 2",
+              "width": 28,
+              "height": 28,
+              "fill": "#B7791F",
+              "cornerRadius": 999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ewHon",
+                  "name": "Member initials",
+                  "fill": "#FFFFFF",
+                  "content": "KM",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 7.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "rKQmQ",
+              "x": 88,
+              "y": 46,
+              "name": "Member avatar 3",
+              "width": 28,
+              "height": 28,
+              "fill": "#2F8F83",
+              "cornerRadius": 999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "zWpJZ",
+                  "name": "Member initials",
+                  "fill": "#FFFFFF",
+                  "content": "JD",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 7.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "HOyZ0",
+              "x": 112,
+              "y": 46,
+              "name": "More members",
+              "width": 28,
+              "height": 28,
+              "fill": "#F1EFE8",
+              "cornerRadius": 999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "vEV1l",
+                  "name": "More text",
+                  "fill": "#5D5F58",
+                  "content": "+8",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 7.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "J8WF2r",
+              "x": 16,
+              "y": 86,
+              "name": "Role Owner",
+              "height": 20,
+              "fill": "#F1EDF9",
+              "cornerRadius": 5,
+              "gap": 4,
+              "padding": [
+                0,
+                7
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "u3Ug6",
+                  "name": "Role text",
+                  "fill": "#6F56A8",
+                  "content": "Owner",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "IxfWy",
+              "x": 100,
+              "y": 86,
+              "name": "Role Editor",
+              "height": 20,
+              "fill": "#EAF1FB",
+              "cornerRadius": 5,
+              "gap": 4,
+              "padding": [
+                0,
+                7
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "i27dI",
+                  "name": "Role text",
+                  "fill": "#3B6FB6",
+                  "content": "Editor",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "mDBye",
+              "x": 184,
+              "y": 86,
+              "name": "Role Viewer",
+              "height": 20,
+              "fill": "#F1EFE8",
+              "cornerRadius": 5,
+              "gap": 4,
+              "padding": [
+                0,
+                7
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "xJzcW",
+                  "name": "Role text",
+                  "fill": "#5D5F58",
+                  "content": "Viewer",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "b2s7o0",
+              "x": 228,
+              "y": 112,
+              "name": "Manage access link",
+              "fill": "#47520F",
+              "content": "Manage  →",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "zopdI",
+      "x": 1600,
+      "y": 980,
+      "name": "Retriv Web / Upload document",
+      "clip": true,
+      "width": 560,
+      "height": 800,
+      "fill": "#F7F5EF",
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "MRyyR",
+          "x": 20,
+          "y": 20,
+          "name": "Upload drawer",
+          "clip": true,
+          "width": 520,
+          "height": 760,
+          "fill": "#FFFFFF",
+          "cornerRadius": 12,
+          "stroke": "#E3E0D6",
+          "strokeWidth": 1,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#1C1E1A26",
+            "offset": {
+              "x": 0,
+              "y": 18
+            },
+            "blur": 44
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "text",
+              "id": "uI2MD",
+              "x": 24,
+              "y": 22,
+              "name": "Drawer eyebrow",
+              "fill": "#B7791F",
+              "content": "DOCUMENT INTAKE",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1.4
+            },
+            {
+              "type": "text",
+              "id": "y7A4V6",
+              "x": 24,
+              "y": 40,
+              "name": "Drawer title",
+              "fill": "#1C1E1A",
+              "content": "Upload document",
+              "fontFamily": "Fira Sans",
+              "fontSize": 21,
+              "fontWeight": "600",
+              "letterSpacing": -0.3
+            },
+            {
+              "type": "text",
+              "id": "e5C5O",
+              "x": 24,
+              "y": 70,
+              "name": "Drawer sub",
+              "fill": "#5D5F58",
+              "content": "Add a file to the workspace's searchable context.",
+              "fontFamily": "Fira Sans",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "SFcSy",
+              "x": 468,
+              "y": 22,
+              "name": "Close drawer",
+              "width": 28,
+              "height": 28,
+              "fill": "#F1EFE8",
+              "cornerRadius": 7,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "r10WX",
+                  "name": "Close icon",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "x",
+                  "library": "lucide",
+                  "fill": "#5D5F58"
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "L7Fbsx",
+              "x": 24,
+              "y": 98,
+              "name": "Drawer rule",
+              "fill": "#E3E0D6",
+              "width": 472,
+              "height": 1
+            },
+            {
+              "type": "text",
+              "id": "WlJUQ",
+              "x": 24,
+              "y": 116,
+              "name": "Destination label",
+              "fill": "#8D8F88",
+              "content": "DESTINATION",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1.2
+            },
+            {
+              "type": "frame",
+              "id": "FhPgZ",
+              "x": 24,
+              "y": 134,
+              "name": "Destination card",
+              "width": 472,
+              "height": 58,
+              "fill": "#FDF4E5",
+              "cornerRadius": 8,
+              "stroke": "#E9D2A8",
+              "strokeWidth": 1,
+              "gap": 11,
+              "padding": [
+                0,
+                14
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "u71mN",
+                  "name": "Destination icon",
+                  "width": 17,
+                  "height": 17,
+                  "icon": "building-2",
+                  "library": "lucide",
+                  "fill": "#B7791F"
+                },
+                {
+                  "type": "frame",
+                  "id": "Vo7Ef",
+                  "name": "Destination text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "UW1Qi",
+                      "name": "Destination name",
+                      "fill": "#1C1E1A",
+                      "content": "Finance",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "eP0rk",
+                      "name": "Destination meta",
+                      "fill": "#8A5A12",
+                      "content": "Owner · 12 members · You can upload here",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "UtSZW",
+                  "name": "Change workspace",
+                  "fill": "#B7791F",
+                  "content": "Change",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 8.5,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "AQBa5",
+              "x": 24,
+              "y": 212,
+              "name": "File label",
+              "fill": "#8D8F88",
+              "content": "DOCUMENT",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1.2
+            },
+            {
+              "type": "frame",
+              "id": "GbGwA",
+              "x": 24,
+              "y": 230,
+              "name": "Upload drop zone",
+              "width": 472,
+              "height": 136,
+              "fill": "#F4F9DD",
+              "cornerRadius": 9,
+              "stroke": "#D9F15F",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 5,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "nl1i1",
+                  "name": "Upload drop icon",
+                  "width": 26,
+                  "height": 26,
+                  "icon": "file-up",
+                  "library": "lucide",
+                  "fill": "#47520F"
+                },
+                {
+                  "type": "text",
+                  "id": "rlTXw",
+                  "name": "Upload drop title",
+                  "fill": "#47520F",
+                  "content": "Drop a PDF, DOCX or CSV",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "genzz",
+                  "name": "Upload drop sub",
+                  "fill": "#7E8B45",
+                  "content": "or browse from your computer",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "RaHMr",
+                  "name": "Format chips",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "aCDVc",
+                      "name": "Format PDF",
+                      "height": 18,
+                      "fill": "#FBEDEA",
+                      "cornerRadius": 4,
+                      "padding": [
+                        0,
+                        6
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "aFKj7",
+                          "name": "Format text",
+                          "fill": "#B44B3F",
+                          "content": "PDF",
+                          "fontFamily": "Fira Code",
+                          "fontSize": 7.5,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "lJAU9",
+                      "name": "Format DOCX",
+                      "height": 18,
+                      "fill": "#EAF1FB",
+                      "cornerRadius": 4,
+                      "padding": [
+                        0,
+                        6
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "n8KEyS",
+                          "name": "Format text",
+                          "fill": "#3B6FB6",
+                          "content": "DOCX",
+                          "fontFamily": "Fira Code",
+                          "fontSize": 7.5,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "S2YyFv",
+                      "name": "Format CSV",
+                      "height": 18,
+                      "fill": "#E7F5F2",
+                      "cornerRadius": 4,
+                      "padding": [
+                        0,
+                        6
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "a54kqp",
+                          "name": "Format text",
+                          "fill": "#2F8F83",
+                          "content": "CSV",
+                          "fontFamily": "Fira Code",
+                          "fontSize": 7.5,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "B232B",
+              "x": 24,
+              "y": 386,
+              "name": "Selected file label",
+              "fill": "#8D8F88",
+              "content": "SELECTED FILE",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1.2
+            },
+            {
+              "type": "frame",
+              "id": "uBRBM",
+              "x": 24,
+              "y": 404,
+              "name": "Selected file card",
+              "width": 472,
+              "height": 62,
+              "fill": "#FFFFFF",
+              "cornerRadius": 8,
+              "stroke": "#E3E0D6",
+              "strokeWidth": 1,
+              "gap": 12,
+              "padding": [
+                0,
+                14
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "bAh83",
+                  "name": "Selected file icon tile",
+                  "width": 34,
+                  "height": 34,
+                  "fill": "#FBEDEA",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i8ZTn5",
+                      "name": "Selected file icon",
+                      "width": 17,
+                      "height": 17,
+                      "icon": "file-text",
+                      "library": "lucide",
+                      "fill": "#B44B3F"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "dncWa",
+                  "name": "Selected file text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "TB9kf",
+                      "name": "Selected file name",
+                      "fill": "#1C1E1A",
+                      "content": "annual-report-2025.pdf",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "hiUx9",
+                      "name": "Selected file meta",
+                      "fill": "#8D8F88",
+                      "content": "2.4 MB · PDF · 24 pages",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "icon",
+                  "id": "nnhU2",
+                  "name": "Remove file",
+                  "width": 15,
+                  "height": 15,
+                  "icon": "x",
+                  "library": "lucide",
+                  "fill": "#8D8F88"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "RjcJo",
+              "x": 24,
+              "y": 490,
+              "name": "Next label",
+              "fill": "#8D8F88",
+              "content": "WHAT HAPPENS NEXT",
+              "fontFamily": "Fira Code",
+              "fontSize": 8.5,
+              "fontWeight": "600",
+              "letterSpacing": 1.2
+            },
+            {
+              "type": "frame",
+              "id": "RcbSh",
+              "x": 24,
+              "y": 518,
+              "name": "Step 01",
+              "width": 472,
+              "height": 44,
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "IRpco",
+                  "name": "Step badge",
+                  "width": 28,
+                  "height": 28,
+                  "fill": "#EEF5EF",
+                  "cornerRadius": 7,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "r0iAUj",
+                      "name": "Step number",
+                      "fill": "#2F6B3A",
+                      "content": "01",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "kRX8S",
+                  "name": "Step text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "QUbK9",
+                      "name": "Step title",
+                      "fill": "#1C1E1A",
+                      "content": "Scan",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 11.5,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "hdyXf",
+                      "name": "Step desc",
+                      "fill": "#8D8F88",
+                      "content": "ClamAV checks the file before anything is stored.",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 9.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "hh9kX",
+              "x": 24,
+              "y": 566,
+              "name": "Step 02",
+              "width": 472,
+              "height": 44,
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "xp1yL",
+                  "name": "Step badge",
+                  "width": 28,
+                  "height": 28,
+                  "fill": "#FDF4E5",
+                  "cornerRadius": 7,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "o2OYR",
+                      "name": "Step number",
+                      "fill": "#B7791F",
+                      "content": "02",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ll5sC",
+                  "name": "Step text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "emZtp",
+                      "name": "Step title",
+                      "fill": "#1C1E1A",
+                      "content": "Extract & chunk",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 11.5,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "WtfeG",
+                      "name": "Step desc",
+                      "fill": "#8D8F88",
+                      "content": "Docling reads the pages, tables and pictures.",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 9.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Xrlmi",
+              "x": 24,
+              "y": 614,
+              "name": "Step 03",
+              "width": 472,
+              "height": 44,
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "RiKa5",
+                  "name": "Step badge",
+                  "width": 28,
+                  "height": 28,
+                  "fill": "#EAF1FB",
+                  "cornerRadius": 7,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "k9MkM",
+                      "name": "Step number",
+                      "fill": "#3B6FB6",
+                      "content": "03",
+                      "fontFamily": "Fira Code",
+                      "fontSize": 8.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "BP4aq",
+                  "name": "Step text",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "pRyFo",
+                      "name": "Step title",
+                      "fill": "#1C1E1A",
+                      "content": "Embed & index",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 11.5,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "GD0G9",
+                      "name": "Step desc",
+                      "fill": "#8D8F88",
+                      "content": "The text becomes searchable in Finance.",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 9.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "xxtjH",
+              "x": 0,
+              "y": 670,
+              "name": "Footer rule",
+              "fill": "#E3E0D6",
+              "width": 520,
+              "height": 1
+            },
+            {
+              "type": "text",
+              "id": "U18IIp",
+              "x": 24,
+              "y": 692,
+              "name": "Footer note",
+              "fill": "#8D8F88",
+              "content": "You can close this panel; processing continues.",
+              "fontFamily": "Fira Sans",
+              "fontSize": 9.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "Y7Z5Jw",
+              "x": 286,
+              "y": 712,
+              "name": "Cancel upload",
+              "width": 88,
+              "height": 30,
+              "fill": "#FFFFFF",
+              "cornerRadius": 7,
+              "stroke": "#CFCBBE",
+              "strokeWidth": 1,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "CdeQI",
+                  "name": "Cancel text",
+                  "fill": "#1C1E1A",
+                  "content": "Cancel",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 11,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "lL0gq",
+              "x": 384,
+              "y": 712,
+              "name": "Submit upload",
+              "width": 112,
+              "height": 30,
+              "fill": "#D9F15F",
+              "cornerRadius": 7,
+              "gap": 6,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "ebalh",
+                  "name": "Submit icon",
+                  "width": 13,
+                  "height": 13,
+                  "icon": "upload",
+                  "library": "lucide",
+                  "fill": "#47520F"
+                },
+                {
+                  "type": "text",
+                  "id": "Nmptt",
+                  "name": "Submit text",
+                  "fill": "#47520F",
+                  "content": "Upload",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 11,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "paper": {
+      "type": "color",
+      "value": "#F6F4EE"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "sunken": {
+      "type": "color",
+      "value": "#F1EFE8"
+    },
+    "line": {
+      "type": "color",
+      "value": "#E3E0D6"
+    },
+    "lineStrong": {
+      "type": "color",
+      "value": "#CFCBBE"
+    },
+    "ink": {
+      "type": "color",
+      "value": "#1C1E1A"
+    },
+    "inkMuted": {
+      "type": "color",
+      "value": "#5D5F58"
+    },
+    "inkFaint": {
+      "type": "color",
+      "value": "#8D8F88"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#D9F15F"
+    },
+    "accentSoft": {
+      "type": "color",
+      "value": "#F4F9DD"
+    },
+    "accentInk": {
+      "type": "color",
+      "value": "#47520F"
+    },
+    "success": {
+      "type": "color",
+      "value": "#2F6B3A"
+    },
+    "danger": {
+      "type": "color",
+      "value": "#A02C2C"
+    },
+    "dark": {
+      "type": "color",
+      "value": "#1C1E1A"
+    },
+    "darkRaised": {
+      "type": "color",
+      "value": "#262922"
+    }
+  },
+  "fileToken": "cee1d093-d191-4e70-8a9f-9906fe5c78f4"
+}
