@@ -9,6 +9,7 @@ only after the vectors are gone.
 
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -44,7 +45,12 @@ from app.embeddings.base import (
     VectorPoint,
     VectorStore,
 )
-from app.extraction.base import ExtractedChunk, ExtractedImage, ExtractionResult
+from app.extraction.base import (
+    ExtractedChunk,
+    ExtractedImage,
+    ExtractionResourceError,
+    ExtractionResult,
+)
 from app.extraction.images import picture_marker
 from app.infrastructure.storage import (
     ArtifactStorage,
@@ -125,6 +131,8 @@ class FakeExtractor:
         ocr_enabled: bool = False,
         source_text_chars: int = 0,
         images: list[ExtractedImage] | None = None,
+        page_count: int = 0,
+        error: Exception | None = None,
     ) -> None:
         self.chunk_texts = chunk_texts or ["Extracted paragraph one."]
         self.calls = 0
@@ -132,10 +140,14 @@ class FakeExtractor:
         self.ocr_enabled = ocr_enabled
         self.source_text_chars = source_text_chars
         self.images = images or []
+        self.page_count = page_count
+        self.error = error
 
     def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
         self.calls += 1
         self.media_types.append(media_type)
+        if self.error is not None:
+            raise self.error
         return ExtractionResult(
             document_json=b'{"origin": "test"}',
             chunks=[
@@ -153,6 +165,7 @@ class FakeExtractor:
             extractor_version="test-extractor-1",
             ocr_enabled=self.ocr_enabled,
             source_text_chars=self.source_text_chars,
+            page_count=self.page_count,
             images=list(self.images),
         )
 
@@ -500,6 +513,7 @@ async def test_a_lossy_extraction_fails_instead_of_indexing_a_partial_document(
     db_session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
     entities: SeededEntities,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A parse that silently drops most of the text must not be indexed.
 
@@ -514,13 +528,15 @@ async def test_a_lossy_extraction_fails_instead_of_indexing_a_partial_document(
     extractor = FakeExtractor(
         chunk_texts=["Only a fraction of the document survived."],
         source_text_chars=100_000,
+        page_count=182,
     )
     vectors = FakeVectorStore()
 
     worker = build_worker(
         db_session_factory, settings, storage=storage, extractor=extractor, vectors=vectors
     )
-    assert await worker.run_once() is True, "the run advances, then fails validation"
+    with caplog.at_level(logging.ERROR, logger="app.processing.worker"):
+        assert await worker.run_once() is True, "the run advances, then fails validation"
 
     async with db_session_factory() as session:
         failed = await session.get(ProcessingRun, run.id)
@@ -528,6 +544,57 @@ async def test_a_lossy_extraction_fails_instead_of_indexing_a_partial_document(
     assert failed.status == RUN_FAILED
     assert "of the text in this document" in (failed.last_error or "")
     assert vectors.points == {}, "no vectors may be written for a lossy extraction"
+    assert "Extraction coverage below minimum" in caplog.text
+    assert "pages_covered=1 pages_total=182" in caplog.text
+    assert "1 of 182 pages" in (failed.last_error or "")
+    assert "Processing run failed permanently" in caplog.text
+
+
+async def test_extraction_running_out_of_memory_names_the_limit_to_raise(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A parser that ran out of room must not be reported as a lossy parse.
+
+    Docling returns ``partial_success`` with one error per unread page when the
+    sandbox's address-space limit is reached, so without the distinction the
+    operator sees "extraction kept only 0% of the text" and looks for a parser
+    bug. The message has to name the setting that fixes it, and the run must not
+    spend two more parser runs retrying a deterministic failure.
+    """
+    storage = FakeStorage()
+    _, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    extractor = FakeExtractor(
+        error=ExtractionResourceError(
+            "Docling ran out of memory after 182 pages: page 3: "
+            "DefaultCPUAllocator: can't allocate memory"
+        )
+    )
+    vectors = FakeVectorStore()
+
+    worker = build_worker(
+        db_session_factory, settings, storage=storage, extractor=extractor, vectors=vectors
+    )
+    with caplog.at_level(logging.ERROR, logger="app.processing.worker"):
+        assert await worker.run_once() is True, "the run advances, then fails"
+
+    async with db_session_factory() as session:
+        failed = await session.get(ProcessingRun, run.id)
+    assert failed is not None
+    assert failed.status == RUN_FAILED, "a fixed limit must not burn retries"
+    assert failed.attempts == 1
+    message = failed.last_error or ""
+    assert "ran out of memory" in message
+    assert "RETRIV_PARSER_MEMORY_LIMIT_BYTES" in message
+    assert "requeue" in message
+    assert vectors.points == {}, "nothing may be indexed from a truncated parse"
+    assert "of the text in this document" not in message, "this is not a quality failure"
+    assert extractor.calls == 1
+    assert "Processing run failed permanently" in caplog.text
 
 
 async def test_extraction_coverage_is_not_enforced_without_a_text_layer(

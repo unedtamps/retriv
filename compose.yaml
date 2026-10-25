@@ -26,7 +26,7 @@ x-worker-environment: &worker-environment
   RETRIV_MAX_ARTIFACT_BYTES: ${RETRIV_MAX_ARTIFACT_BYTES:-104857600}
   RETRIV_MAX_EXTRACTED_TEXT_BYTES: ${RETRIV_MAX_EXTRACTED_TEXT_BYTES:-52428800}
   RETRIV_MAX_CHUNK_PAYLOAD_BYTES: ${RETRIV_MAX_CHUNK_PAYLOAD_BYTES:-104857600}
-  RETRIV_PROCESSING_TIMEOUT_SECONDS: ${RETRIV_PROCESSING_TIMEOUT_SECONDS:-1800}
+  RETRIV_PROCESSING_TIMEOUT_SECONDS: ${RETRIV_PROCESSING_TIMEOUT_SECONDS:-3600}
   RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS: ${RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS:-300}
   RETRIV_EMBEDDING_BASE_URL: ${RETRIV_EMBEDDING_CONTAINER_BASE_URL:-http://host.docker.internal:1234/v1}
   RETRIV_EMBEDDING_API_KEY: ${RETRIV_EMBEDDING_API_KEY:?RETRIV_EMBEDDING_API_KEY is required}
@@ -61,7 +61,7 @@ x-worker-environment: &worker-environment
   RETRIV_QDRANT_COLLECTION: ${RETRIV_QDRANT_COLLECTION:-retriv-chunks-qwen3-8b-4096-v1}
   RETRIV_QDRANT_TIMEOUT_SECONDS: ${RETRIV_QDRANT_TIMEOUT_SECONDS:-30}
   RETRIV_QDRANT_VECTORS_ON_DISK: ${RETRIV_QDRANT_VECTORS_ON_DISK:-true}
-  RETRIV_PARSER_MEMORY_LIMIT_BYTES: ${RETRIV_PARSER_MEMORY_LIMIT_BYTES:-8589934592}
+  RETRIV_PARSER_MEMORY_LIMIT_BYTES: ${RETRIV_PARSER_MEMORY_LIMIT_BYTES:-17179869184}
   RETRIV_PARSER_MAX_PROCESSES: ${RETRIV_PARSER_MAX_PROCESSES:-4096}
   RETRIV_S3_RAW_BUCKET: ${RETRIV_S3_RAW_BUCKET:-raw-documents}
   RETRIV_S3_ARTIFACT_BUCKET: ${RETRIV_S3_ARTIFACT_BUCKET:-context-documents}
@@ -160,7 +160,12 @@ services:
       dockerfile: Dockerfile
       target: worker
     restart: unless-stopped
-    mem_limit: 10g
+    # The parser's address-space limit is 16 GiB (about 9.5 GiB observed for a
+    # 182-page PDF), while what it actually touches peaked at 5.9 GiB. The cgroup
+    # is the hard RAM bound, so it stays above the resident high-water mark but
+    # below the address-space limit: enough room to finish, not enough to take
+    # the host down if a document really is pathological.
+    mem_limit: 12g
     cpus: 4
     pids_limit: 320
     read_only: true

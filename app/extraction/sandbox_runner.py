@@ -1,6 +1,10 @@
 import argparse
 import json
+import logging
 import resource
+import sys
+import traceback
+from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
 
@@ -131,6 +135,7 @@ def run(args: argparse.Namespace) -> None:
             "extractor_version": result.extractor_version,
             "ocr_enabled": result.ocr_enabled,
             "source_text_chars": result.source_text_chars,
+            "page_count": result.page_count,
             "chunks": [asdict(chunk) for chunk in result.chunks],
             "images": images,
         },
@@ -144,15 +149,26 @@ def run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stderr,
+        force=True,
+    )
     args = parse_args()
     try:
         run(args)
     except Exception as exc:
+        detail = f"Document extraction failed: {type(exc).__name__}: {exc}"
+        trace = traceback.format_exc()
         error_path = args.output_dir / "error.txt"
-        error_path.write_text(
-            f"Document extraction failed: {type(exc).__name__}",
-            encoding="utf-8",
-        )
+        # The parent still gets the exit status if the file cannot be written.
+        with suppress(OSError):
+            error_path.write_text(
+                f"{detail}\n\n{trace}"[:8000],
+                encoding="utf-8",
+            )
+        print(trace, file=sys.stderr, end="" if trace.endswith("\n") else "\n")
         raise SystemExit(1) from exc
 
 

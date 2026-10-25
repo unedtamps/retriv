@@ -120,9 +120,17 @@ class Settings(BaseSettings):
     docling_artifacts_path: Path | None = None
 
     # -- worker scheduling ----------------------------------------------
-    processing_timeout_seconds: int = Field(default=1800, ge=30, le=86_400)
+    # A 182-page PDF measured at 643s of parsing on four cores, so 1800s left
+    # little room for a longer document before the parser was killed for being
+    # slow rather than for being wrong.
+    processing_timeout_seconds: int = Field(default=3600, ge=30, le=86_400)
+    # This is an address-space limit (RLIMIT_AS), not resident memory, and the
+    # parser's address space runs well ahead of what it touches: the same
+    # 182-page PDF peaked at 9.5 GiB of address space while holding ~5.9 GiB of
+    # RAM. At 8 GiB docling reported partial_success and kept 0.2% of the text,
+    # which surfaced as a coverage failure rather than a memory one.
     parser_memory_limit_bytes: int = Field(
-        default=8 * 1024 * 1024 * 1024, ge=512 * 1024 * 1024
+        default=16 * 1024 * 1024 * 1024, ge=512 * 1024 * 1024
     )
     parser_max_processes: int = Field(default=4096, ge=16, le=32_768)
     processing_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs

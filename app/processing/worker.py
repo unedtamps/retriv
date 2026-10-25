@@ -70,6 +70,7 @@ from app.extraction.base import (
     ExtractedChunk,
     ExtractedImage,
     ExtractionError,
+    ExtractionResourceError,
     ExtractionResult,
 )
 from app.extraction.images import merge_descriptions, picture_refs
@@ -505,12 +506,24 @@ class ProcessingWorker:
                 raise PermanentProcessingError("Downloaded object hash does not match the event")
 
             await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
-            extraction = await self._extract_with_heartbeat(
-                claimed_run.id,
-                lease_token,
-                temporary_path,
-                media_type=document.detected_media_type,
-            )
+            try:
+                extraction = await self._extract_with_heartbeat(
+                    claimed_run.id,
+                    lease_token,
+                    temporary_path,
+                    media_type=document.detected_media_type,
+                )
+            except ExtractionResourceError as exc:
+                # Deterministic, not transient: the same document against the same
+                # limit fails the same way, so a retry only spends another parser
+                # run at ~3.5 seconds per page. Say what to change instead, and
+                # let the operator requeue once it has changed.
+                raise PermanentProcessingError(
+                    f"Extraction ran out of memory: {exc}. Raise "
+                    f"RETRIV_PARSER_MEMORY_LIMIT_BYTES (currently "
+                    f"{self._settings.parser_memory_limit_bytes / 1024**3:.1f} GiB) "
+                    f"and requeue this document."
+                ) from exc
             extraction = await self._describe_images(
                 claimed_run.id, lease_token, extraction
             )
@@ -967,9 +980,31 @@ class ProcessingWorker:
         extracted_chars = sum(len(chunk.text) for chunk in extraction.chunks)
         ratio = extracted_chars / source_chars
         if ratio < minimum:
+            pages = {
+                page
+                for chunk in extraction.chunks
+                for page in chunk.page_numbers
+                if isinstance(page, int)
+            }
+            logger.error(
+                "Extraction coverage below minimum: extracted=%d source=%d ratio=%.4f "
+                "chunks=%d pages_covered=%d pages_total=%d first_page=%s last_page=%s "
+                "ocr=%s extractor=%s",
+                extracted_chars,
+                source_chars,
+                ratio,
+                len(extraction.chunks),
+                len(pages),
+                extraction.page_count,
+                min(pages) if pages else None,
+                max(pages) if pages else None,
+                extraction.ocr_enabled,
+                extraction.extractor_version,
+            )
             raise PermanentProcessingError(
                 f"Extraction kept only {ratio:.0%} of the text in this document "
-                f"({extracted_chars} of {source_chars} characters); "
+                f"({extracted_chars} of {source_chars} characters, "
+                f"{len(pages)} of {extraction.page_count or 'unknown'} pages); "
                 f"at least {minimum:.0%} is required"
             )
 
@@ -1476,6 +1511,17 @@ class ProcessingWorker:
                             updated_at=utcnow(),
                         )
                     )
+                logger.error(
+                    "Processing run failed permanently: run_id=%s document_id=%s "
+                    "workspace_id=%s job=%s attempts=%d error=%s",
+                    run.id,
+                    run.document_id,
+                    run.origin_workspace_id,
+                    run.job_kind,
+                    run.attempts,
+                    error_message,
+                    exc_info=True,
+                )
                 return
             exponent = min(run.attempts - 1, 20)
             delay = min(
@@ -1484,6 +1530,18 @@ class ProcessingWorker:
             )
             run.status = RUN_RETRY_WAIT
             run.available_at = utcnow() + timedelta(seconds=delay)
+            logger.warning(
+                "Processing run scheduled for retry: run_id=%s document_id=%s "
+                "workspace_id=%s job=%s attempts=%d retry_in=%.1fs error=%s",
+                run.id,
+                run.document_id,
+                run.origin_workspace_id,
+                run.job_kind,
+                run.attempts,
+                delay,
+                error_message,
+                exc_info=True,
+            )
             if was_embedding:
                 await session.execute(
                     update(ChunkEmbedding)

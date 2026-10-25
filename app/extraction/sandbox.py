@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -12,8 +13,12 @@ from app.extraction.base import (
     ExtractedChunk,
     ExtractedImage,
     ExtractionError,
+    ExtractionResourceError,
     ExtractionResult,
+    looks_like_allocation_failure,
 )
+
+logger = logging.getLogger(__name__)
 
 SAFE_ENVIRONMENT_KEYS = (
     "HOME",
@@ -160,14 +165,60 @@ class SandboxedDoclingExtractor:
                     return_code = process.wait(timeout=self._timeout_seconds)
                 except subprocess.TimeoutExpired as exc:
                     self._kill_process_group(process)
+                    logger.error(
+                        "Document extraction exceeded the time limit "
+                        "(input=%s, timeout=%ss)",
+                        path,
+                        self._timeout_seconds,
+                    )
                     raise ExtractionError(
                         "Document extraction exceeded the time limit"
                     ) from exc
             if return_code != 0:
                 detail = self._read_error(output_dir / "error.txt")
+                stderr_detail = self._read_tail(stderr_path, 4000)
+                if stderr_detail:
+                    logger.error(
+                        "Extraction sandbox stderr (input=%s, exit=%s): %s",
+                        path,
+                        return_code,
+                        stderr_detail[:3000],
+                    )
                 if detail == "Document extraction sandbox failed":
-                    detail = self._read_error(stderr_path)
+                    detail = stderr_detail
+                logger.error(
+                    "Extraction sandbox failed (input=%s, exit=%s): %s",
+                    path,
+                    return_code,
+                    detail[:3000],
+                )
+                # A child killed by SIGKILL is the cgroup's OOM killer, and one
+                # that reports an allocator failure hit the address-space limit.
+                # Both mean "this document needs more room", not "this document
+                # is malformed", and the limit is worth naming: it is the number
+                # the operator has to change. The tail is checked as well as the
+                # error file because the failing stage is often a library that
+                # dies before Docling can turn it into a per-page error.
+                if return_code == -signal.SIGKILL or looks_like_allocation_failure(
+                    f"{detail}\n{stderr_detail}"
+                ):
+                    raise ExtractionResourceError(
+                        f"{detail} (exit status {return_code}, sandbox limit "
+                        f"{self._memory_limit_bytes / 1024**3:.1f} GiB)"
+                    )
                 raise ExtractionError(f"{detail} (exit status {return_code})")
+
+            # The sandbox logs its progress and partial-conversion warnings to
+            # stderr. Keep them visible in the worker's stdout even when the
+            # process exits successfully.
+            sandbox_log = self._read_tail(stderr_path, 4000)
+            if sandbox_log:
+                log = (
+                    logger.warning
+                    if "WARNING" in sandbox_log.upper() or "ERROR" in sandbox_log.upper()
+                    else logger.info
+                )
+                log("Extraction sandbox log (input=%s): %s", path, sandbox_log[:3000])
 
             document_json = self._read_bounded(
                 output_dir / "document.json", self._max_artifact_bytes
@@ -180,6 +231,7 @@ class SandboxedDoclingExtractor:
                 extractor_version = result_payload["extractor_version"]
                 ocr_enabled = result_payload["ocr_enabled"]
                 source_text_chars = result_payload["source_text_chars"]
+                page_count = result_payload.get("page_count", 0)
                 raw_chunks = result_payload["chunks"]
                 raw_images = result_payload.get("images", [])
                 if (
@@ -188,6 +240,9 @@ class SandboxedDoclingExtractor:
                     or not isinstance(source_text_chars, int)
                     or isinstance(source_text_chars, bool)
                     or source_text_chars < 0
+                    or not isinstance(page_count, int)
+                    or isinstance(page_count, bool)
+                    or page_count < 0
                     or not isinstance(raw_chunks, list)
                     or not isinstance(raw_images, list)
                 ):
@@ -215,6 +270,7 @@ class SandboxedDoclingExtractor:
                 extractor_version=extractor_version,
                 ocr_enabled=ocr_enabled,
                 source_text_chars=source_text_chars,
+                page_count=page_count,
                 images=images,
             )
 
@@ -237,9 +293,26 @@ class SandboxedDoclingExtractor:
     def _read_error(path: Path) -> str:
         try:
             with path.open(encoding="utf-8", errors="replace") as error_file:
-                return error_file.read(1000)
+                return error_file.read(4000)
         except OSError:
             return "Document extraction sandbox failed"
+
+    @staticmethod
+    def _read_tail(path: Path, max_bytes: int) -> str:
+        """Read the end of a log file, where the failure usually is.
+
+        Sandbox startup can emit thousands of bytes before the first page is
+        parsed. Reading the head of stderr would hide the conversion warning
+        that explains a failed extraction.
+        """
+        try:
+            with path.open("rb") as log_file:
+                log_file.seek(0, os.SEEK_END)
+                size = log_file.tell()
+                log_file.seek(max(0, size - max_bytes))
+                return log_file.read().decode("utf-8", errors="replace")
+        except OSError:
+            return ""
 
     def _parse_image(self, value: Any, output_dir: Path) -> ExtractedImage:
         """Read one picture back from the sandbox's output directory.

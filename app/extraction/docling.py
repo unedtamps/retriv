@@ -1,5 +1,7 @@
 import base64
 import json
+import logging
+from contextlib import suppress
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -9,9 +11,13 @@ from app.extraction.base import (
     ExtractedChunk,
     ExtractedImage,
     ExtractionError,
+    ExtractionResourceError,
     ExtractionResult,
+    looks_like_allocation_failure,
 )
 from app.sections import encode_section_key
+
+logger = logging.getLogger(__name__)
 
 
 class DoclingExtractor:
@@ -42,6 +48,15 @@ class DoclingExtractor:
 
             from app.extraction.tables import RowWiseSerializerProvider
         except ImportError as exc:
+            # A shared library that cannot be mapped is an import error, but the
+            # cause is the address-space limit rather than a missing package.
+            # Saying "dependencies are not installed" sends the operator hunting
+            # for an install problem that does not exist.
+            if looks_like_allocation_failure(f"{exc}: {exc.__cause__}"):
+                raise ExtractionResourceError(
+                    "Could not map the parser's libraries: the sandbox address "
+                    f"space is too small ({exc})"
+                ) from exc
             raise RuntimeError(
                 "Docling extraction dependencies are not installed; "
                 "install retriv-ingest[extraction]"
@@ -134,16 +149,41 @@ class DoclingExtractor:
         if media_type not in {PDF_MEDIA_TYPE, DOCX_MEDIA_TYPE}:
             raise ExtractionError(f"Unsupported media type: {media_type}")
         source_text_chars = 0
+        source_page_count = 0
         if media_type == PDF_MEDIA_TYPE:
             try:
-                source_text_chars, _pages = self.measure_pdf_text_layer(path)
+                source_text_chars, source_page_count = self.measure_pdf_text_layer(path)
             except Exception:
                 # The guardrail treats zero as "no comparable text layer", which is the
                 # safe reading: it declines to judge rather than guessing.
                 source_text_chars = 0
         try:
             conversion = self._converter.convert(path)
+            status = getattr(conversion, "status", None)
+            status_value = getattr(status, "value", str(status))
+            conversion_errors = getattr(conversion, "errors", None) or []
+            if status_value != "success" or conversion_errors:
+                logger.warning(
+                    "Docling conversion did not complete cleanly: status=%s errors=%d %s",
+                    status_value,
+                    len(conversion_errors),
+                    _error_summary(conversion_errors),
+                )
             document = conversion.document
+            page_count = _page_count(document)
+            if not isinstance(page_count, int):
+                page_count = source_page_count
+            # A conversion that ran out of memory still returns a document, with
+            # the pages it managed to read and one error per page it did not.
+            # Passing that on as a result is what turned a 182-page document
+            # into "extraction kept only 0% of the text": the caller saw a
+            # quality problem where the parser had hit a ceiling.
+            allocation_failure = _allocation_failure(conversion_errors)
+            if allocation_failure is not None:
+                raise ExtractionResourceError(
+                    f"Docling ran out of memory after {page_count} pages: "
+                    f"{allocation_failure}"
+                )
             images = self._collect_images(document)
             # A picture is only marked when it is one of the pictures that
             # will be described. A document whose pictures are all too small
@@ -158,7 +198,28 @@ class DoclingExtractor:
             )
             document_json = self._export_document(document)
             chunks = [self._convert_chunk(chunk) for chunk in self._chunker.chunk(document)]
+            with suppress(Exception):
+                # Diagnostics must never turn a successful extraction into a failure.
+                logger.info(
+                    "Docling extraction finished: status=%s pages=%s chunks=%d "
+                    "source_chars=%d ocr=%s version=%s",
+                    status_value,
+                    _page_count(document),
+                    len(chunks),
+                    source_text_chars,
+                    media_type == PDF_MEDIA_TYPE,
+                    self._version,
+                )
+        except ExtractionResourceError:
+            # Already carries the page count and the allocator's own words; the
+            # generic handler would replace both with "could not process".
+            raise
         except Exception as exc:
+            if looks_like_allocation_failure(str(exc)):
+                raise ExtractionResourceError(
+                    f"Docling ran out of memory after {source_page_count} pages: "
+                    f"{' '.join(str(exc).split())[:240]}"
+                ) from exc
             raise ExtractionError("Docling could not process the document") from exc
         return ExtractionResult(
             document_json=document_json,
@@ -166,6 +227,7 @@ class DoclingExtractor:
             extractor_version=self._version,
             ocr_enabled=media_type == PDF_MEDIA_TYPE,
             source_text_chars=source_text_chars,
+            page_count=page_count,
             images=images,
         )
 
@@ -303,3 +365,56 @@ class DoclingExtractor:
             page_numbers=sorted(page_numbers),
             provenance=provenance_payload,
         )
+
+
+def _error_summary(errors: list[Any]) -> str:
+    """A bounded, log-safe summary of Docling's per-page errors.
+
+    This is diagnostic only: it must never turn a conversion result into an
+    exception of its own. Errors are user-visible through logs, not content.
+    """
+    try:
+        parts: list[str] = []
+        for error in errors[:10]:
+            page = getattr(error, "page_no", None)
+            category = getattr(error, "category", "unknown")
+            component = getattr(error, "component_type", "unknown")
+            message = str(getattr(error, "error_message", error)).replace("\n", " ")
+            parts.append(
+                f"page={page} category={category} component={component} "
+                f"message={message[:240]}"
+            )
+        if len(errors) > 10:
+            parts.append(f"... {len(errors) - 10} more")
+        return " | ".join(parts)
+    except Exception:
+        return "<error summary unavailable>"
+
+
+def _page_count(document: Any) -> int | str:
+    try:
+        pages = getattr(document, "pages", None)
+        return len(pages) if pages is not None else "unknown"
+    except Exception:
+        return "unknown"
+
+
+# How the allocator and the tensor libraries word the same failure lives in
+# app.extraction.base, so the sandbox can recognise it without importing the
+# parser and paying for the import in the parent process.
+
+
+def _allocation_failure(errors: list[Any]) -> str | None:
+    """The first per-page error that says the parser ran out of memory, if any.
+
+    Docling finishes a memory-starved conversion with ``partial_success`` and one
+    error per page it could not read, so a caller that only inspects the status
+    sees a successful parse of a nearly empty document.
+    """
+    for error in errors:
+        message = " ".join(str(getattr(error, "error_message", error)).split())
+        if not looks_like_allocation_failure(message):
+            continue
+        page = getattr(error, "page_no", None)
+        return f"page {page}: {message[:240]}" if page is not None else message[:240]
+    return None
