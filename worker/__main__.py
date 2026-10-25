@@ -98,7 +98,10 @@ def harden_worker_process() -> None:
 
 def main() -> None:
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
+        force=True,
     )
     asyncio.run(run_worker())
 
