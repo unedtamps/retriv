@@ -1,6 +1,7 @@
 export type PlatformRole = 'admin' | 'user' | string
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 export type AppRoute = '/dashboard' | '/upload-context'
+export type DashboardView = 'overview' | 'documents' | 'members' | 'api-keys' | 'users'
 
 export interface SessionToken {
   access_token: string

@@ -1,30 +1,26 @@
 @import "tailwindcss";
 
 /*
- * One palette, one accent, one type scale.
+ * One palette, one type scale, and colour that carries meaning.
  *
- * The design used to be applied by hand: three brand hexes repeated in
- * component markup, a hand-tuned type scale, and seven dark panels painted
- * directly on a light page. That left one colour meaning two things in
- * different containers and no single place to change a decision.
- *
- * Everything below is a token, so a change here changes the whole app. The
- * accent is the one brand colour: a lime for fills, and a dark olive of the
- * same hue for text, borders and focus rings, where lime itself would be
- * unreadable. The status colours are semantic, not brand.
+ * Everything below is a token, so a change here changes the whole app. Lime
+ * is the brand accent and is reserved for the primary action. Blue, teal,
+ * amber, coral and violet identify workspace state and document status; they
+ * are functional accents, not decoration. The status colours remain semantic
+ * and are used for outcomes such as ready, failed and warning.
  */
 @theme {
   --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Fira Code", ui-monospace, monospace;
 
   /* Surfaces, lightest to darkest. */
-  --color-paper: #f6f4ee;
+  --color-paper: #f7f5ef;
   --color-surface: #ffffff;
   --color-sunken: #f1efe8;
 
   /* Lines. */
-  --color-line: #e3e0d6;
-  --color-line-strong: #cfcbbe;
+  --color-line: #e5e2d8;
+  --color-line-strong: #ccc8ba;
 
   /* Ink. */
   --color-ink: #1c1e1a;
@@ -35,6 +31,18 @@
   --color-accent: #d9f15f;
   --color-accent-soft: #f4f9dd;
   --color-accent-ink: #47520f;
+
+  /* Functional accents. Each one has a meaning in the workspace view. */
+  --color-blue: #3b6fb6;
+  --color-blue-soft: #edf3fb;
+  --color-teal: #2f8f83;
+  --color-teal-soft: #eaf5f2;
+  --color-violet: #6f56a8;
+  --color-violet-soft: #f2eef9;
+  --color-coral: #b44b3f;
+  --color-coral-soft: #fbeeec;
+  --color-amber: #b7791f;
+  --color-amber-soft: #fdf5e4;
 
   /* Status. Semantic, not brand. */
   --color-danger: #a02c2c;
@@ -51,7 +59,7 @@
   --text-meta: 0.75rem;
   --text-meta--line-height: 1.1rem;
 
-  --radius-card: 0.5rem;
+  --radius-card: 0.65rem;
   --shadow-card: 0 1px 2px rgb(28 30 26 / 0.05);
   --shadow-raised: 0 18px 48px rgb(28 30 26 / 0.12);
 }
@@ -121,7 +129,7 @@
   }
 
   .btn-primary {
-    @apply border-ink bg-ink text-white hover:bg-ink/90;
+    @apply border-accent bg-accent text-accent-ink hover:bg-accent/80;
   }
 
   .btn-secondary {
@@ -173,7 +181,7 @@
   }
 
   .nav-link {
-    @apply flex cursor-pointer items-center gap-3 rounded-card px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
+    @apply flex cursor-pointer items-center gap-3 rounded-[0.55rem] px-2.5 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
   }
 
   .nav-link-active {
@@ -250,6 +258,10 @@
   margin: 0 0 0 auto;
 }
 
+.app-drawer-narrow {
+  width: min(100%, 35rem);
+}
+
 .app-drawer .dialog-surface {
   display: flex;
   height: 100%;
@@ -270,7 +282,8 @@
     width: min(calc(100% - 1rem), 34rem);
   }
 
-  .app-drawer {
+  .app-drawer,
+  .app-drawer-narrow {
     width: 100%;
   }
 

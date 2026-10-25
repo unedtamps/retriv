@@ -119,16 +119,40 @@ describe('dashboard application', () => {
     await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
-    expect(await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
     expect(window.location.pathname).toBe('/dashboard')
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     expect(screen.getByRole('button', { name: 'New workspace' })).toBeInTheDocument()
-    expect(screen.getByText('User directory')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Users' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close navigation drawer' }))
     expect(readSessionToken()).toBe('signed-token')
     const meCall = fetchMock.mock.calls.find(([input]) => String(input) === '/v1/auth/me')
     if (meCall === undefined) throw new Error('Expected a current-user request')
     const headers = meCall[1]?.headers
     if (!(headers instanceof Headers)) throw new Error('Expected request headers')
     expect(headers.get('Authorization')).toBe('Bearer signed-token')
+  })
+
+  it('opens a workspace-contextual upload drawer from the overview', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const fetchMock = installApi(owner)
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+    const drawer = await screen.findByRole('dialog', { name: 'Upload document' })
+    expect(within(drawer).queryByRole('combobox', { name: 'Workspace' })).not.toBeInTheDocument()
+
+    const file = new File(['a representative PDF'], 'drawer-context.pdf', { type: 'application/pdf' })
+    await user.upload(within(drawer).getByLabelText('Document'), file)
+    await user.click(within(drawer).getByRole('button', { name: 'Upload document' }))
+
+    expect(await within(drawer).findByRole('heading', { name: 'Document accepted' })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/v1/workspaces/workspace-1/documents')).toHaveLength(1)
   })
 
   it('shows workspace capabilities without admin controls to a regular user', async () => {
@@ -162,13 +186,14 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     expect(screen.queryByRole('button', { name: 'New workspace' })).not.toBeInTheDocument()
-    expect(screen.queryByText('User directory')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Shared reference')).toHaveLength(2)
-    expect(screen.getAllByText('Company catalog')).toHaveLength(2)
-    const ownerRow = screen.getByRole('row', { name: /Launch notes/ })
-    await user.click(within(ownerRow).getByRole('button', { name: 'Open' }))
+    expect(screen.queryByRole('button', { name: 'Users' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Shared reference workspace' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Company catalog workspace' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close navigation drawer' }))
+    await user.click(screen.getByRole('button', { name: 'Manage access' }))
     expect(await screen.findByRole('heading', { name: 'Workspace members' })).toBeInTheDocument()
   })
 
@@ -313,11 +338,7 @@ describe('dashboard application', () => {
       },
     })
 
-    const user = userEvent.setup()
     render(<App />)
-
-    const row = await screen.findByRole('row', { name: /Launch notes/ })
-    await user.click(within(row).getByRole('button', { name: 'Open' }))
 
     expect(await screen.findByText('sales.csv')).toBeInTheDocument()
     expect(screen.getByText(/900 rows/)).toBeInTheDocument()
@@ -327,7 +348,8 @@ describe('dashboard application', () => {
     // Exactly one row label, because a document that is not a CSV has no
     // rows to report. Matching on a bare "0 rows" would also match "900
     // rows", so the count is what actually pins this.
-    expect(screen.getAllByText(/rows/)).toHaveLength(1)
+    expect(screen.getAllByText(/\b900 rows\b/)).toHaveLength(1)
+    expect(screen.queryByText(/\b0 rows\b/)).not.toBeInTheDocument()
   })
 
   it('no longer tells the user spreadsheets are unsupported', async () => {
@@ -357,14 +379,14 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(screen.getByRole('link', { name: 'Upload context' }))
     expect(window.location.pathname).toBe('/upload-context')
     expect(screen.getByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     window.history.replaceState(null, '', '/dashboard')
     window.dispatchEvent(new PopStateEvent('popstate'))
-    expect(await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
   })
 
   it('shows no upload form when the signed-in user has no eligible workspace', async () => {
@@ -461,15 +483,16 @@ describe('dashboard application', () => {
 
     render(<App />)
 
-    await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
     const notificationButton = await screen.findByRole('button', {
       name: 'Open processing notifications, 2 recent runs',
     })
     await user.click(notificationButton)
 
-    expect(screen.getByRole('dialog', { name: 'Processing notifications' })).toBeInTheDocument()
-    expect(screen.getByText('Currently processing')).toBeInTheDocument()
-    expect(screen.getByText('Recent activity')).toBeInTheDocument()
+    const notifications = screen.getByRole('dialog', { name: 'Processing notifications' })
+    expect(notifications).toBeInTheDocument()
+    expect(within(notifications).getByText('Currently processing')).toBeInTheDocument()
+    expect(within(notifications).getByText('Recent activity')).toBeInTheDocument()
     expect(screen.getByText('report-processing.pdf')).toBeInTheDocument()
     expect(screen.getByText('finished-report.pdf')).toBeInTheDocument()
     expect(screen.getByText('2/4 embeddings')).toBeInTheDocument()
@@ -569,7 +592,7 @@ describe('dashboard application', () => {
 
     render(<App />)
 
-    await screen.findByRole('heading', { name: 'Access, ownership, and context boundaries.' })
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
     const openNavigation = screen.getByRole('button', { name: 'Open navigation' })
     await user.click(openNavigation)
     expect(screen.getByRole('dialog', { name: 'Primary navigation' })).toBeInTheDocument()
@@ -606,11 +629,9 @@ describe('dashboard application', () => {
 
     render(<App />)
 
-    const row = await screen.findByRole('row', { name: /Launch notes/ })
-    await user.click(within(row).getByRole('button', { name: 'Open' }))
-
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
-    expect(screen.getByText(/Ready/)).toBeInTheDocument()
+    const documentRow = screen.getByRole('row', { name: /launch-review.pdf/ })
+    expect(within(documentRow).getByText('Ready')).toBeInTheDocument()
 
     // Deletion is permanent, so it goes through the confirmation dialog.
     await user.click(screen.getByRole('button', { name: 'Delete launch-review.pdf' }))
@@ -665,12 +686,8 @@ describe('dashboard application', () => {
         limit: 50,
       },
     })
-    const user = userEvent.setup()
 
     render(<App />)
-
-    const row = await screen.findByRole('row', { name: /Shared reference/ })
-    await user.click(within(row).getByRole('button', { name: 'Open' }))
 
     // A viewer may read the list; only the destructive control is withheld.
     expect(await screen.findByText('shared-notes.pdf')).toBeInTheDocument()

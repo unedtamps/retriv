@@ -8,6 +8,7 @@ interface DialogProps {
   eyebrow?: string
   description?: string
   variant?: 'modal' | 'drawer'
+  drawerWidth?: 'default' | 'narrow'
   preventBackdropClose?: boolean
   children: ReactNode
   onClose: () => void
@@ -19,6 +20,7 @@ export function Dialog({
   eyebrow,
   description,
   variant = 'modal',
+  drawerWidth = 'default',
   preventBackdropClose = false,
   children,
   onClose,
@@ -37,7 +39,11 @@ export function Dialog({
   return createPortal(
     <dialog
       ref={dialogRef}
-      className={variant === 'drawer' ? 'app-dialog app-drawer' : 'app-dialog'}
+      className={
+        variant === 'drawer'
+          ? `app-dialog app-drawer${drawerWidth === 'narrow' ? ' app-drawer-narrow' : ''}`
+          : 'app-dialog'
+      }
       aria-labelledby={titleId}
       aria-describedby={description === undefined ? undefined : descriptionId}
       onCancel={(event) => {

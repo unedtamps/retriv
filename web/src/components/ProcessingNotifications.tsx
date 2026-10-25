@@ -52,7 +52,7 @@ export function ProcessingNotifications({
       <button
         ref={bellButtonRef}
         type="button"
-        className="btn-icon relative"
+        className="relative inline-flex h-8 items-center gap-2 rounded-full border border-line bg-surface px-2.5 text-ink-muted transition-colors hover:border-line-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
         aria-label={
           notificationCount === 0
             ? 'Open processing notifications'
@@ -62,11 +62,18 @@ export function ProcessingNotifications({
         aria-expanded={open}
         onClick={() => changeOpen(true)}
       >
-        <Bell aria-hidden="true" size={18} />
+        <span
+          aria-hidden="true"
+          className={`h-1.5 w-1.5 rounded-full ${runs.activeRun === null ? 'bg-ink-faint' : 'bg-success'}`}
+        />
+        <span className="hidden font-mono text-[0.6rem] uppercase tracking-eyebrow sm:inline">
+          {runs.activeRun === null ? 'Pipeline idle' : 'Pipeline active'}
+        </span>
+        <Bell aria-hidden="true" size={14} />
         {notificationCount === 0 ? null : (
           <span
             aria-hidden="true"
-            className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-ink px-1 font-mono text-[0.58rem] leading-none text-accent"
+            className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 font-mono text-[0.58rem] leading-none text-white"
           >
             {notificationCount > 99 ? '99+' : notificationCount}
           </span>

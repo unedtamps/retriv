@@ -2,7 +2,7 @@
 
 Vite, React, and TypeScript dashboard for Retriv identity and workspace administration.
 The browser routes `/dashboard` and `/upload-context` share the same login session. Open
-`/upload-context` directly to sign in and submit a PDF or DOCX to a workspace where you are an
+`/upload-context` directly to sign in and submit a PDF, DOCX, or CSV to a workspace where you are an
 owner or editor.
 
 ## Requirements
@@ -57,29 +57,34 @@ The interface is described once, in `src/index.css`, and everything else is Tail
 over those tokens.
 
 **Tokens** (`@theme` in `src/index.css`): three surfaces (`paper`, `surface`, `sunken`), two
-lines (`line`, `line-strong`), three inks (`ink`, `ink-muted`, `ink-faint`), one accent in two
-tones (`accent` for fills, `accent-ink` for text, borders and focus rings), and the status
-colours (`success`, `danger`, `warn`), which are semantic rather than brand. The type scale is
-two steps: `text-eyebrow` for the small mono labels and `text-meta` for counts and timestamps.
+lines (`line`, `line-strong`), three inks (`ink`, `ink-muted`, `ink-faint`), the lime brand
+accent in two tones (`accent` for primary fills, `accent-ink` for text and focus rings), five
+functional accents (`blue`, `teal`, `amber`, `coral`, `violet`) with soft variants, and the
+semantic status colours (`success`, `danger`, `warn`). The type scale is two steps:
+`text-eyebrow` for the small mono labels and `text-meta` for counts and timestamps.
 
 **Rules**
 
-- One accent. Lime is the brand colour and the only interactive highlight; a second green used
-  for focus rings and active states was competing with it.
-- No raw colour values in a component. If a colour is needed, it is a token.
-- No arbitrary values (`text-[0.68rem]`, `bg-[#17231f]`). The scale is in the theme, so it can
-  be changed in one place.
-- The dark surface is the sign-in page and nothing else. Hand-painted dark panels meant one
-  colour meant two things depending on where it was used.
+- Lime is reserved for the primary action. Functional colours identify state, not decoration.
+- A colour used in a component comes from a token. Workspace and member avatars use a
+  deterministic accent from `src/lib/visuals.ts`; avatars are initials, never uploaded images.
+- Status is always communicated with a label as well as colour.
+- The dark surface is the sign-in page. The dashboard is paper and white cards.
 
-**Classes** (`@layer components`): `btn` and its variants, `label`, `field`, `panel`, `table`,
-`eyebrow`, `badge`, `error-note`, `empty`, `toast`, `skip-link`, `nav-link`, `choice`. Twelve
-classes carry the whole interface.
+**Layout**
 
-**Components** (`src/components/ui/`): `Panel` and `PanelHeader`, `DataTable` (a table that
-becomes a list of cards on a narrow screen), `SearchField`, `EmptyState`, `SecretWarning`,
-`CopyButton`, `BrandMark`. `src/hooks/`: `useApiResource` (one fetch with the abort and the
-sign-out handling, instead of seven copies of it), `useProcessingRuns`, `useIsDesktop`.
+- `AppShell` is the permanent rail on wide screens and an off-canvas dialog below `lg`.
+- `WorkspaceOverview` is the selected workspace: summary cards, recent documents, pipeline and
+  access. `WorkspaceDocumentsPage` is the full-width document view. `WorkspaceMembersPage`
+  owns membership management.
+- The upload drawer is contextual to the selected workspace and is opened from the overview or
+  documents view. `/upload-context` remains the direct, workspace-picker page.
+- The global search box filters the document table. It does not imply a cross-workspace search
+  API.
+
+**Components** (`src/components/ui/`): `Panel`, `Avatar`, `DataTable`, `SearchField`,
+`EmptyState`, `SecretWarning`, `CopyButton`, `BrandMark`. `src/hooks/`: `useApiResource`,
+`useProcessingRuns`, `useWorkspaceDocuments`, `useIsDesktop`.
 
 The navigation is one element: a permanent rail from `lg` up, an off-canvas drawer below it.
 Which one it is decides whether it is a navigation landmark or a modal dialog, and that is
