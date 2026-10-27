@@ -50,10 +50,12 @@ def looks_like_allocation_failure(message: str) -> bool:
 class ExtractedImage:
     """One picture lifted out of a document.
 
-    The bytes are the picture as the parser cropped it, already rendered at
-    the scale the vision model will read them at. ``ref`` is the parser's own
-    handle for the picture, and it is what a chunk's text points at, so the
-    description can be put back where the picture was.
+    The bytes are the picture as the extractor cropped it, already rendered
+    at the scale the vision model will read them at. A DOCX picture arrives
+    cropped inside the parsed document; a PDF picture is cropped from the
+    source file afterwards, so the parser never holds its bytes. ``ref`` is
+    the parser's own handle for the picture, and it is what a chunk's text
+    points at, so the description can be put back where the picture was.
     """
 
     ref: str

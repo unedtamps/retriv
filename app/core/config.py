@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     clamd_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
 
     # -- upload validation ----------------------------------------------
-    max_upload_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    max_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     # How long the download_document tool's signed link stays usable. It is a
     # bearer credential that cannot be revoked once issued, so the window is
     # deliberately short and the upper bound is an hour rather than a day.
@@ -91,15 +91,21 @@ class Settings(BaseSettings):
     max_pdf_pages: int = Field(default=500, gt=0)
     max_archive_entries: int = Field(default=10_000, gt=0)
     max_archive_central_directory_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
-    max_archive_uncompressed_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
-    max_archive_entry_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    # A DOCX at the 100 MB source cap is mostly images, and images compress
+    # roughly 1:1, so the uncompressed package is about the file's own size.
+    # 300 MiB leaves headroom for that while the 100x ratio cap still turns a
+    # zip bomb away long before it gets here.
+    max_archive_uncompressed_bytes: int = Field(default=300 * 1024 * 1024, gt=0)
+    max_archive_entry_bytes: int = Field(default=150 * 1024 * 1024, gt=0)
     max_archive_compression_ratio: float = Field(default=100.0, gt=1)
     max_archive_entry_compression_ratio: float = Field(default=100.0, gt=1)
     max_office_xml_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     # CSV rows are stored verbatim for SQL and never embedded, so these caps
-    # bound ingest cost, not context. 100k rows is ~20MB of JSONB and parses
-    # in seconds with the stdlib reader.
-    max_csv_rows: int = Field(default=100_000, gt=0)
+    # bound ingest cost, not context. Following the measured ratio that 100k
+    # rows are ~20MB of JSONB, a million rows -- what a 100 MB file of
+    # 100-byte rows carries -- is ~200MB of JSONB and parses in seconds with
+    # the stdlib reader.
+    max_csv_rows: int = Field(default=1_000_000, gt=0)
     max_csv_columns: int = Field(default=512, ge=1, le=4096)
     max_csv_field_bytes: int = Field(default=64 * 1024, gt=0)
     max_concurrent_uploads: int = Field(default=2, ge=1, le=16)
@@ -107,7 +113,7 @@ class Settings(BaseSettings):
     upload_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs
 
     # -- extraction pipeline limits -------------------------------------
-    max_source_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    max_source_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     max_chunks_per_document: int = Field(default=10_000, gt=0)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     max_extracted_text_bytes: int = Field(default=50 * 1024 * 1024, gt=0)

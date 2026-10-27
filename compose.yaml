@@ -21,7 +21,7 @@ x-worker-environment: &worker-environment
   RETRIV_DOCLING_ARTIFACTS_PATH: ${RETRIV_DOCLING_ARTIFACTS_PATH:-/opt/docling-models}
   RETRIV_OCR_LANGUAGES: ${RETRIV_OCR_LANGUAGES:-["ind","eng"]}
   RETRIV_CHUNK_MAX_TOKENS: ${RETRIV_CHUNK_MAX_TOKENS:-700}
-  RETRIV_MAX_SOURCE_BYTES: ${RETRIV_MAX_SOURCE_BYTES:-52428800}
+  RETRIV_MAX_SOURCE_BYTES: ${RETRIV_MAX_SOURCE_BYTES:-104857600}
   RETRIV_MAX_CHUNKS_PER_DOCUMENT: ${RETRIV_MAX_CHUNKS_PER_DOCUMENT:-10000}
   RETRIV_MAX_ARTIFACT_BYTES: ${RETRIV_MAX_ARTIFACT_BYTES:-104857600}
   RETRIV_MAX_EXTRACTED_TEXT_BYTES: ${RETRIV_MAX_EXTRACTED_TEXT_BYTES:-52428800}
@@ -141,9 +141,12 @@ services:
     image: clamav/clamav:1.4_base
     restart: unless-stopped
     environment:
-      CLAMD_CONF_StreamMaxLength: 60M
-      CLAMD_CONF_MaxFileSize: 60M
-      CLAMD_CONF_MaxScanSize: 120M
+      # The scan caps sit above the 100 MB source limit with headroom, so an
+      # acceptable file is never turned away for being too big to scan, and
+      # MaxScanSize covers archives that expand beyond the file's own size.
+      CLAMD_CONF_StreamMaxLength: 110M
+      CLAMD_CONF_MaxFileSize: 110M
+      CLAMD_CONF_MaxScanSize: 220M
       CLAMD_CONF_AlertExceedsMax: "yes"
     mem_limit: 4g
     pids_limit: 512

@@ -63,9 +63,7 @@ def set_resource_limits(args: argparse.Namespace) -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_bytes, max_file_bytes))
 
 
-def write_images(
-    args: argparse.Namespace, images: list[ExtractedImage]
-) -> list[dict[str, object]]:
+def write_images(args: argparse.Namespace, images: list[ExtractedImage]) -> list[dict[str, object]]:
     """Write the pictures out, and say which ones made it.
 
     The pictures cross the process boundary as files rather than inside the
@@ -118,6 +116,8 @@ def run(args: argparse.Namespace) -> None:
         image_render_scale=args.image_render_scale,
         image_min_pixels=args.image_min_pixels,
         max_images=args.max_images,
+        max_image_bytes=args.max_image_bytes,
+        max_total_image_bytes=args.max_total_image_bytes,
     )
     result = extractor.extract(args.input, media_type=args.media_type)
     if len(result.document_json) > args.max_artifact_bytes:

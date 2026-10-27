@@ -32,6 +32,10 @@ SAFE_ENVIRONMENT_KEYS = (
     "TMPDIR",
     "TORCH_HOME",
     "XDG_CACHE_HOME",
+    # Not trusted content, but the channel for one: an operator measuring an
+    # alternative allocator can preload it into the sandbox from the worker's
+    # own environment without a code change.
+    "LD_PRELOAD",
 )
 
 
@@ -131,9 +135,7 @@ class SandboxedDoclingExtractor:
                 command.extend(("--artifacts-path", str(self._artifacts_path)))
 
             environment = {
-                key: os.environ[key]
-                for key in SAFE_ENVIRONMENT_KEYS
-                if key in os.environ
+                key: os.environ[key] for key in SAFE_ENVIRONMENT_KEYS if key in os.environ
             }
             environment.update(
                 {
@@ -142,6 +144,12 @@ class SandboxedDoclingExtractor:
                     "NUMEXPR_NUM_THREADS": "4",
                     "OMP_NUM_THREADS": "4",
                     "OPENBLAS_NUM_THREADS": "4",
+                    # glibc sizes a malloc arena per thread and reserves the
+                    # address space for it up front. Capped, the parser's
+                    # address space stays closer to the memory it actually
+                    # touches, which is what the RLIMIT_AS ceiling is checked
+                    # against.
+                    "MALLOC_ARENA_MAX": "2",
                 }
             )
             if self._artifacts_path is not None:
@@ -166,14 +174,11 @@ class SandboxedDoclingExtractor:
                 except subprocess.TimeoutExpired as exc:
                     self._kill_process_group(process)
                     logger.error(
-                        "Document extraction exceeded the time limit "
-                        "(input=%s, timeout=%ss)",
+                        "Document extraction exceeded the time limit (input=%s, timeout=%ss)",
                         path,
                         self._timeout_seconds,
                     )
-                    raise ExtractionError(
-                        "Document extraction exceeded the time limit"
-                    ) from exc
+                    raise ExtractionError("Document extraction exceeded the time limit") from exc
             if return_code != 0:
                 detail = self._read_error(output_dir / "error.txt")
                 stderr_detail = self._read_tail(stderr_path, 4000)
@@ -248,9 +253,7 @@ class SandboxedDoclingExtractor:
                 ):
                     raise TypeError
                 chunks = [self._parse_chunk(item) for item in raw_chunks]
-                images = [
-                    self._parse_image(item, output_dir) for item in raw_images
-                ]
+                images = [self._parse_image(item, output_dir) for item in raw_images]
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise ExtractionError("Sandbox returned an invalid extraction result") from exc
             except ExtractionError:

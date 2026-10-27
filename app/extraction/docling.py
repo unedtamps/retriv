@@ -32,9 +32,14 @@ class DoclingExtractor:
         image_render_scale: float = 2.0,
         image_min_pixels: int = 0,
         max_images: int = 0,
+        max_image_bytes: int = 5 * 1024 * 1024,
+        max_total_image_bytes: int = 50 * 1024 * 1024,
     ) -> None:
         try:
             import tiktoken
+            from docling.datamodel.backend_options import (
+                ThreadedDoclingParseBackendOptions,
+            )
             from docling.datamodel.base_models import InputFormat
             from docling.datamodel.pipeline_options import (
                 PdfPipelineOptions,
@@ -86,10 +91,28 @@ class DoclingExtractor:
         # PDFs do not reach Tesseract anyway -- and gating the stage off per file was
         # measured to change nothing while risking the scanned pages inside a mixed
         # document, where those pages have no text layer of their own.
+        #
+        # The threaded parser decodes every page into native memory and holds it
+        # until told otherwise, releasing it only every
+        # ``release_native_memory_every_n_pages`` pages -- 128 by default, which
+        # left a 182-page document carrying most of itself, rendered, for the
+        # whole conversion. Eight keeps at most eight pages decoded at a time.
+        # Nothing after a page's own OCR needs the parser's copy of it: the
+        # pictures are cropped from the source file directly, so the native
+        # buffers are dead weight the moment the page is parsed.
         self._converter = DocumentConverter(
             allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
             format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pipeline_options,
+                    # Built through model_validate rather than the constructor
+                    # because mypy, without the pydantic plugin it does not run
+                    # here, reads the backend options' defaulted fields as
+                    # required -- and the defaults must stay docling's own.
+                    backend_options=ThreadedDoclingParseBackendOptions.model_validate(
+                        {"release_native_memory_every_n_pages": 8}
+                    ),
+                )
             },
         )
         self._tokenizer = OpenAITokenizer(
@@ -120,8 +143,11 @@ class DoclingExtractor:
             serializer_provider=self._serializer_provider,
         )
         self._picture_images_enabled = picture_images_enabled
+        self._image_render_scale = image_render_scale
         self._image_min_pixels = image_min_pixels
         self._max_images = max_images
+        self._max_image_bytes = max_image_bytes
+        self._max_total_image_bytes = max_total_image_bytes
         try:
             self._version = version("docling")
         except PackageNotFoundError:
@@ -181,10 +207,9 @@ class DoclingExtractor:
             allocation_failure = _allocation_failure(conversion_errors)
             if allocation_failure is not None:
                 raise ExtractionResourceError(
-                    f"Docling ran out of memory after {page_count} pages: "
-                    f"{allocation_failure}"
+                    f"Docling ran out of memory after {page_count} pages: {allocation_failure}"
                 )
-            images = self._collect_images(document)
+            images = self._collect_images(document, path, media_type)
             # A picture is only marked when it is one of the pictures that
             # will be described. A document whose pictures are all too small
             # to be worth an API call is indexed the way it would be with the
@@ -193,9 +218,7 @@ class DoclingExtractor:
             # keep their captions but lose their markers: a logo does not
             # need a description, and an "[Image]" line where the logo was
             # only adds noise to the text that gets embedded.
-            self._serializer_provider.mark_pictures(
-                {image.ref for image in images}
-            )
+            self._serializer_provider.mark_pictures({image.ref for image in images})
             document_json = self._export_document(document)
             chunks = [self._convert_chunk(chunk) for chunk in self._chunker.chunk(document)]
             with suppress(Exception):
@@ -255,47 +278,138 @@ class DoclingExtractor:
             separators=(",", ":"),
         ).encode()
 
-    def _collect_images(self, document: Any) -> list[ExtractedImage]:
-        """Lift the pictures out of the parsed document.
+    def _collect_images(
+        self, document: Any, source_path: Path | None, media_type: str
+    ) -> list[ExtractedImage]:
+        """Lift the pictures out of the parsed document, cropping them here.
 
-        The parser hands each picture over as a data URL of the cropped
-        region. A picture whose rendered area is below the floor is dropped
-        here: at that size it is a logo, a rule, a bullet or an ornament,
-        and describing it costs an API call and adds nothing to a search.
+        Docling can crop the pictures itself, but its crops are cut from the
+        per-page rasters during the final assembly step, which forces every
+        page's raster -- the whole page at the render scale -- to stay in
+        memory until the last page of the document has been parsed. Cropping
+        afterwards from the PDF instead keeps one raster alive at a time, at
+        the cost of one extra render per kept picture. Pictures that carry
+        their own bytes, the ones a DOCX file embeds, are still taken as the
+        parser handed them over.
+
+        The byte caps are applied here, not only where the sandbox writes the
+        files, because this is where the bytes exist in memory. A cap that
+        runs after collection cannot bound collection.
         """
         if not self._picture_images_enabled:
             return []
         texts = {text.self_ref: text.text for text in document.texts}
         images: list[ExtractedImage] = []
-        for picture in document.pictures:
-            if self._max_images and len(images) >= self._max_images:
-                break
-            image = picture.image
-            if image is None or not image.uri:
-                continue
-            data = self._decode_data_uri(str(image.uri))
-            if data is None:
-                continue
-            width = int(image.size.width)
-            height = int(image.size.height)
-            if width * height < self._image_min_pixels:
-                continue
-            caption = " ".join(
-                texts.get(ref.cref, "").strip() for ref in picture.captions
-            ).strip()
-            page_number = picture.prov[0].page_no if picture.prov else 0
-            images.append(
-                ExtractedImage(
-                    ref=picture.self_ref,
-                    page_number=page_number,
-                    media_type=image.mimetype or "image/png",
-                    data=data,
-                    caption=caption,
-                    width=width,
-                    height=height,
+        total_bytes = 0
+        renderable = media_type == PDF_MEDIA_TYPE and source_path is not None
+        source_pdf = None
+        try:
+            for picture in document.pictures:
+                if self._max_images and len(images) >= self._max_images:
+                    break
+                image = picture.image
+                if image is not None and image.uri:
+                    data = self._decode_data_uri(str(image.uri))
+                    if data is None:
+                        continue
+                    media_type_of_picture = image.mimetype or "image/png"
+                    width = int(image.size.width)
+                    height = int(image.size.height)
+                elif renderable:
+                    if source_pdf is None:
+                        import pymupdf
+
+                        source_pdf = pymupdf.open(source_path)
+                    rendered = self._render_picture(source_pdf, document, picture)
+                    if rendered is None:
+                        continue
+                    data, media_type_of_picture, width, height = rendered
+                else:
+                    continue
+                if width * height < self._image_min_pixels:
+                    continue
+                if len(data) > self._max_image_bytes:
+                    continue
+                if total_bytes + len(data) > self._max_total_image_bytes:
+                    break
+                total_bytes += len(data)
+                caption = " ".join(
+                    texts.get(ref.cref, "").strip() for ref in picture.captions
+                ).strip()
+                page_number = picture.prov[0].page_no if picture.prov else 0
+                images.append(
+                    ExtractedImage(
+                        ref=picture.self_ref,
+                        page_number=page_number,
+                        media_type=media_type_of_picture,
+                        data=data,
+                        caption=caption,
+                        width=width,
+                        height=height,
+                    )
                 )
-            )
+        finally:
+            if source_pdf is not None:
+                source_pdf.close()
         return images
+
+    def _render_picture(
+        self, source_pdf: Any, document: Any, picture: Any
+    ) -> tuple[bytes, str, int, int] | None:
+        """Crop one picture out of the source PDF at the render scale.
+
+        The parser's bboxes are in page points with a bottom-left origin --
+        the same frame ``to_top_left_origin`` exists to translate -- and
+        PyMuPDF is top-left in the same points, so the flip is the page
+        height minus the two vertical edges. The docling page height is used
+        for the flip because it is the frame the bbox lives in, and the
+        result is clamped to the page against a box that wanders outside it.
+        """
+        import pymupdf
+        from docling_core.types.doc import CoordOrigin
+
+        if not picture.prov:
+            return None
+        prov = picture.prov[0]
+        bbox = getattr(prov, "bbox", None)
+        page_no = prov.page_no
+        if bbox is None or page_no < 1 or page_no > source_pdf.page_count:
+            return None
+        scale = self._image_render_scale
+        # A picture smaller than the floor is a logo, a rule or an ornament;
+        # skip the render rather than make one to throw it away.
+        estimated_pixels = abs(bbox.r - bbox.l) * scale * abs(bbox.t - bbox.b) * scale
+        if estimated_pixels < self._image_min_pixels:
+            return None
+        page = source_pdf[page_no - 1]
+        if bbox.coord_origin == CoordOrigin.BOTTOMLEFT:
+            page_item = document.pages.get(page_no)
+            page_height = (
+                page_item.size.height
+                if page_item is not None and page_item.size.height
+                else page.rect.height
+            )
+            rect = pymupdf.Rect(bbox.l, page_height - bbox.t, bbox.r, page_height - bbox.b)
+        else:
+            rect = pymupdf.Rect(bbox.as_tuple())
+        # An intersection done by hand: PyMuPDF's Rect.__and__ returns an
+        # infinite rectangle for disjoint inputs, which is not a useful way
+        # to say "this box is not on this page".
+        clipped = pymupdf.Rect(
+            max(rect.x0, page.rect.x0),
+            max(rect.y0, page.rect.y0),
+            min(rect.x1, page.rect.x1),
+            min(rect.y1, page.rect.y1),
+        )
+        if clipped.is_empty or clipped.width <= 0 or clipped.height <= 0:
+            return None
+        pixmap = page.get_pixmap(
+            matrix=pymupdf.Matrix(scale, scale),
+            clip=clipped,
+            alpha=False,
+        )
+        pixmap.set_dpi(int(72 * scale), int(72 * scale))
+        return pixmap.tobytes("png"), "image/png", pixmap.width, pixmap.height
 
     @staticmethod
     def _decode_data_uri(uri: str) -> bytes | None:
@@ -381,8 +495,7 @@ def _error_summary(errors: list[Any]) -> str:
             component = getattr(error, "component_type", "unknown")
             message = str(getattr(error, "error_message", error)).replace("\n", " ")
             parts.append(
-                f"page={page} category={category} component={component} "
-                f"message={message[:240]}"
+                f"page={page} category={category} component={component} message={message[:240]}"
             )
         if len(errors) > 10:
             parts.append(f"... {len(errors) - 10} more")
