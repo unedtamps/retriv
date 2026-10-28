@@ -7,16 +7,25 @@ the Qdrant point IDs out of the embedding ledger, and must be removed
 only after the vectors are gone.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
+import threading
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+import pytest_asyncio
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.config import Settings
 from app.db.models import (
@@ -31,12 +40,14 @@ from app.db.models import (
     RUN_QUEUED,
     RUN_READY,
     RUN_RETRY_WAIT,
+    Base,
     ChunkEmbedding,
     Document,
     DocumentChunk,
     DocumentRow,
     DocumentWorkspace,
     ProcessingRun,
+    Workspace,
 )
 from app.embeddings.base import (
     EmbeddingProvider,
@@ -46,6 +57,7 @@ from app.embeddings.base import (
     VectorStore,
 )
 from app.extraction.base import (
+    DocumentExtractor,
     ExtractedChunk,
     ExtractedImage,
     ExtractionResourceError,
@@ -230,9 +242,7 @@ class FakeVectorStore(VectorStore):
             if point.payload.get("document_id") == str(document_id):
                 del self.points[key]
 
-    async def set_document_workspaces(
-        self, document_id: UUID, workspace_ids: list[UUID]
-    ) -> None:
+    async def set_document_workspaces(self, document_id: UUID, workspace_ids: list[UUID]) -> None:
         self.workspace_payloads[document_id] = list(workspace_ids)
         for point in self.points.values():
             if point.payload.get("document_id") == str(document_id):
@@ -259,7 +269,7 @@ def build_worker(
     settings: Settings,
     *,
     storage: FakeStorage | None = None,
-    extractor: FakeExtractor | None = None,
+    extractor: DocumentExtractor | None = None,
     embeddings: FakeEmbeddingProvider | None = None,
     vectors: FakeVectorStore | None = None,
     vision: FakeVisionProvider | None = None,
@@ -325,9 +335,7 @@ async def test_worker_indexes_a_document_end_to_end(
     entities: SeededEntities,
 ) -> None:
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     vectors = FakeVectorStore()
     worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
 
@@ -337,16 +345,12 @@ async def test_worker_indexes_a_document_end_to_end(
         finished = await session.get(ProcessingRun, run.id)
         chunks = (
             await session.scalars(
-                select(DocumentChunk).where(
-                    DocumentChunk.document_id == document.id
-                )
+                select(DocumentChunk).where(DocumentChunk.document_id == document.id)
             )
         ).all()
         embeddings = (
             await session.scalars(
-                select(ChunkEmbedding).where(
-                    ChunkEmbedding.document_id == document.id
-                )
+                select(ChunkEmbedding).where(ChunkEmbedding.document_id == document.id)
             )
         ).all()
 
@@ -380,12 +384,8 @@ async def test_a_completed_run_records_its_progress_and_its_attempt(
     itself without touching the current one.
     """
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
-    worker = build_worker(
-        db_session_factory, settings, storage=storage, extractor=FakeExtractor()
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
+    worker = build_worker(db_session_factory, settings, storage=storage, extractor=FakeExtractor())
 
     assert await worker.run_once() is True
 
@@ -415,9 +415,7 @@ async def test_an_expired_lease_is_reclaimed_and_retried(
     entities: SeededEntities,
 ) -> None:
     storage = FakeStorage()
-    _, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    _, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     async with db_session_factory() as session, session.begin():
         stale = await session.get(ProcessingRun, run.id)
         assert stale is not None
@@ -443,9 +441,7 @@ async def test_a_run_exhausting_its_attempts_is_failed(
     entities: SeededEntities,
 ) -> None:
     storage = FakeStorage()
-    _, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    _, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     async with db_session_factory() as session, session.begin():
         stale = await session.get(ProcessingRun, run.id)
         assert stale is not None
@@ -460,9 +456,10 @@ async def test_a_run_exhausting_its_attempts_is_failed(
         failed = await session.get(ProcessingRun, run.id)
     assert failed is not None
     assert failed.status == RUN_FAILED
-    assert "expired" in (failed.last_error or "").lower() or "attempt" in (
-        failed.last_error or ""
-    ).lower()
+    assert (
+        "expired" in (failed.last_error or "").lower()
+        or "attempt" in (failed.last_error or "").lower()
+    )
 
 
 async def test_a_retryable_storage_error_schedules_a_backoff(
@@ -495,9 +492,7 @@ async def test_a_permanently_missing_object_fails_without_retry(
     entities: SeededEntities,
 ) -> None:
     storage = FakeStorage()
-    await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    await seed_document(db_session_factory, entities.finance.id, storage=storage)
     storage.objects.clear()
 
     worker = build_worker(db_session_factory, settings, storage=storage)
@@ -522,9 +517,7 @@ async def test_a_lossy_extraction_fails_instead_of_indexing_a_partial_document(
     incomplete index instead of a failed run.
     """
     storage = FakeStorage()
-    _, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    _, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=["Only a fraction of the document survived."],
         source_text_chars=100_000,
@@ -565,9 +558,7 @@ async def test_extraction_running_out_of_memory_names_the_limit_to_raise(
     spend two more parser runs retrying a deterministic failure.
     """
     storage = FakeStorage()
-    _, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    _, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         error=ExtractionResourceError(
             "Docling ran out of memory after 182 pages: page 3: "
@@ -608,16 +599,12 @@ async def test_extraction_coverage_is_not_enforced_without_a_text_layer(
     guardrail is for.
     """
     storage = FakeStorage()
-    _, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    _, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=["Short scanned note."], ocr_enabled=True, source_text_chars=0
     )
 
-    worker = build_worker(
-        db_session_factory, settings, storage=storage, extractor=extractor
-    )
+    worker = build_worker(db_session_factory, settings, storage=storage, extractor=extractor)
     assert await worker.run_once() is True
 
     async with db_session_factory() as session:
@@ -673,9 +660,7 @@ async def test_delete_removes_vectors_before_the_document_row(
         db_session_factory, entities.finance.id, storage=storage
     )
     vectors = FakeVectorStore()
-    indexer = build_worker(
-        db_session_factory, settings, storage=storage, vectors=vectors
-    )
+    indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await indexer.run_once() is True
 
     # the document is now indexed and has a real vector
@@ -692,13 +677,10 @@ async def test_delete_removes_vectors_before_the_document_row(
 
     async with db_session_factory() as session:
         assert await session.get(Document, document.id) is not None, (
-            "the row must survive the request so the worker can read the "
-            "point IDs"
+            "the row must survive the request so the worker can read the point IDs"
         )
 
-    deleter = build_worker(
-        db_session_factory, settings, storage=storage, vectors=vectors
-    )
+    deleter = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await deleter.run_once() is True
 
     assert document.id in vectors.deleted_documents, (
@@ -719,9 +701,7 @@ async def test_delete_removes_vectors_before_the_document_row(
         ).all()
         embeddings = (
             await session.scalars(
-                select(ChunkEmbedding).where(
-                    ChunkEmbedding.document_id == document.id
-                )
+                select(ChunkEmbedding).where(ChunkEmbedding.document_id == document.id)
             )
         ).all()
     assert chunks == []
@@ -773,9 +753,7 @@ async def test_a_delete_run_is_never_cancelled_by_its_own_enqueue(
     from app.processing.service import enqueue_delete
 
     storage = FakeStorage()
-    document, _ = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, _ = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     for _ in range(2):
         async with db_session_factory() as session, session.begin():
             stored = await session.get(Document, document.id)
@@ -785,9 +763,7 @@ async def test_a_delete_run_is_never_cancelled_by_its_own_enqueue(
 
     async with db_session_factory() as session:
         delete_runs = (
-            await session.scalars(
-                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
-            )
+            await session.scalars(select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE))
         ).all()
     assert len(delete_runs) == 1
     assert delete_runs[0].status == RUN_QUEUED
@@ -801,9 +777,7 @@ async def test_a_tombstone_sweep_removes_leaked_artifacts(
     """If a delete run is lost, the periodic sweep still cleans the
     artifacts for any document marked deleted."""
     storage = FakeStorage()
-    document, _ = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, _ = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     storage.objects[
         (
             "context-documents",
@@ -839,22 +813,16 @@ async def test_embedding_backfill_requeues_a_run_left_half_indexed(
     """A crash between chunking and embedding leaves a ready run with
     un-indexed chunks. The sweep finds it and finishes the job."""
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     vectors = FakeVectorStore()
-    indexer = build_worker(
-        db_session_factory, settings, storage=storage, vectors=vectors
-    )
+    indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     await indexer.run_once()
 
     # rewind to the state a crash would leave
     async with db_session_factory() as session, session.begin():
         for embedding in (
             await session.scalars(
-                select(ChunkEmbedding).where(
-                    ChunkEmbedding.document_id == document.id
-                )
+                select(ChunkEmbedding).where(ChunkEmbedding.document_id == document.id)
             )
         ).all():
             embedding.status = "pending"
@@ -863,18 +831,14 @@ async def test_embedding_backfill_requeues_a_run_left_half_indexed(
         stored_run.embedded_chunk_count = 0
 
     vectors.points.clear()
-    backfill = build_worker(
-        db_session_factory, settings, storage=storage, vectors=vectors
-    )
+    backfill = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await backfill.run_once() is True
 
     assert len(vectors.points) == 1
     async with db_session_factory() as session:
         embeddings = (
             await session.scalars(
-                select(ChunkEmbedding).where(
-                    ChunkEmbedding.document_id == document.id
-                )
+                select(ChunkEmbedding).where(ChunkEmbedding.document_id == document.id)
             )
         ).all()
     assert [embedding.status for embedding in embeddings] == [EMBEDDING_INDEXED]
@@ -893,21 +857,15 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
     them waits forever.
     """
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     vectors = FakeVectorStore()
-    indexer = build_worker(
-        db_session_factory, settings, storage=storage, vectors=vectors
-    )
+    indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     await indexer.run_once()
 
     async with db_session_factory() as session, session.begin():
         for embedding in (
             await session.scalars(
-                select(ChunkEmbedding).where(
-                    ChunkEmbedding.document_id == document.id
-                )
+                select(ChunkEmbedding).where(ChunkEmbedding.document_id == document.id)
             )
         ).all():
             embedding.status = "pending"
@@ -930,8 +888,7 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
                 sha256=hashlib.sha256(f"finished-{index}".encode()).hexdigest(),
                 bucket="raw-documents",
                 object_key=(
-                    f"workspaces/{entities.finance.id}/objects/"
-                    f"finished/{finished_document_id}"
+                    f"workspaces/{entities.finance.id}/objects/finished/{finished_document_id}"
                 ),
             )
             finished_document.active_processing_run_id = finished_run_id
@@ -954,18 +911,14 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
             )
 
     vectors.points.clear()
-    backfill = build_worker(
-        db_session_factory, settings, storage=storage, vectors=vectors
-    )
+    backfill = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await backfill.run_once() is True
 
     assert len(vectors.points) == 1
     async with db_session_factory() as session:
         embeddings = (
             await session.scalars(
-                select(ChunkEmbedding).where(
-                    ChunkEmbedding.document_id == document.id
-                )
+                select(ChunkEmbedding).where(ChunkEmbedding.document_id == document.id)
             )
         ).all()
     assert [embedding.status for embedding in embeddings] == [EMBEDDING_INDEXED]
@@ -1012,10 +965,14 @@ async def test_worker_stores_csv_rows_and_never_embeds_them(
         stored = await session.get(ProcessingRun, run.id)
         assert stored is not None
         rows = (
-            await session.execute(
-                select(DocumentRow).where(DocumentRow.document_id == document.id)
+            (
+                await session.execute(
+                    select(DocumentRow).where(DocumentRow.document_id == document.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert stored.status == RUN_READY
     assert stored.row_count == 3
@@ -1110,10 +1067,14 @@ async def test_a_reingest_removes_the_superseded_rows(
 
     async with db_session_factory() as session:
         rows = (
-            await session.execute(
-                select(DocumentRow).where(DocumentRow.document_id == document.id)
+            (
+                await session.execute(
+                    select(DocumentRow).where(DocumentRow.document_id == document.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert [row.processing_run_id for row in rows] == [second.id] * 3
 
@@ -1203,12 +1164,16 @@ async def test_a_semicolon_csv_ingests_with_its_columns_intact(
         stored = await session.get(ProcessingRun, run.id)
         assert stored is not None
         rows = (
-            await session.execute(
-                select(DocumentRow)
-                .where(DocumentRow.document_id == document.id)
-                .order_by(DocumentRow.row_number)
+            (
+                await session.execute(
+                    select(DocumentRow)
+                    .where(DocumentRow.document_id == document.id)
+                    .order_by(DocumentRow.row_number)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert stored.csv_columns == ["id", "status", "amount"]
     assert rows[0].data == {"id": "1", "status": "OPEN", "amount": "10"}
@@ -1277,10 +1242,14 @@ async def test_deleting_a_csv_document_removes_its_rows(
 
     async with db_session_factory() as session:
         remaining = (
-            await session.execute(
-                select(DocumentRow).where(DocumentRow.document_id == document.id)
+            (
+                await session.execute(
+                    select(DocumentRow).where(DocumentRow.document_id == document.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert remaining == []
 
 
@@ -1311,9 +1280,7 @@ async def test_a_picture_description_is_folded_into_the_chunk_that_held_it(
     answer a different question than the one that was asked.
     """
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=[
             f"Body text.\n{picture_marker('#/pictures/0')}\nMore body text.",
@@ -1365,9 +1332,7 @@ async def test_a_failing_model_leaves_the_document_unindexed(
     the pictures missing.
     """
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
         images=[an_extracted_image()],
@@ -1409,9 +1374,7 @@ async def test_a_rejected_model_key_fails_the_run_outright(
     deployment is misconfigured.
     """
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
         images=[an_extracted_image()],
@@ -1421,9 +1384,7 @@ async def test_a_rejected_model_key_fails_the_run_outright(
         settings,
         storage=storage,
         extractor=extractor,
-        vision=FakeVisionProvider(
-            VisionProviderError("the key was refused", retryable=False)
-        ),
+        vision=FakeVisionProvider(VisionProviderError("the key was refused", retryable=False)),
     )
 
     assert await worker.run_once() is True
@@ -1446,9 +1407,7 @@ async def test_the_picture_stage_is_skipped_when_it_is_switched_off(
     """
     off = settings.model_copy(update={"image_processing_enabled": False})
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
         images=[an_extracted_image()],
@@ -1486,9 +1445,7 @@ async def test_the_manifest_says_how_many_pictures_were_described(
     entities: SeededEntities,
 ) -> None:
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=[f"Body text.\n{picture_marker('#/pictures/0')}"],
         images=[an_extracted_image()],
@@ -1504,9 +1461,7 @@ async def test_the_manifest_says_how_many_pictures_were_described(
     assert await worker.run_once() is True
 
     manifest = next(
-        data
-        for (bucket, key), data in storage.objects.items()
-        if key.endswith("manifest.json")
+        data for (bucket, key), data in storage.objects.items() if key.endswith("manifest.json")
     )
     payload = json.loads(manifest)
 
@@ -1529,9 +1484,7 @@ async def test_zero_max_images_means_no_cap(
     """
     no_cap = settings.model_copy(update={"vlm_max_images_per_document": 0})
     storage = FakeStorage()
-    document, run = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         chunk_texts=[
             f"First figure.\n{picture_marker('#/pictures/0')}\n"
@@ -1575,13 +1528,9 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
     entities: SeededEntities,
 ) -> None:
     storage = FakeStorage()
-    document, _ = await seed_document(
-        db_session_factory, entities.finance.id, storage=storage
-    )
+    document, _ = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     vectors = FakeVectorStore()
-    worker = build_worker(
-        db_session_factory, settings, storage=storage, vectors=vectors
-    )
+    worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await worker.run_once() is True
 
     async with db_session_factory() as session, session.begin():
@@ -1606,3 +1555,529 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
     assert len(vectors.points) == 1
     point = next(iter(vectors.points.values()))
     assert set(point.payload["workspace_ids"]) == expected
+
+
+# --- concurrent runs -------------------------------------------------------
+#
+# The worker carries several runs at once and gates the parser sandbox
+# separately from the pipeline. These tests observe that overlap directly:
+# the fake parser blocks inside a worker thread (the shape the real sandbox
+# has), and the fakes that stand in for the network stages block on events
+# the test holds, so "the next document started parsing while this one was
+# still being indexed" is an assertion, not a race.
+
+
+class GatedExtractor:
+    """An extractor whose parse blocks until the test releases it.
+
+    ``extract`` runs in a thread the worker does not wait on the event loop
+    for, so blocking there freezes exactly one pipeline while the loop keeps
+    claiming. The concurrency counter is what the slot-cap assertions read.
+    """
+
+    def __init__(self) -> None:
+        self._gate = threading.Event()
+        self._lock = threading.Lock()
+        self.calls = 0
+        self.current = 0
+        self.max_concurrent = 0
+
+    def release(self) -> None:
+        self._gate.set()
+
+    def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
+        with self._lock:
+            self.calls += 1
+            self.current += 1
+            self.max_concurrent = max(self.max_concurrent, self.current)
+        try:
+            if not self._gate.wait(timeout=30):
+                raise AssertionError("extractor gate was never released")
+        finally:
+            with self._lock:
+                self.current -= 1
+        text = "Extracted paragraph one."
+        return ExtractionResult(
+            document_json=b'{"origin": "test"}',
+            chunks=[
+                ExtractedChunk(
+                    text=text,
+                    token_count=len(text.split()),
+                    section_path=["Body"],
+                    section_key=encode_section_key(["Body"]),
+                    is_heading_only=False,
+                    page_numbers=[1],
+                    provenance={},
+                )
+            ],
+            extractor_version="test-extractor-1",
+            ocr_enabled=False,
+            source_text_chars=0,
+            page_count=1,
+            images=[],
+        )
+
+
+class GatedEmbeddings(FakeEmbeddingProvider):
+    """Holds every embed call until the test lets the batches through."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = asyncio.Event()
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        await self.gate.wait()
+        return await super().embed(texts)
+
+
+class InstrumentedVision(FakeVisionProvider):
+    """Counts how many describe calls were in the air at once."""
+
+    def __init__(self, delay: float = 0.0) -> None:
+        super().__init__()
+        self._delay = delay
+        self.in_flight = 0
+        self.max_in_flight = 0
+
+    async def describe(self, image: ExtractedImage, *, context: str = "") -> str:
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(self._delay)
+            return await super().describe(image, context=context)
+        finally:
+            self.in_flight -= 1
+
+
+class SplitExtractor:
+    """Hands each run its own preloaded extraction, by call order."""
+
+    def __init__(self, per_call: dict[int, list[ExtractedImage]]) -> None:
+        self._per_call = per_call
+        self._lock = threading.Lock()
+        self._calls = 0
+
+    def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
+        with self._lock:
+            index = self._calls
+            self._calls += 1
+        return ExtractionResult(
+            document_json=b'{"origin": "test"}',
+            chunks=[
+                ExtractedChunk(
+                    text="Extracted paragraph one.",
+                    token_count=3,
+                    section_path=["Body"],
+                    section_key=encode_section_key(["Body"]),
+                    is_heading_only=False,
+                    page_numbers=[1],
+                    provenance={},
+                )
+            ],
+            extractor_version="test-extractor-1",
+            ocr_enabled=False,
+            source_text_chars=0,
+            page_count=1,
+            images=self._per_call[index],
+        )
+
+
+@pytest_asyncio.fixture
+async def concurrent_session_factory(
+    tmp_path: Path,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """A file-backed sqlite engine for tests that run pipelines concurrently.
+
+    The shared in-memory ``StaticPool`` hands every session the same
+    connection, which two interleaved transactions cannot honestly share.
+    A file database gives each session its own connection, and WAL plus a
+    busy timeout let the writers take turns instead of erroring.
+    """
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'worker-concurrent.db'}",
+        connect_args={"check_same_thread": False, "timeout": 30.0},
+    )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _tune(dbapi_connection: object, _record: object) -> None:
+        cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    yield async_sessionmaker(engine, expire_on_commit=False)
+    await engine.dispose()
+
+
+def concurrent_settings(settings: Settings) -> Settings:
+    return settings.model_copy(
+        update={
+            "processing_max_concurrent_runs": 2,
+            "parser_max_concurrent_extractions": 1,
+            "processing_poll_interval_seconds": 0.02,
+        }
+    )
+
+
+async def seed_workspace(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> UUID:
+    workspace = Workspace(slug=f"ws-{uuid4()}", name="Concurrent")
+    async with session_factory() as session, session.begin():
+        session.add(workspace)
+    return workspace.id
+
+
+async def run_status(session_factory: async_sessionmaker[AsyncSession], run_id: UUID) -> str:
+    async with session_factory() as session:
+        run = await session.get(ProcessingRun, run_id)
+        assert run is not None
+        return run.status
+
+
+async def wait_until(
+    predicate: Callable[[], bool | Awaitable[bool]],
+    *,
+    message: str,
+    max_wait: float = 15.0,
+) -> None:
+    deadline = time.monotonic() + max_wait
+    while time.monotonic() < deadline:
+        outcome = predicate()
+        if isinstance(outcome, Awaitable):
+            outcome = await outcome
+        if outcome:
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"timed out: {message}")
+
+
+async def run_reached(
+    session_factory: async_sessionmaker[AsyncSession], run_id: UUID, status: str
+) -> bool:
+    return await run_status(session_factory, run_id) == status
+
+
+async def test_a_second_document_starts_parsing_while_the_first_is_still_indexing(
+    concurrent_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """The next document is parsed the moment the current one is done parsing.
+
+    Not when it is done indexing: describing and embedding are network work
+    that must not stand between a finished parse and the next one. Which of
+    the two documents claims the parser first is the claim order's business,
+    not the test's, so the roles are read off the runs instead of assumed.
+    """
+    session_factory = concurrent_session_factory
+    workspace_id = await seed_workspace(session_factory)
+    storage = FakeStorage()
+    _, first_run = await seed_document(
+        session_factory, workspace_id, storage=storage, content=b"the first document"
+    )
+    _, second_run = await seed_document(
+        session_factory, workspace_id, storage=storage, content=b"the second document"
+    )
+    extractor = GatedExtractor()
+    embeddings = GatedEmbeddings()
+    worker = build_worker(
+        session_factory,
+        concurrent_settings(settings),
+        storage=storage,
+        extractor=extractor,
+        embeddings=embeddings,
+    )
+
+    stop_event = asyncio.Event()
+    runner = asyncio.create_task(worker.run(stop_event))
+    try:
+        # One document holds the parse; the other is claimed and waits for
+        # the slot instead of the queue.
+        async def one_parsing_one_waiting() -> bool:
+            statuses = {
+                await run_status(session_factory, first_run.id),
+                await run_status(session_factory, second_run.id),
+            }
+            return extractor.calls >= 1 and statuses == {
+                RUN_EXTRACTING,
+                RUN_FETCHING,
+            }
+
+        await wait_until(
+            one_parsing_one_waiting,
+            message="second run to be claimed while the first parses",
+        )
+
+        # Let the parse finish. The other document starts parsing before
+        # either run reaches ready -- the embeddings are held on purpose.
+        extractor.release()
+
+        async def second_parse_started() -> bool:
+            return extractor.calls >= 2
+
+        await wait_until(second_parse_started, message="second parse to start")
+        statuses = [
+            await run_status(session_factory, first_run.id),
+            await run_status(session_factory, second_run.id),
+        ]
+        assert RUN_READY not in statuses
+
+        embeddings.gate.set()
+
+        async def both_ready() -> bool:
+            settled = [
+                await run_status(session_factory, first_run.id),
+                await run_status(session_factory, second_run.id),
+            ]
+            return all(status == RUN_READY for status in settled)
+
+        await wait_until(both_ready, message="both runs to reach ready")
+        assert extractor.calls == 2
+    finally:
+        extractor.release()
+        embeddings.gate.set()
+        stop_event.set()
+        await asyncio.wait_for(runner, 15)
+
+
+def _calls_made(extractor: GatedExtractor, calls: int) -> bool:
+    return extractor.calls >= calls
+
+
+async def test_the_pipeline_cap_leaves_a_third_document_queued(
+    concurrent_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """At most ``processing_max_concurrent_runs`` runs leave the queue."""
+    session_factory = concurrent_session_factory
+    workspace_id = await seed_workspace(session_factory)
+    storage = FakeStorage()
+    runs = []
+    for index in range(3):
+        _, run = await seed_document(
+            session_factory,
+            workspace_id,
+            storage=storage,
+            content=f"document number {index}".encode(),
+            filename=f"report-{index}.pdf",
+        )
+        runs.append(run)
+    extractor = GatedExtractor()
+    worker = build_worker(
+        session_factory,
+        settings.model_copy(
+            update={
+                "processing_max_concurrent_runs": 2,
+                "processing_poll_interval_seconds": 0.02,
+            }
+        ),
+        storage=storage,
+        extractor=extractor,
+    )
+
+    stop_event = asyncio.Event()
+    runner = asyncio.create_task(worker.run(stop_event))
+    try:
+        await wait_until(
+            lambda: _calls_made(extractor, 1),
+            message="first document to start parsing",
+        )
+        statuses = [await run_status(session_factory, run.id) for run in runs]
+        assert statuses.count(RUN_QUEUED) == 1
+        assert sum(status not in (RUN_QUEUED, RUN_READY) for status in statuses) == 2
+    finally:
+        extractor.release()
+
+        async def all_ready() -> bool:
+            settled = [await run_status(session_factory, run.id) for run in runs]
+            return all(status == RUN_READY for status in settled)
+
+        await wait_until(all_ready, message="all three runs to reach ready")
+        stop_event.set()
+        await asyncio.wait_for(runner, 15)
+    statuses = [await run_status(session_factory, run.id) for run in runs]
+    assert statuses == [RUN_READY, RUN_READY, RUN_READY]
+
+
+async def test_one_extraction_slot_never_parses_two_documents_at_once(
+    concurrent_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """The parser cap is the RAM cap: one sandbox at a time by default."""
+    session_factory = concurrent_session_factory
+    workspace_id = await seed_workspace(session_factory)
+    storage = FakeStorage()
+    runs = []
+    for index in range(3):
+        _, run = await seed_document(
+            session_factory,
+            workspace_id,
+            storage=storage,
+            content=f"document number {index}".encode(),
+            filename=f"report-{index}.pdf",
+        )
+        runs.append(run)
+    extractor = GatedExtractor()
+    worker = build_worker(
+        session_factory,
+        settings.model_copy(
+            update={
+                "processing_max_concurrent_runs": 3,
+                "parser_max_concurrent_extractions": 1,
+                "processing_poll_interval_seconds": 0.02,
+            }
+        ),
+        storage=storage,
+        extractor=extractor,
+    )
+
+    stop_event = asyncio.Event()
+    runner = asyncio.create_task(worker.run(stop_event))
+    try:
+        await wait_until(
+            lambda: _calls_made(extractor, 1),
+            message="first document to start parsing",
+        )
+    finally:
+        extractor.release()
+        stop_event.set()
+        await asyncio.wait_for(runner, 15)
+    assert extractor.max_concurrent == 1
+    statuses = [await run_status(session_factory, run.id) for run in runs]
+    assert statuses == [RUN_READY, RUN_READY, RUN_READY]
+
+
+async def test_two_extraction_slots_parse_in_parallel(
+    concurrent_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """Raising the parser cap really does put two sandboxes to work."""
+    session_factory = concurrent_session_factory
+    workspace_id = await seed_workspace(session_factory)
+    storage = FakeStorage()
+    for index in range(2):
+        await seed_document(
+            session_factory,
+            workspace_id,
+            storage=storage,
+            content=f"document number {index}".encode(),
+            filename=f"report-{index}.pdf",
+        )
+    extractor = GatedExtractor()
+    worker = build_worker(
+        session_factory,
+        settings.model_copy(
+            update={
+                "processing_max_concurrent_runs": 2,
+                "parser_max_concurrent_extractions": 2,
+                "processing_poll_interval_seconds": 0.02,
+            }
+        ),
+        storage=storage,
+        extractor=extractor,
+    )
+
+    stop_event = asyncio.Event()
+    runner = asyncio.create_task(worker.run(stop_event))
+    try:
+        await wait_until(
+            lambda: extractor.current == 2,
+            message="both documents to parse at once",
+        )
+    finally:
+        extractor.release()
+        stop_event.set()
+        await asyncio.wait_for(runner, 15)
+    assert extractor.max_concurrent == 2
+
+
+async def test_describing_runs_share_one_vlm_budget(
+    concurrent_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """Two runs describing at once never exceed the configured concurrency.
+
+    The budget belongs to the worker, not to a run: with a per-run cap, two
+    describing pipelines would open twice the configured number of
+    connections to the model.
+    """
+    session_factory = concurrent_session_factory
+    workspace_id = await seed_workspace(session_factory)
+    storage = FakeStorage()
+    for index in range(2):
+        await seed_document(
+            session_factory,
+            workspace_id,
+            storage=storage,
+            content=f"document number {index}".encode(),
+            filename=f"report-{index}.pdf",
+        )
+    images = [
+        an_extracted_image(f"doc-{document}-picture-{picture}")
+        for document in range(2)
+        for picture in range(3)
+    ]
+    vision = InstrumentedVision(delay=0.03)
+    worker = ProcessingWorker(
+        session_factory,
+        storage,
+        SplitExtractor({0: images[:3], 1: images[3:]}),
+        settings.model_copy(
+            update={
+                "processing_max_concurrent_runs": 2,
+                "vlm_max_concurrency": 2,
+                "processing_poll_interval_seconds": 0.02,
+            }
+        ),
+        FakeEmbeddingProvider(),
+        FakeVectorStore(),
+        vision,
+    )
+
+    stop_event = asyncio.Event()
+    runner = asyncio.create_task(worker.run(stop_event))
+    try:
+        await wait_until(
+            lambda: len(vision.described) >= 6,
+            message="all six pictures to be described",
+        )
+    finally:
+        stop_event.set()
+        await asyncio.wait_for(runner, 15)
+    assert vision.max_in_flight == 2
+
+
+async def test_stopping_drains_the_runs_in_flight(
+    concurrent_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """A stop finishes the run being processed instead of abandoning it."""
+    session_factory = concurrent_session_factory
+    workspace_id = await seed_workspace(session_factory)
+    storage = FakeStorage()
+    _, run = await seed_document(session_factory, workspace_id, storage=storage)
+    extractor = GatedExtractor()
+    worker = build_worker(
+        session_factory,
+        concurrent_settings(settings),
+        storage=storage,
+        extractor=extractor,
+    )
+
+    stop_event = asyncio.Event()
+    runner = asyncio.create_task(worker.run(stop_event))
+    try:
+        await wait_until(
+            lambda: _calls_made(extractor, 1),
+            message="first document to start parsing",
+        )
+        stop_event.set()
+        await asyncio.sleep(0.1)
+        assert not runner.done()
+    finally:
+        extractor.release()
+        await asyncio.wait_for(runner, 15)
+    assert await run_status(session_factory, run.id) == RUN_READY

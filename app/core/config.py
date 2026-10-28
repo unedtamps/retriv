@@ -65,9 +65,7 @@ class Settings(BaseSettings):
     s3_access_key: str = "retriv"
     s3_secret_key: SecretStr = SecretStr("development-s3-secret-placeholder")
     s3_artifact_access_key: str = "retriv-worker"
-    s3_artifact_secret_key: SecretStr = SecretStr(
-        "development-s3-worker-secret-placeholder"
-    )
+    s3_artifact_secret_key: SecretStr = SecretStr("development-s3-worker-secret-placeholder")
     s3_raw_bucket: str = "raw-documents"
     s3_artifact_bucket: str = "context-documents"
     s3_region: str = "us-east-1"
@@ -135,19 +133,27 @@ class Settings(BaseSettings):
     # 182-page PDF peaked at 9.5 GiB of address space while holding ~5.9 GiB of
     # RAM. At 8 GiB docling reported partial_success and kept 0.2% of the text,
     # which surfaced as a coverage failure rather than a memory one.
-    parser_memory_limit_bytes: int = Field(
-        default=16 * 1024 * 1024 * 1024, ge=512 * 1024 * 1024
-    )
+    parser_memory_limit_bytes: int = Field(default=16 * 1024 * 1024 * 1024, ge=512 * 1024 * 1024)
     parser_max_processes: int = Field(default=4096, ge=16, le=32_768)
     processing_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs
     processing_poll_interval_seconds: float = Field(default=2.0, gt=0, le=3600)
-    artifact_reconciliation_interval_seconds: int = Field(
-        default=300, ge=1, le=86_400
-    )
+    artifact_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
     processing_lease_seconds: int = Field(default=1800, ge=30, le=86_400)
     processing_max_attempts: int = Field(default=3, ge=1, le=100)
     processing_retry_base_seconds: float = Field(default=5.0, gt=0, le=3600)
     processing_retry_max_seconds: float = Field(default=300.0, gt=0, le=86_400)
+    # How many runs one worker process may carry at once. The worker is serial
+    # per phase but not per run: while one document is being described and
+    # embedded -- network-bound, cheap -- the next one can be fetched and
+    # parsed. Two is the shape that removes the queue wait behind a finished
+    # extraction without touching the memory ceiling.
+    processing_max_concurrent_runs: int = Field(default=2, ge=1, le=8)
+    # How many parser sandboxes may run at the same time. Each one peaks at
+    # roughly 6.5 GB of resident memory on a large document -- the model load
+    # floor plus the parse -- so this is the RAM knob: one keeps the worker at
+    # today's ceiling, two doubles it and needs the container's mem_limit
+    # raised with it.
+    parser_max_concurrent_extractions: int = Field(default=1, ge=1, le=4)
 
     # -- embeddings -----------------------------------------------------
     embedding_base_url: str = "http://127.0.0.1:1234/v1"
@@ -157,9 +163,7 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(default=4096, ge=1, le=65_536)
     embedding_batch_size: int = Field(default=16, ge=1, le=256)
     embedding_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
-    embedding_reconciliation_interval_seconds: int = Field(
-        default=300, ge=1, le=86_400
-    )
+    embedding_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
 
     # -- vision ---------------------------------------------------------
     # The pictures inside a document are described by a multimodal model
@@ -208,9 +212,7 @@ class Settings(BaseSettings):
     # -- vector store ---------------------------------------------------
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_api_key: SecretStr = SecretStr("development-qdrant-api-key-change-this")
-    qdrant_read_only_api_key: SecretStr = SecretStr(
-        "development-qdrant-read-only-key-change-this"
-    )
+    qdrant_read_only_api_key: SecretStr = SecretStr("development-qdrant-read-only-key-change-this")
     qdrant_collection: str = "retriv-chunks-qwen3-8b-4096-v1"
     qdrant_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     qdrant_vectors_on_disk: bool = True
@@ -296,9 +298,7 @@ class Settings(BaseSettings):
     def normalize_bootstrap_admin_username(cls, value: str) -> str:
         normalized = value.strip().lower()
         if len(normalized) > 255:
-            raise ValueError(
-                "RETRIV_BOOTSTRAP_ADMIN_USERNAME cannot exceed 255 characters"
-            )
+            raise ValueError("RETRIV_BOOTSTRAP_ADMIN_USERNAME cannot exceed 255 characters")
         return normalized
 
     @field_validator("cors_allowed_origins")
@@ -337,13 +337,9 @@ class Settings(BaseSettings):
             return None
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            raise ValueError(
-                "RETRIV_S3_ENDPOINT_URL must be an absolute HTTP(S) URL"
-            )
+            raise ValueError("RETRIV_S3_ENDPOINT_URL must be an absolute HTTP(S) URL")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError(
-                "RETRIV_S3_ENDPOINT_URL must not contain credentials or query data"
-            )
+            raise ValueError("RETRIV_S3_ENDPOINT_URL must not contain credentials or query data")
         return value.rstrip("/")
 
     @field_validator("embedding_base_url", "qdrant_url", "vlm_base_url")
@@ -381,9 +377,7 @@ class Settings(BaseSettings):
         if not value.strip() or any(character.isspace() for character in value):
             raise ValueError("Identifiers must be non-empty and free of whitespace")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}", value):
-            raise ValueError(
-                "Identifiers must contain only letters, numbers, '.', '_', or '-'"
-            )
+            raise ValueError("Identifiers must contain only letters, numbers, '.', '_', or '-'")
         return value
 
     @field_validator("vlm_model")
@@ -401,8 +395,7 @@ class Settings(BaseSettings):
             raise ValueError("Model ids must be non-empty and free of whitespace")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}", value):
             raise ValueError(
-                "Model ids must contain only letters, numbers, '.', '_', ':', "
-                "'/', or '-'"
+                "Model ids must contain only letters, numbers, '.', '_', ':', '/', or '-'"
             )
         return value
 
@@ -411,9 +404,7 @@ class Settings(BaseSettings):
         if self.s3_raw_bucket == self.s3_artifact_bucket:
             raise ValueError("Raw and artifact buckets must be different")
         if self.processing_retry_max_seconds < self.processing_retry_base_seconds:
-            raise ValueError(
-                "RETRIV_PROCESSING_RETRY_MAX_SECONDS must be >= retry base seconds"
-            )
+            raise ValueError("RETRIV_PROCESSING_RETRY_MAX_SECONDS must be >= retry base seconds")
         if self.max_artifact_bytes > self.max_chunk_payload_bytes:
             raise ValueError(
                 "RETRIV_MAX_ARTIFACT_BYTES must not exceed RETRIV_MAX_CHUNK_PAYLOAD_BYTES"
@@ -428,8 +419,7 @@ class Settings(BaseSettings):
             )
         if self.vlm_max_tokens_ceiling < self.vlm_max_tokens:
             raise ValueError(
-                "RETRIV_VLM_MAX_TOKENS_CEILING must not be below "
-                "RETRIV_VLM_MAX_TOKENS"
+                "RETRIV_VLM_MAX_TOKENS_CEILING must not be below RETRIV_VLM_MAX_TOKENS"
             )
 
         bootstrap_password = self.bootstrap_admin_password.get_secret_value()
@@ -441,13 +431,10 @@ class Settings(BaseSettings):
         if bootstrap_password:
             password_bytes = len(bootstrap_password.encode("utf-8"))
             if password_bytes < 12:
-                raise ValueError(
-                    "RETRIV_BOOTSTRAP_ADMIN_PASSWORD must be at least 12 bytes"
-                )
+                raise ValueError("RETRIV_BOOTSTRAP_ADMIN_PASSWORD must be at least 12 bytes")
             if password_bytes > self.max_password_bytes:
                 raise ValueError(
-                    "RETRIV_BOOTSTRAP_ADMIN_PASSWORD cannot exceed "
-                    "RETRIV_MAX_PASSWORD_BYTES"
+                    "RETRIV_BOOTSTRAP_ADMIN_PASSWORD cannot exceed RETRIV_MAX_PASSWORD_BYTES"
                 )
 
         if self.environment != "production":
@@ -494,17 +481,13 @@ class Settings(BaseSettings):
         if not database.password or database.password == database.username:
             raise ValueError("Production database credentials must not use defaults")
 
-        if self.s3_endpoint_url is not None and not self.s3_endpoint_url.startswith(
-            "https://"
-        ):
+        if self.s3_endpoint_url is not None and not self.s3_endpoint_url.startswith("https://"):
             raise ValueError("Production object storage must use HTTPS")
         if any(
             not url.startswith("https://")
             for url in (self.embedding_base_url, self.qdrant_url, self.vlm_base_url)
         ):
-            raise ValueError(
-                "Production embedding, Qdrant and vision endpoints must use HTTPS"
-            )
+            raise ValueError("Production embedding, Qdrant and vision endpoints must use HTTPS")
         if self.component == "worker" and self.docling_artifacts_path is None:
             raise ValueError("Production workers require baked Docling artifacts")
         if self.component == "api" and not self.antivirus_enabled:

@@ -131,6 +131,13 @@ class ProcessingWorker:
         self._vision_provider = vision_provider
         self._next_artifact_reconciliation = datetime.min.replace(tzinfo=UTC)
         self._next_embedding_reconciliation = datetime.min.replace(tzinfo=UTC)
+        # Run-level capacity. Several runs may be in flight at once -- a
+        # document being described and embedded is network-bound and leaves
+        # the process mostly idle -- but the parser sandboxes are the memory
+        # hogs, so they are capped separately.
+        self._extraction_slots = asyncio.Semaphore(settings.parser_max_concurrent_extractions)
+        self._vlm_slots = asyncio.Semaphore(settings.vlm_max_concurrency)
+        self._in_flight: set[asyncio.Task[None]] = set()
 
     async def run_once(self) -> bool:
         await self._recover_expired_leases()
@@ -139,6 +146,22 @@ class ProcessingWorker:
         run = await self._claim_one()
         if run is None:
             return False
+        await self._process_claimed(run)
+        return True
+
+    async def _process_claimed(self, run: ProcessingRun) -> None:
+        """Carry one claimed run through its whole pipeline.
+
+        The umbrella heartbeat renews the lease for as long as this task
+        lives, which matters now that a claimed run can wait for an
+        extraction slot -- a wait no stage heartbeat covers -- and because
+        the download and chunk-persist stages never had one either. It
+        coexists with the per-stage heartbeats: both only extend
+        ``lease_until``, so two writers are one writer as far as the
+        expiration is concerned.
+        """
+        stopped = asyncio.Event()
+        heartbeat = asyncio.create_task(self._heartbeat_lease(run.id, run.lease_token, stopped))
         try:
             if run.job_kind == JOB_DELETE:
                 await self._process_delete(run)
@@ -157,20 +180,59 @@ class ProcessingWorker:
         except Exception as exc:
             logger.exception("Unexpected processing failure", extra={"run_id": str(run.id)})
             await self._record_failure(run, exc, permanent=False)
-        return True
+        finally:
+            stopped.set()
+            await heartbeat
 
     async def run(self, stop_event: asyncio.Event) -> None:
-        while not stop_event.is_set():
-            processed = await self.run_once()
-            if processed:
+        """Claim and carry runs concurrently until asked to stop.
+
+        Several runs may be in flight, bounded by
+        ``processing_max_concurrent_runs``; each one claims itself a
+        pipeline of its own while the loop keeps claiming. The sweeps still
+        run here, on the loop, and nowhere else -- the reconciliation
+        timestamps they advance are not safe to touch from two places.
+
+        Stopping drains: no new claims, in-flight runs finish the way they
+        would have, and the process exits only when the last one is done.
+        """
+        while not stop_event.is_set() or self._in_flight:
+            if not stop_event.is_set():
+                await self._recover_expired_leases()
+                await self._reconcile_deleted_artifacts()
+                await self._queue_embedding_backfill()
+                while len(self._in_flight) < self._settings.processing_max_concurrent_runs:
+                    run = await self._claim_one()
+                    if run is None:
+                        break
+                    task = asyncio.create_task(self._process_claimed(run))
+                    self._in_flight.add(task)
+                    task.add_done_callback(self._in_flight.discard)
+            if not self._in_flight:
+                if stop_event.is_set():
+                    return
+                try:
+                    await asyncio.wait_for(
+                        stop_event.wait(),
+                        timeout=self._settings.processing_poll_interval_seconds,
+                    )
+                except TimeoutError:
+                    continue
                 continue
-            try:
-                await asyncio.wait_for(
-                    stop_event.wait(),
-                    timeout=self._settings.processing_poll_interval_seconds,
-                )
-            except TimeoutError:
-                continue
+            done, _ = await asyncio.wait(
+                self._in_flight,
+                timeout=self._settings.processing_poll_interval_seconds,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in done:
+                # _process_claimed maps every failure onto the run itself, so
+                # an exception escaping it is a bug in the worker, not in a
+                # document. Log it and move on; the run loop must not die.
+                if not task.cancelled() and task.exception() is not None:
+                    logger.error(
+                        "Processing task failed unexpectedly",
+                        exc_info=task.exception(),
+                    )
 
     async def _recover_expired_leases(self) -> None:
         now = utcnow()
@@ -327,15 +389,13 @@ class ProcessingWorker:
                         # the sweep would re-examine the same oldest 100 rows
                         # every interval and never reach the runs behind them.
                         or_(
-                            ProcessingRun.embedded_chunk_count
-                            != ProcessingRun.chunk_count,
+                            ProcessingRun.embedded_chunk_count != ProcessingRun.chunk_count,
                             ProcessingRun.embedding_profile.is_(None),
                             ProcessingRun.embedding_profile != settings.embedding_profile,
                             ProcessingRun.embedding_model.is_(None),
                             ProcessingRun.embedding_model != settings.embedding_model,
                             ProcessingRun.embedding_dimensions.is_(None),
-                            ProcessingRun.embedding_dimensions
-                            != settings.embedding_dimensions,
+                            ProcessingRun.embedding_dimensions != settings.embedding_dimensions,
                         ),
                     )
                     .order_by(ProcessingRun.created_at, ProcessingRun.id)
@@ -363,8 +423,7 @@ class ProcessingWorker:
                     await session.scalars(
                         select(ChunkEmbedding).where(
                             ChunkEmbedding.processing_run_id == run.id,
-                            ChunkEmbedding.embedding_profile
-                            == settings.embedding_profile,
+                            ChunkEmbedding.embedding_profile == settings.embedding_profile,
                         )
                     )
                 ).all()
@@ -459,8 +518,7 @@ class ProcessingWorker:
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
         expected_key = (
-            f"workspaces/{document.origin_workspace_id}/objects/"
-            f"{document.sha256}/{document.id}"
+            f"workspaces/{document.origin_workspace_id}/objects/{document.sha256}/{document.id}"
         )
         if document.object_key != expected_key:
             raise PermanentProcessingError("Object key does not match document identity")
@@ -491,42 +549,51 @@ class ProcessingWorker:
         manifest_key: str | None = None
         chunks_persisted = False
         try:
-            downloaded = await to_thread.run_sync(
-                partial(
-                    self._storage.download_file,
-                    temporary_path,
-                    bucket=document.bucket,
-                    key=document.object_key,
-                    max_bytes=self._settings.max_source_bytes,
+            # The parser sandbox is the worker's memory hog -- up to ~6.5 GB
+            # on a large document -- so parsing is what the concurrency cap
+            # gates. The slot is held from the fetch through the sandbox call
+            # and released the moment the document is parsed: everything
+            # after that -- describing, embedding, syncing -- is network
+            # work that leaves room for the next document's parse.
+            async with self._extraction_slots:
+                downloaded = await to_thread.run_sync(
+                    partial(
+                        self._storage.download_file,
+                        temporary_path,
+                        bucket=document.bucket,
+                        key=document.object_key,
+                        max_bytes=self._settings.max_source_bytes,
+                    )
                 )
-            )
-            if downloaded.size_bytes != document.size_bytes:
-                raise PermanentProcessingError("Downloaded object size does not match the event")
-            if downloaded.sha256 != document.sha256:
-                raise PermanentProcessingError("Downloaded object hash does not match the event")
+                if downloaded.size_bytes != document.size_bytes:
+                    raise PermanentProcessingError(
+                        "Downloaded object size does not match the event"
+                    )
+                if downloaded.sha256 != document.sha256:
+                    raise PermanentProcessingError(
+                        "Downloaded object hash does not match the event"
+                    )
 
-            await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
-            try:
-                extraction = await self._extract_with_heartbeat(
-                    claimed_run.id,
-                    lease_token,
-                    temporary_path,
-                    media_type=document.detected_media_type,
-                )
-            except ExtractionResourceError as exc:
-                # Deterministic, not transient: the same document against the same
-                # limit fails the same way, so a retry only spends another parser
-                # run at ~3.5 seconds per page. Say what to change instead, and
-                # let the operator requeue once it has changed.
-                raise PermanentProcessingError(
-                    f"Extraction ran out of memory: {exc}. Raise "
-                    f"RETRIV_PARSER_MEMORY_LIMIT_BYTES (currently "
-                    f"{self._settings.parser_memory_limit_bytes / 1024**3:.1f} GiB) "
-                    f"and requeue this document."
-                ) from exc
-            extraction = await self._describe_images(
-                claimed_run.id, lease_token, extraction
-            )
+                await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
+                try:
+                    extraction = await self._extract_with_heartbeat(
+                        claimed_run.id,
+                        lease_token,
+                        temporary_path,
+                        media_type=document.detected_media_type,
+                    )
+                except ExtractionResourceError as exc:
+                    # Deterministic, not transient: the same document against the same
+                    # limit fails the same way, so a retry only spends another parser
+                    # run at ~3.5 seconds per page. Say what to change instead, and
+                    # let the operator requeue once it has changed.
+                    raise PermanentProcessingError(
+                        f"Extraction ran out of memory: {exc}. Raise "
+                        f"RETRIV_PARSER_MEMORY_LIMIT_BYTES (currently "
+                        f"{self._settings.parser_memory_limit_bytes / 1024**3:.1f} GiB) "
+                        f"and requeue this document."
+                    ) from exc
+            extraction = await self._describe_images(claimed_run.id, lease_token, extraction)
             self._validate_extraction(extraction)
 
             artifact_prefix = (
@@ -554,9 +621,7 @@ class ProcessingWorker:
                 artifact_key=artifact_key,
                 manifest_key=manifest_key,
             )
-            await self._set_phase(
-                claimed_run.id, lease_token, RUN_STORING_ARTIFACT
-            )
+            await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
             await to_thread.run_sync(
                 partial(
                     self._storage.put_bytes,
@@ -620,8 +685,7 @@ class ProcessingWorker:
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
         expected_key = (
-            f"workspaces/{document.origin_workspace_id}/objects/"
-            f"{document.sha256}/{document.id}"
+            f"workspaces/{document.origin_workspace_id}/objects/{document.sha256}/{document.id}"
         )
         if document.object_key != expected_key:
             raise PermanentProcessingError("Object key does not match document identity")
@@ -657,40 +721,32 @@ class ProcessingWorker:
             # Read and decode once, off the event loop, then parse from the
             # string. Reading inside the transaction would block the loop on
             # file I/O, and reading twice would double that for no reason.
-            csv_text = await to_thread.run_sync(
-                partial(self._decode_csv, temporary_path)
-            )
-            columns, delimiter = await to_thread.run_sync(
-                partial(self._inspect_csv, csv_text)
-            )
+            csv_text = await to_thread.run_sync(partial(self._decode_csv, temporary_path))
+            columns, delimiter = await to_thread.run_sync(partial(self._inspect_csv, csv_text))
 
             artifact_prefix = (
                 f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
                 f"runs/{claimed_run.id}/attempts/{lease_token}"
             )
             manifest_key = f"{artifact_prefix}/manifest.json"
-            manifest_bytes = (
-                json.dumps(
-                    {
-                        "columns": columns,
-                        "delimiter": delimiter,
-                        "encoding": CSV_ENCODINGS[0],
-                        "media_type": document.detected_media_type,
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ).encode()
-            )
+            manifest_bytes = json.dumps(
+                {
+                    "columns": columns,
+                    "delimiter": delimiter,
+                    "encoding": CSV_ENCODINGS[0],
+                    "media_type": document.detected_media_type,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
             await self._set_artifact_keys(
                 claimed_run.id,
                 lease_token,
                 artifact_key=None,
                 manifest_key=manifest_key,
             )
-            await self._set_phase(
-                claimed_run.id, lease_token, RUN_STORING_ARTIFACT
-            )
+            await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
             await to_thread.run_sync(
                 partial(
                     self._storage.put_bytes,
@@ -774,9 +830,7 @@ class ProcessingWorker:
         manifest_key: str,
     ) -> bool:
         stop_event = asyncio.Event()
-        heartbeat = asyncio.create_task(
-            self._heartbeat_lease(run_id, lease_token, stop_event)
-        )
+        heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
         try:
             now = utcnow()
             async with self._session_factory() as session, session.begin():
@@ -784,9 +838,7 @@ class ProcessingWorker:
                 if run is None or run.lease_token != lease_token:
                     raise LeaseLostError()
                 stored_document = await session.scalar(
-                    select(Document)
-                    .where(Document.id == document.id)
-                    .with_for_update()
+                    select(Document).where(Document.id == document.id).with_for_update()
                 )
                 if stored_document is None:
                     raise PermanentProcessingError("Processing document disappeared")
@@ -798,9 +850,7 @@ class ProcessingWorker:
                     return False
 
                 await session.execute(
-                    delete(DocumentRow).where(
-                        DocumentRow.processing_run_id == run_id
-                    )
+                    delete(DocumentRow).where(DocumentRow.processing_run_id == run_id)
                 )
                 inserted = 0
                 batch: list[dict[str, object]] = []
@@ -906,8 +956,7 @@ class ProcessingWorker:
         lease_token = self._require_lease_token(claimed_run)
         await self._vector_store.delete_document(claimed_run.document_id)
         artifact_prefix = (
-            f"workspaces/{claimed_run.origin_workspace_id}/documents/"
-            f"{claimed_run.document_id}/"
+            f"workspaces/{claimed_run.origin_workspace_id}/documents/{claimed_run.document_id}/"
         )
         await to_thread.run_sync(
             partial(
@@ -929,9 +978,7 @@ class ProcessingWorker:
             # No status write here: the document DELETE cascades to this run,
             # so anything set on it in this transaction is never observable.
             document = await session.scalar(
-                select(Document)
-                .where(Document.id == claimed_run.document_id)
-                .with_for_update()
+                select(Document).where(Document.id == claimed_run.document_id).with_for_update()
             )
             if document is not None:
                 await session.delete(document)
@@ -954,9 +1001,7 @@ class ProcessingWorker:
             raise PermanentProcessingError("Extractor returned an empty chunk")
         if len(extraction.document_json) > self._settings.max_artifact_bytes:
             raise PermanentProcessingError("Document artifact exceeds the processing limit")
-        extracted_text_bytes = sum(
-            len(chunk.text.encode("utf-8")) for chunk in extraction.chunks
-        )
+        extracted_text_bytes = sum(len(chunk.text.encode("utf-8")) for chunk in extraction.chunks)
         if extracted_text_bytes > self._settings.max_extracted_text_bytes:
             raise PermanentProcessingError("Extracted text exceeds the processing limit")
         self._validate_extraction_coverage(extraction)
@@ -1041,9 +1086,7 @@ class ProcessingWorker:
                 "ocr_languages": self._settings.ocr_languages,
                 "chunk_max_tokens": self._settings.chunk_max_tokens,
                 "source_text_chars": extraction.source_text_chars,
-                "extracted_text_chars": sum(
-                    len(chunk.text) for chunk in extraction.chunks
-                ),
+                "extracted_text_chars": sum(len(chunk.text) for chunk in extraction.chunks),
             },
             "artifact": {
                 "bucket": self._settings.s3_artifact_bucket,
@@ -1071,9 +1114,7 @@ class ProcessingWorker:
             if isinstance(entry, dict) and entry.get("described")
         )
 
-    async def _process_embeddings(
-        self, claimed_run: ProcessingRun, lease_token: UUID
-    ) -> None:
+    async def _process_embeddings(self, claimed_run: ProcessingRun, lease_token: UUID) -> None:
         stop_event = asyncio.Event()
         heartbeat = asyncio.create_task(
             self._heartbeat_lease(claimed_run.id, lease_token, stop_event)
@@ -1089,12 +1130,8 @@ class ProcessingWorker:
                     lease_token,
                     [embedding.chunk_id for _, embedding in batch],
                 )
-                vectors = await self._embedding_provider.embed(
-                    [chunk.text for chunk, _ in batch]
-                )
-                workspace_ids = await self._document_workspace_ids(
-                    claimed_run.document_id
-                )
+                vectors = await self._embedding_provider.embed([chunk.text for chunk, _ in batch])
+                workspace_ids = await self._document_workspace_ids(claimed_run.document_id)
                 if len(vectors) != len(batch):
                     raise EmbeddingProviderError(
                         "Embedding response count does not match the request",
@@ -1128,13 +1165,9 @@ class ProcessingWorker:
                     )
                 except LeaseLostError:
                     with suppress(VectorStoreError):
-                        await self._vector_store.delete_points(
-                            [point.id for point in points]
-                        )
+                        await self._vector_store.delete_points([point.id for point in points])
                     raise
-            activated = await self._activate_embedded_run(
-                claimed_run.id, lease_token
-            )
+            activated = await self._activate_embedded_run(claimed_run.id, lease_token)
             if not activated:
                 await self._vector_store.delete_document(claimed_run.document_id)
             else:
@@ -1145,9 +1178,7 @@ class ProcessingWorker:
                     claimed_run.document_id,
                     [
                         UUID(value)
-                        for value in await self._document_workspace_ids(
-                            claimed_run.document_id
-                        )
+                        for value in await self._document_workspace_ids(claimed_run.document_id)
                     ],
                 )
         finally:
@@ -1164,8 +1195,7 @@ class ProcessingWorker:
                     ChunkEmbedding,
                     and_(
                         ChunkEmbedding.chunk_id == DocumentChunk.id,
-                        ChunkEmbedding.embedding_profile
-                        == self._settings.embedding_profile,
+                        ChunkEmbedding.embedding_profile == self._settings.embedding_profile,
                     ),
                 )
                 .where(
@@ -1183,19 +1213,14 @@ class ProcessingWorker:
         now = utcnow()
         async with self._session_factory() as session, session.begin():
             run = await session.get(ProcessingRun, run_id)
-            if (
-                run is None
-                or run.lease_token != lease_token
-                or run.status != RUN_EMBEDDING
-            ):
+            if run is None or run.lease_token != lease_token or run.status != RUN_EMBEDDING:
                 raise LeaseLostError()
             result = await session.execute(
                 update(ChunkEmbedding)
                 .where(
                     ChunkEmbedding.processing_run_id == run_id,
                     ChunkEmbedding.chunk_id.in_(chunk_ids),
-                    ChunkEmbedding.embedding_profile
-                    == self._settings.embedding_profile,
+                    ChunkEmbedding.embedding_profile == self._settings.embedding_profile,
                     ChunkEmbedding.status != EMBEDDING_INDEXED,
                 )
                 .values(
@@ -1214,25 +1239,17 @@ class ProcessingWorker:
         now = utcnow()
         async with self._session_factory() as session, session.begin():
             run = await session.get(ProcessingRun, run_id)
-            if (
-                run is None
-                or run.lease_token != lease_token
-                or run.status != RUN_EMBEDDING
-            ):
+            if run is None or run.lease_token != lease_token or run.status != RUN_EMBEDDING:
                 raise LeaseLostError()
             document = await session.get(Document, run.document_id)
-            if (
-                document is None
-                or document.deleted_at is not None
-            ):
+            if document is None or document.deleted_at is not None:
                 raise LeaseLostError()
             result = await session.execute(
                 update(ChunkEmbedding)
                 .where(
                     ChunkEmbedding.processing_run_id == run_id,
                     ChunkEmbedding.chunk_id.in_(chunk_ids),
-                    ChunkEmbedding.embedding_profile
-                    == self._settings.embedding_profile,
+                    ChunkEmbedding.embedding_profile == self._settings.embedding_profile,
                     ChunkEmbedding.status == EMBEDDING_PROCESSING,
                 )
                 .values(
@@ -1249,9 +1266,7 @@ class ProcessingWorker:
             # _activate_embedded_run recounts the true total anyway.
             run.embedded_chunk_count = (run.embedded_chunk_count or 0) + len(chunk_ids)
 
-    async def _activate_embedded_run(
-        self, run_id: UUID, lease_token: UUID
-    ) -> bool:
+    async def _activate_embedded_run(self, run_id: UUID, lease_token: UUID) -> bool:
         now = utcnow()
         async with self._session_factory() as session, session.begin():
             run = await session.get(ProcessingRun, run_id)
@@ -1279,8 +1294,7 @@ class ProcessingWorker:
                 .join(DocumentChunk, ChunkEmbedding.chunk_id == DocumentChunk.id)
                 .where(
                     DocumentChunk.processing_run_id == run_id,
-                    ChunkEmbedding.embedding_profile
-                    == self._settings.embedding_profile,
+                    ChunkEmbedding.embedding_profile == self._settings.embedding_profile,
                     ChunkEmbedding.status == EMBEDDING_INDEXED,
                     ChunkEmbedding.model == self._settings.embedding_model,
                     ChunkEmbedding.dimensions == self._settings.embedding_dimensions,
@@ -1313,9 +1327,7 @@ class ProcessingWorker:
         now = utcnow()
         async with self._session_factory() as session, session.begin():
             stored_document = await session.scalar(
-                select(Document)
-                .where(Document.id == document.id)
-                .with_for_update()
+                select(Document).where(Document.id == document.id).with_for_update()
             )
             run = await session.get(ProcessingRun, run_id)
             if stored_document is None or run is None:
@@ -1330,9 +1342,7 @@ class ProcessingWorker:
                 return False
 
             await session.execute(
-                delete(ChunkEmbedding).where(
-                    ChunkEmbedding.processing_run_id == run_id
-                )
+                delete(ChunkEmbedding).where(ChunkEmbedding.processing_run_id == run_id)
             )
             await session.execute(
                 delete(DocumentChunk).where(DocumentChunk.processing_run_id == run_id)
@@ -1407,12 +1417,8 @@ class ProcessingWorker:
     def _qdrant_point_id(self, chunk_id: UUID) -> UUID:
         return uuid5(chunk_id, self._settings.embedding_profile)
 
-    async def _set_phase(
-        self, run_id: UUID, lease_token: UUID, status: str
-    ) -> None:
-        lease_until = utcnow() + timedelta(
-            seconds=self._settings.processing_lease_seconds
-        )
+    async def _set_phase(self, run_id: UUID, lease_token: UUID, status: str) -> None:
+        lease_until = utcnow() + timedelta(seconds=self._settings.processing_lease_seconds)
         async with self._session_factory() as session:
             result = await session.execute(
                 update(ProcessingRun)
@@ -1501,8 +1507,7 @@ class ProcessingWorker:
                         update(ChunkEmbedding)
                         .where(
                             ChunkEmbedding.processing_run_id == run.id,
-                            ChunkEmbedding.embedding_profile
-                            == self._settings.embedding_profile,
+                            ChunkEmbedding.embedding_profile == self._settings.embedding_profile,
                             ChunkEmbedding.status != EMBEDDING_INDEXED,
                         )
                         .values(
@@ -1547,8 +1552,7 @@ class ProcessingWorker:
                     update(ChunkEmbedding)
                     .where(
                         ChunkEmbedding.processing_run_id == run.id,
-                        ChunkEmbedding.embedding_profile
-                        == self._settings.embedding_profile,
+                        ChunkEmbedding.embedding_profile == self._settings.embedding_profile,
                         ChunkEmbedding.status != EMBEDDING_INDEXED,
                     )
                     .values(
@@ -1567,14 +1571,10 @@ class ProcessingWorker:
         media_type: str,
     ) -> ExtractionResult:
         stop_event = asyncio.Event()
-        heartbeat = asyncio.create_task(
-            self._heartbeat_lease(run_id, lease_token, stop_event)
-        )
+        heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
         try:
             try:
-                async with asyncio.timeout(
-                    self._settings.processing_timeout_seconds
-                ):
+                async with asyncio.timeout(self._settings.processing_timeout_seconds):
                     return await to_thread.run_sync(
                         partial(self._extractor.extract, path, media_type=media_type),
                         abandon_on_cancel=True,
@@ -1620,9 +1620,7 @@ class ProcessingWorker:
                 )
             await self._set_phase(run_id, lease_token, RUN_DESCRIBING)
             stop_event = asyncio.Event()
-            heartbeat = asyncio.create_task(
-                self._heartbeat_lease(run_id, lease_token, stop_event)
-            )
+            heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
             try:
                 descriptions = await self._describe_all(provider, extraction, images)
             finally:
@@ -1651,15 +1649,15 @@ class ProcessingWorker:
 
         The calls are gathered rather than run one after another because a
         document with twenty figures would otherwise spend twenty round
-        trips doing it. The concurrency is capped so a busy worker does not
-        open twenty connections to the model at once, and the whole stage is
-        under the processing timeout so a model that never answers cannot
-        hold the run forever.
+        trips doing it. The cap is the worker's, not this stage's: two runs
+        describing at once must share one budget of in-flight requests to
+        the model, or a busy worker would open twice that many connections.
+        The whole stage is under the processing timeout so a model that
+        never answers cannot hold the run forever.
         """
-        semaphore = asyncio.Semaphore(self._settings.vlm_max_concurrency)
 
         async def describe_one(image: ExtractedImage) -> str:
-            async with semaphore:
+            async with self._vlm_slots:
                 return await provider.describe(
                     image, context=self._image_context(extraction.chunks, image)
                 )
@@ -1678,8 +1676,7 @@ class ProcessingWorker:
             if isinstance(result, BaseException):
                 raise result
         return {
-            image.ref: str(description)
-            for image, description in zip(images, results, strict=True)
+            image.ref: str(description) for image, description in zip(images, results, strict=True)
         }
 
     @staticmethod
@@ -1723,8 +1720,14 @@ class ProcessingWorker:
                 raise LeaseLostError()
 
     async def _heartbeat_lease(
-        self, run_id: UUID, lease_token: UUID, stop_event: asyncio.Event
+        self, run_id: UUID, lease_token: UUID | None, stop_event: asyncio.Event
     ) -> None:
+        """Extend the run's lease until the caller's work is done.
+
+        A missing token can never match a row, so a heartbeat started before
+        the lease was claimed simply never renews and exits on its first
+        tick -- the same outcome as losing the lease.
+        """
         interval = max(1.0, self._settings.processing_lease_seconds / 3)
         while not stop_event.is_set():
             try:
@@ -1755,9 +1758,7 @@ class ProcessingWorker:
             raise LeaseLostError()
         return run.lease_token
 
-    async def _delete_artifacts(
-        self, artifact_key: str | None, manifest_key: str | None
-    ) -> None:
+    async def _delete_artifacts(self, artifact_key: str | None, manifest_key: str | None) -> None:
         for key in (artifact_key, manifest_key):
             if key is None:
                 continue
