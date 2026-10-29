@@ -32,6 +32,8 @@ x-worker-environment: &worker-environment
   # means raising mem_limit below by that much per extra parser.
   RETRIV_PROCESSING_MAX_CONCURRENT_RUNS: ${RETRIV_PROCESSING_MAX_CONCURRENT_RUNS:-2}
   RETRIV_PARSER_MAX_CONCURRENT_EXTRACTIONS: ${RETRIV_PARSER_MAX_CONCURRENT_EXTRACTIONS:-1}
+  RETRIV_TRACING_ENABLED: ${RETRIV_TRACING_ENABLED:-true}
+  RETRIV_TRACING_ENDPOINT: ${RETRIV_TRACING_ENDPOINT:-http://jaeger:4318/v1/traces}
   RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS: ${RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS:-300}
   RETRIV_EMBEDDING_BASE_URL: ${RETRIV_EMBEDDING_CONTAINER_BASE_URL:-http://host.docker.internal:1234/v1}
   RETRIV_EMBEDDING_API_KEY: ${RETRIV_EMBEDDING_API_KEY:?RETRIV_EMBEDDING_API_KEY is required}
@@ -157,6 +159,19 @@ services:
       - clamav_data:/var/lib/clamav
     ports:
       - "127.0.0.1:3310:3310"
+    networks:
+      - app-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    mem_limit: 512m
+    pids_limit: 128
+    ports:
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:4318:4318"
     networks:
       - app-net
 

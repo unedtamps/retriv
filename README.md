@@ -237,6 +237,13 @@ Detailed app documentation: [`app/README.md`](app/README.md).
   If upgrading an existing deployment, drop or reindex the Qdrant collection.
 - Health: `GET /health/live` is liveness; `GET /health/ready` checks PostgreSQL,
   object storage, ClamAV and Qdrant.
+- Tracing: with `RETRIV_TRACING_ENABLED=true` both processes export OTLP spans
+  to the Jaeger container (`docker compose up -d jaeger`); the UI is at
+  `http://localhost:16686`. One trace per request on the API, one per claimed
+  run on the worker (`process.run` → `extract` → `describe` → `embed`, plus
+  SQL, HTTP and S3 child spans). The extraction sandbox is never traced — it
+  has no network; its cost shows in the worker's `extract` span. Set
+  `RETRIV_TRACING_ENABLED=false` to turn it off.
 
 ## Development
 

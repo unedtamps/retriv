@@ -1,3 +1,7 @@
+import os
+
+os.environ["RETRIV_TRACING_ENABLED"] = "false"
+
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from io import BytesIO
@@ -131,6 +135,7 @@ def settings(tmp_path: Path) -> Settings:
         upload_temp_dir=tmp_path,
         max_upload_bytes=1024 * 1024,
         max_pdf_pages=10,
+        tracing_enabled=False,
     )
 
 

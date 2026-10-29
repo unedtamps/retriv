@@ -149,6 +149,11 @@ class Settings(BaseSettings):
     sql_reader_user: str = "retriv_reader"
     sql_reader_password: SecretStr | None = None
 
+    # -- tracing --------------------------------------------------------
+    tracing_enabled: bool = False
+    tracing_endpoint: str = "http://127.0.0.1:4318/v1/traces"
+    tracing_sample_ratio: float = Field(default=1.0, gt=0, le=1)
+
     @model_validator(mode="after")
     def check_sql_reader_credentials_agree(self) -> "Settings":
         """Catch the reader role being created with one password and connected

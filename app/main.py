@@ -17,6 +17,7 @@ from app.infrastructure.storage import get_object_storage
 from app.mcp.endpoint import McpEndpointMiddleware
 from app.mcp.runtime import McpRuntime, McpRuntimeBox
 from app.mcp.server import build_mcp_server
+from app.observability.tracing import configure_tracing, shutdown_tracing
 from app.retrieval.context import ContextRetriever
 from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.sql import CatalogueReader, RowQuery, RowQueryError
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await retriever.aclose()
             if rows is not None:
                 await rows.aclose()
+            shutdown_tracing()
 
     application = FastAPI(
         title=settings.app_name,
@@ -85,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+    configure_tracing(settings, "retriv-api", app=application, engine=engine)
     application.state.mcp = mcp_box
     application.state.mcp_server = mcp_server
     if settings is not None:

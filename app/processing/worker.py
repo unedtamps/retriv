@@ -16,6 +16,7 @@ from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 
 from anyio import to_thread
+from opentelemetry.trace import Status, StatusCode
 from sqlalchemy import and_, delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -80,9 +81,11 @@ from app.infrastructure.storage import (
     ObjectTooLargeError,
     StorageError,
 )
+from app.observability.tracing import get_tracer
 from app.vision.base import VisionProvider, VisionProviderError, build_context
 
 logger = logging.getLogger(__name__)
+_tracer = get_tracer(__name__)
 
 _SOURCE_SUFFIX = {
     PDF_MEDIA_TYPE: ".pdf",
@@ -145,29 +148,51 @@ class ProcessingWorker:
         including the wait for an extraction slot. It only extends
         ``lease_until``, like the stage heartbeats, so two writers are one.
         """
-        stopped = asyncio.Event()
-        heartbeat = asyncio.create_task(self._heartbeat_lease(run.id, run.lease_token, stopped))
-        try:
-            if run.job_kind == JOB_DELETE:
-                await self._process_delete(run)
-            elif run.job_kind == JOB_ACCESS:
-                await self._process_access_sync(run)
-            else:
-                await self._process_extract(run)
-        except LeaseLostError:
-            logger.warning("Processing lease was lost", extra={"run_id": str(run.id)})
-        except (PermanentProcessingError, ObjectNotFoundError, ObjectTooLargeError) as exc:
-            await self._record_failure(run, exc, permanent=True)
-        except (EmbeddingProviderError, VectorStoreError, VisionProviderError) as exc:
-            await self._record_failure(run, exc, permanent=not exc.retryable)
-        except (StorageError, ExtractionError, OSError, ValueError) as exc:
-            await self._record_failure(run, exc, permanent=False)
-        except Exception as exc:
-            logger.exception("Unexpected processing failure", extra={"run_id": str(run.id)})
-            await self._record_failure(run, exc, permanent=False)
-        finally:
-            stopped.set()
-            await heartbeat
+        with _tracer.start_as_current_span(
+            "process.run",
+            attributes={
+                "retriv.run_id": str(run.id),
+                "retriv.document_id": str(run.document_id),
+                "retriv.job_kind": run.job_kind,
+            },
+        ) as span:
+            stopped = asyncio.Event()
+            heartbeat = asyncio.create_task(self._heartbeat_lease(run.id, run.lease_token, stopped))
+            try:
+                if run.job_kind == JOB_DELETE:
+                    await self._process_delete(run)
+                elif run.job_kind == JOB_ACCESS:
+                    await self._process_access_sync(run)
+                else:
+                    await self._process_extract(run)
+            except LeaseLostError as exc:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, "lease lost"))
+                logger.warning("Processing lease was lost", extra={"run_id": str(run.id)})
+            except (
+                PermanentProcessingError,
+                ObjectNotFoundError,
+                ObjectTooLargeError,
+            ) as exc:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                await self._record_failure(run, exc, permanent=True)
+            except (EmbeddingProviderError, VectorStoreError, VisionProviderError) as exc:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                await self._record_failure(run, exc, permanent=not exc.retryable)
+            except (StorageError, ExtractionError, OSError, ValueError) as exc:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                await self._record_failure(run, exc, permanent=False)
+            except Exception as exc:
+                logger.exception("Unexpected processing failure", extra={"run_id": str(run.id)})
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                await self._record_failure(run, exc, permanent=False)
+            finally:
+                stopped.set()
+                await heartbeat
 
     async def run(self, stop_event: asyncio.Event) -> None:
         """Claim and carry runs concurrently until asked to stop.
@@ -1048,53 +1073,59 @@ class ProcessingWorker:
             self._heartbeat_lease(claimed_run.id, lease_token, stop_event)
         )
         try:
-            await self._vector_store.ensure_collection()
-            while True:
-                batch = await self._load_embedding_batch(claimed_run.id)
-                if not batch:
-                    break
-                await self._mark_embedding_batch_processing(
-                    claimed_run.id,
-                    lease_token,
-                    [embedding.chunk_id for _, embedding in batch],
-                )
-                vectors = await self._embedding_provider.embed([chunk.text for chunk, _ in batch])
-                workspace_ids = await self._document_workspace_ids(claimed_run.document_id)
-                if len(vectors) != len(batch):
-                    raise EmbeddingProviderError(
-                        "Embedding response count does not match the request",
-                        retryable=False,
-                    )
-                points = [
-                    VectorPoint(
-                        id=embedding.qdrant_point_id,
-                        vector=vector,
-                        payload={
-                            "origin_workspace_id": str(chunk.origin_workspace_id),
-                            "workspace_ids": workspace_ids,
-                            "document_id": str(chunk.document_id),
-                            "processing_run_id": str(chunk.processing_run_id),
-                            "chunk_id": str(chunk.id),
-                            "content_hash": chunk.content_hash,
-                            "embedding_profile": self._settings.embedding_profile,
-                            "embedding_model": self._settings.embedding_model,
-                            "dimensions": self._settings.embedding_dimensions,
-                            "ordinal": chunk.ordinal,
-                        },
-                    )
-                    for (chunk, embedding), vector in zip(batch, vectors, strict=True)
-                ]
-                await self._vector_store.upsert(points)
-                try:
-                    await self._mark_embedding_batch_indexed(
+            with _tracer.start_as_current_span("embed") as span:
+                await self._vector_store.ensure_collection()
+                embedded = 0
+                while True:
+                    batch = await self._load_embedding_batch(claimed_run.id)
+                    if not batch:
+                        break
+                    await self._mark_embedding_batch_processing(
                         claimed_run.id,
                         lease_token,
                         [embedding.chunk_id for _, embedding in batch],
                     )
-                except LeaseLostError:
-                    with suppress(VectorStoreError):
-                        await self._vector_store.delete_points([point.id for point in points])
-                    raise
+                    vectors = await self._embedding_provider.embed(
+                        [chunk.text for chunk, _ in batch]
+                    )
+                    workspace_ids = await self._document_workspace_ids(claimed_run.document_id)
+                    if len(vectors) != len(batch):
+                        raise EmbeddingProviderError(
+                            "Embedding response count does not match the request",
+                            retryable=False,
+                        )
+                    points = [
+                        VectorPoint(
+                            id=embedding.qdrant_point_id,
+                            vector=vector,
+                            payload={
+                                "origin_workspace_id": str(chunk.origin_workspace_id),
+                                "workspace_ids": workspace_ids,
+                                "document_id": str(chunk.document_id),
+                                "processing_run_id": str(chunk.processing_run_id),
+                                "chunk_id": str(chunk.id),
+                                "content_hash": chunk.content_hash,
+                                "embedding_profile": self._settings.embedding_profile,
+                                "embedding_model": self._settings.embedding_model,
+                                "dimensions": self._settings.embedding_dimensions,
+                                "ordinal": chunk.ordinal,
+                            },
+                        )
+                        for (chunk, embedding), vector in zip(batch, vectors, strict=True)
+                    ]
+                    await self._vector_store.upsert(points)
+                    try:
+                        await self._mark_embedding_batch_indexed(
+                            claimed_run.id,
+                            lease_token,
+                            [embedding.chunk_id for _, embedding in batch],
+                        )
+                    except LeaseLostError:
+                        with suppress(VectorStoreError):
+                            await self._vector_store.delete_points([point.id for point in points])
+                        raise
+                    embedded += len(batch)
+                span.set_attribute("retriv.chunk_count", embedded)
             activated = await self._activate_embedded_run(claimed_run.id, lease_token)
             if not activated:
                 await self._vector_store.delete_document(claimed_run.document_id)
@@ -1493,14 +1524,23 @@ class ProcessingWorker:
         stop_event = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
         try:
-            try:
-                async with asyncio.timeout(self._settings.processing_timeout_seconds):
-                    return await to_thread.run_sync(
-                        partial(self._extractor.extract, path, media_type=media_type),
-                        abandon_on_cancel=True,
-                    )
-            except TimeoutError as exc:
-                raise ExtractionError("Document extraction exceeded the time limit") from exc
+            with _tracer.start_as_current_span(
+                "extract", attributes={"retriv.media_type": media_type}
+            ) as span:
+                try:
+                    async with asyncio.timeout(self._settings.processing_timeout_seconds):
+                        extraction = await to_thread.run_sync(
+                            partial(self._extractor.extract, path, media_type=media_type),
+                            abandon_on_cancel=True,
+                        )
+                except Exception as exc:
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR, str(exc)))
+                    raise
+                span.set_attribute("retriv.page_count", extraction.page_count)
+                return extraction
+        except TimeoutError as exc:
+            raise ExtractionError("Document extraction exceeded the time limit") from exc
         finally:
             stop_event.set()
             await heartbeat
@@ -1570,16 +1610,21 @@ class ProcessingWorker:
                     image, context=self._image_context(extraction.chunks, image)
                 )
 
-        try:
-            async with asyncio.timeout(self._settings.processing_timeout_seconds):
-                results = await asyncio.gather(
-                    *(describe_one(image) for image in images),
-                    return_exceptions=True,
-                )
-        except TimeoutError as exc:
-            raise ExtractionError(
-                "Describing the document's pictures exceeded the time limit"
-            ) from exc
+        with _tracer.start_as_current_span(
+            "describe", attributes={"retriv.image_count": len(images)}
+        ) as span:
+            try:
+                async with asyncio.timeout(self._settings.processing_timeout_seconds):
+                    results = await asyncio.gather(
+                        *(describe_one(image) for image in images),
+                        return_exceptions=True,
+                    )
+            except TimeoutError as exc:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                raise ExtractionError(
+                    "Describing the document's pictures exceeded the time limit"
+                ) from exc
         for result in results:
             if isinstance(result, BaseException):
                 raise result

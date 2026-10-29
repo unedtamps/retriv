@@ -6,12 +6,15 @@ import signal
 import sys
 from contextlib import suppress
 
+from opentelemetry import trace
+
 from app.core.config import get_settings
-from app.db.session import session_factory
+from app.db.session import engine, session_factory
 from app.embeddings.openai_compatible import OpenAICompatibleEmbeddingProvider
 from app.embeddings.qdrant import QdrantVectorStore
 from app.extraction.sandbox import SandboxedDoclingExtractor
 from app.infrastructure.storage import get_artifact_storage
+from app.observability.tracing import configure_tracing, shutdown_tracing
 from app.processing.worker import ProcessingWorker
 from app.vision.openai_compatible import OpenAICompatibleVisionProvider
 
@@ -19,6 +22,7 @@ from app.vision.openai_compatible import OpenAICompatibleVisionProvider
 async def run_worker() -> None:
     harden_worker_process()
     settings = get_settings()
+    configure_tracing(settings, "retriv-worker", engine=engine)
     embedding_provider = OpenAICompatibleEmbeddingProvider(
         base_url=settings.embedding_base_url,
         api_key=settings.embedding_api_key.get_secret_value(),
@@ -84,6 +88,7 @@ async def run_worker() -> None:
         await embedding_provider.aclose()
         await vector_store.aclose()
         await vision_provider.aclose()
+        shutdown_tracing()
 
 
 def harden_worker_process() -> None:
@@ -96,13 +101,25 @@ def harden_worker_process() -> None:
         raise OSError(error_number, "Could not disable worker process dumping")
 
 
+class TraceLogFilter(logging.Filter):
+    """Puts the active trace id on every record, or a dash when untraced."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        context = trace.get_current_span().get_span_context()
+        if context.is_valid:
+            record.trace_id = trace.format_trace_id(context.trace_id)
+        else:
+            record.trace_id = "-"
+        return True
+
+
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        stream=sys.stdout,
-        force=True,
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s [%(trace_id)s] %(message)s")
     )
+    handler.addFilter(TraceLogFilter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
     asyncio.run(run_worker())
 
 
