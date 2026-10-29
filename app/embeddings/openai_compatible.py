@@ -30,9 +30,7 @@ class OpenAICompatibleEmbeddingProvider:
         if not texts:
             return []
         if any(not text.strip() for text in texts):
-            raise EmbeddingProviderError(
-                "Embedding inputs must not be empty", retryable=False
-            )
+            raise EmbeddingProviderError("Embedding inputs must not be empty", retryable=False)
         try:
             response = await self._client.post(
                 "embeddings",
@@ -46,8 +44,7 @@ class OpenAICompatibleEmbeddingProvider:
         if response.status_code >= 400:
             raise EmbeddingProviderError(
                 f"Embedding service returned HTTP {response.status_code}",
-                retryable=response.status_code in {408, 429}
-                or response.status_code >= 500,
+                retryable=response.status_code in {408, 429} or response.status_code >= 500,
             )
         try:
             payload: Any = response.json()
@@ -57,9 +54,7 @@ class OpenAICompatibleEmbeddingProvider:
             ) from exc
         return self._parse_embeddings(payload, expected_count=len(texts))
 
-    def _parse_embeddings(
-        self, payload: Any, *, expected_count: int
-    ) -> list[list[float]]:
+    def _parse_embeddings(self, payload: Any, *, expected_count: int) -> list[list[float]]:
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             raise EmbeddingProviderError(
                 "Embedding response is missing the data array", retryable=False

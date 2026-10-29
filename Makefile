@@ -4,20 +4,24 @@ SHELL := /bin/bash
 ENV_FILE ?= .env
 HOST ?= 127.0.0.1
 PORT ?= 8000
+WEB_DIR ?= web
+WEB_HOST ?= 127.0.0.1
+WEB_PORT ?= 5173
 WAIT_TIMEOUT ?= 300
 
 UV_RUN := uv run --env-file $(ENV_FILE) --
 COMPOSE := docker compose --env-file $(ENV_FILE)
 
-.PHONY: help install infra worker run-worker run-build migrate api run status logs down test check check-env
+.PHONY: help install infra worker run-worker run-build migrate bootstrap api run web status logs down test check check-env sql-role
 
 help:
 	@printf '%s\n' \
 		'Usage: make <target>' \
 		'' \
-		'  run       Start everything, reusing the worker image already built' \
-		'  run-build Rebuild the worker image, then start everything' \
+		'  run       Start the API and the web dev server, reusing the worker image' \
+		'  run-build Rebuild the worker image, then start the API and the web dev server' \
 		'  api       Start the worker without rebuilding, then run only the API' \
+		'  web       Run only the web dev server (API must already be running)' \
 		'  worker    Build and start the processing worker (Docker)' \
 		'  run-worker Start the worker without rebuilding it' \
 		'  infra     Start and wait for PostgreSQL, Qdrant, and ClamAV' \
@@ -68,19 +72,50 @@ worker: check-env
 run-worker: check-env
 	$(COMPOSE) up -d worker
 
-# Migrate, then run the API in the foreground. Runs the worker but never
-# rebuilds it; `make run-build` is the one that rebuilds.
+# The shared front half of `api` and `run`: start the worker without
+# rebuilding it, the reader role, and the migrations. Split out so the
+# API-only and API+web targets do not carry two copies of the same steps.
 #
 # The reader role is brought up here too, and not only through `infra`, because
-# this target does not depend on it: with the DSN configured the API calls
+# neither run target depends on it: with the DSN configured the API calls
 # verify_reader() during startup and refuses to start against a missing role,
 # so a developer running `make api` on a fresh clone would hit a failure whose
 # cause is one compose service they never named.
-api: run-worker sql-role
+bootstrap: run-worker sql-role
 	@$(UV_RUN) alembic upgrade head
+
+# Migrate, then run the API in the foreground. Runs the worker but never
+# rebuilds it; `make run-build` is the one that rebuilds.
+api: bootstrap
 	$(UV_RUN) uvicorn app.main:app --host $(HOST) --port $(PORT)
 
-run: api
+# Everything `api` starts, plus the Vite dev server, in one foreground recipe.
+# The two servers are background jobs of this shell, so they share one process
+# group: Ctrl-C reaches both at once, and if either exits on its own the trap
+# stops the other instead of leaving a half-running stack behind. Ctrl-C is a
+# normal way to stop a dev stack, so the interrupted path exits 0; a server
+# dying on its own still fails the target with its own status.
+run: bootstrap
+	@api_pid=''; web_pid=''; interrupted=0; \
+	cleanup() { \
+		trap - EXIT INT TERM; \
+		[ -n "$$web_pid" ] && kill -TERM "$$web_pid" 2>/dev/null || true; \
+		[ -n "$$api_pid" ] && kill -TERM "$$api_pid" 2>/dev/null || true; \
+		wait 2>/dev/null || true; \
+	}; \
+	trap cleanup EXIT; \
+	trap 'interrupted=1' INT TERM; \
+	printf 'API   http://%s:%s\n' '$(HOST)' '$(PORT)'; \
+	printf 'Web   http://%s:%s\n' '$(WEB_HOST)' '$(WEB_PORT)'; \
+	$(UV_RUN) uvicorn app.main:app --host $(HOST) --port $(PORT) & api_pid=$$!; \
+	(cd $(WEB_DIR) && npm run dev -- --host $(WEB_HOST) --port $(WEB_PORT)) & web_pid=$$!; \
+	wait -n "$$api_pid" "$$web_pid"; status=$$?; \
+	[ "$$interrupted" = 1 ] && status=0; \
+	exit $$status
+
+# Only the Vite dev server, for when the API is already running elsewhere.
+web: check-env
+	cd $(WEB_DIR) && npm run dev -- --host $(WEB_HOST) --port $(WEB_PORT)
 
 # Create or repair the read-only SQL role and its grants. Idempotent and fast,
 # so it is also the recovery path when the password in .env has been rotated or
@@ -88,9 +123,9 @@ run: api
 sql-role: check-env
 	$(COMPOSE) run --rm postgres-init
 
-# Rebuild the worker image, then do what `make run` does.
+# Rebuild the worker image, then do what `make run` does (API + web).
 run-build: worker
-	@$(MAKE) api
+	@$(MAKE) run
 
 status: check-env
 	$(COMPOSE) ps

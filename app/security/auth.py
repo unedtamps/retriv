@@ -45,9 +45,7 @@ def verify_password(password: str, encoded_hash: str) -> bool:
     return password_hash.verify(password, encoded_hash)
 
 
-def verify_and_update_password(
-    password: str, encoded_hash: str
-) -> tuple[bool, str | None]:
+def verify_and_update_password(password: str, encoded_hash: str) -> tuple[bool, str | None]:
     return password_hash.verify_and_update(password, encoded_hash)
 
 
@@ -116,13 +114,9 @@ def authentication_error() -> AppError:
     )
 
 
-async def authenticate_user(
-    session: AsyncSession, username: str, password: str
-) -> User:
+async def authenticate_user(session: AsyncSession, username: str, password: str) -> User:
     normalized_username = username.strip().lower()
-    user = await session.scalar(
-        select(User).where(User.username == normalized_username)
-    )
+    user = await session.scalar(select(User).where(User.username == normalized_username))
 
     encoded_hash = user.password_hash if user is not None else DUMMY_PASSWORD_HASH
     async with PASSWORD_VERIFY_SLOTS:
@@ -143,11 +137,7 @@ async def get_current_user(
 ) -> User:
     claims = decode_access_token(token, settings)
     user = await session.get(User, claims.sub)
-    if (
-        user is None
-        or not user.is_active
-        or user.auth_version != claims.auth_version
-    ):
+    if user is None or not user.is_active or user.auth_version != claims.auth_version:
         raise authentication_error()
     return user
 

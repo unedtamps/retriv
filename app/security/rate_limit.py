@@ -62,15 +62,11 @@ class LoginRateLimiter:
 
 
 @lru_cache
-def build_login_rate_limiter(
-    max_attempts: int, window_seconds: int
-) -> LoginRateLimiter:
+def build_login_rate_limiter(max_attempts: int, window_seconds: int) -> LoginRateLimiter:
     return LoginRateLimiter(max_attempts, window_seconds)
 
 
 def get_login_rate_limiter(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> LoginRateLimiter:
-    return build_login_rate_limiter(
-        settings.login_max_attempts, settings.login_window_seconds
-    )
+    return build_login_rate_limiter(settings.login_max_attempts, settings.login_window_seconds)

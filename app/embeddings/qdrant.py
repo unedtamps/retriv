@@ -58,13 +58,9 @@ class QdrantVectorStore:
                     allowed_statuses={200, 409},
                 )
                 if response.status_code == 409:
-                    response = await self._request(
-                        "GET", f"collections/{self._collection}"
-                    )
+                    response = await self._request("GET", f"collections/{self._collection}")
                 else:
-                    response = await self._request(
-                        "GET", f"collections/{self._collection}"
-                    )
+                    response = await self._request("GET", f"collections/{self._collection}")
             self._validate_collection(response)
             for field_name in (
                 "workspace_ids",
@@ -93,9 +89,7 @@ class QdrantVectorStore:
                     retryable=False,
                 )
             if any(not math.isfinite(value) for value in point.vector):
-                raise VectorStoreError(
-                    "Vector contains a non-finite value", retryable=False
-                )
+                raise VectorStoreError("Vector contains a non-finite value", retryable=False)
         await self.ensure_collection()
         response = await self._request(
             "PUT",
@@ -145,9 +139,7 @@ class QdrantVectorStore:
         )
         self._validate_completed_update(response)
 
-    async def set_document_workspaces(
-        self, document_id: UUID, workspace_ids: list[UUID]
-    ) -> None:
+    async def set_document_workspaces(self, document_id: UUID, workspace_ids: list[UUID]) -> None:
         await self.ensure_collection()
         response = await self._request(
             "POST",
@@ -155,9 +147,7 @@ class QdrantVectorStore:
             params={"wait": "true"},
             json={
                 "payload": {
-                    "workspace_ids": sorted(
-                        {str(workspace_id) for workspace_id in workspace_ids}
-                    )
+                    "workspace_ids": sorted({str(workspace_id) for workspace_id in workspace_ids})
                 },
                 "filter": {
                     "must": [
@@ -181,9 +171,7 @@ class QdrantVectorStore:
     ) -> list[VectorMatch]:
         if not workspace_ids:
             return []
-        if len(vector) != self._dimensions or any(
-            not math.isfinite(value) for value in vector
-        ):
+        if len(vector) != self._dimensions or any(not math.isfinite(value) for value in vector):
             raise VectorStoreError("Query vector has an invalid shape", retryable=False)
         await self.ensure_collection()
         response = await self._request(
@@ -250,8 +238,7 @@ class QdrantVectorStore:
         if response.status_code not in accepted:
             raise VectorStoreError(
                 f"Qdrant returned HTTP {response.status_code}",
-                retryable=response.status_code in {408, 429}
-                or response.status_code >= 500,
+                retryable=response.status_code in {408, 429} or response.status_code >= 500,
             )
         return response
 
@@ -280,9 +267,7 @@ class QdrantVectorStore:
                 "Qdrant returned an invalid update response", retryable=False
             ) from exc
         if status != "completed":
-            raise VectorStoreError(
-                "Qdrant did not complete the requested update", retryable=True
-            )
+            raise VectorStoreError("Qdrant did not complete the requested update", retryable=True)
 
     async def aclose(self) -> None:
         await self._client.aclose()

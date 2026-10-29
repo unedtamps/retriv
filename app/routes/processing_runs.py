@@ -55,9 +55,7 @@ async def get_latest_active_processing_run(
     )
     row = result.one_or_none()
     return ActiveProcessingRunResponse(
-        item=processing_run_summary(row[0], row[1], row[2])
-        if row is not None
-        else None
+        item=processing_run_summary(row[0], row[1], row[2]) if row is not None else None
     )
 
 
@@ -82,11 +80,7 @@ async def list_recent_processing_runs(
         ProcessingRun.created_at >= since,
     )
     total = int(
-        await session.scalar(
-            select(func.count())
-            .select_from(ProcessingRun)
-            .where(*conditions)
-        )
+        await session.scalar(select(func.count()).select_from(ProcessingRun).where(*conditions))
         or 0
     )
     result = await session.execute(
@@ -136,9 +130,7 @@ def _link_columns(workspace_ids: list[UUID]) -> tuple[Any, Any]:
     return workspace, filename
 
 
-async def readable_workspace_ids(
-    session: AsyncSession, user_id: UUID
-) -> list[UUID]:
+async def readable_workspace_ids(session: AsyncSession, user_id: UUID) -> list[UUID]:
     readable_roles = [
         role for role, permissions in ROLE_PERMISSIONS.items() if "read" in permissions
     ]

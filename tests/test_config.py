@@ -16,9 +16,7 @@ def no_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]
     monkeypatch.chdir(tmp_path)
     yield
 
-# The values a production deployment must be able to pass the validators.
-# The RS256 scope keypair and the two service tokens are gone: there is no
-# second process to authenticate to, so those settings no longer exist.
+
 PRODUCTION_BASE: dict[str, Any] = {
     "environment": "production",
     "jwt_secret": SecretStr("g" * 64),
@@ -150,9 +148,7 @@ def test_s3_addressing_style_is_limited() -> None:
     assert settings.s3_addressing_style == "path"
 
     with pytest.raises(ValidationError):
-        Settings.model_validate(
-            {"environment": "local", "s3_addressing_style": "bucket"}
-        )
+        Settings.model_validate({"environment": "local", "s3_addressing_style": "bucket"})
 
 
 def test_production_allows_the_provider_default_s3_endpoint() -> None:
@@ -174,15 +170,12 @@ def test_an_r2_shaped_configuration_is_accepted() -> None:
 
 def test_production_worker_requires_baked_docling_artifacts() -> None:
     with pytest.raises(ValidationError, match="Docling artifacts"):
-        Settings(
-            **{k: v for k, v in WORKER_BASE.items() if k != "docling_artifacts_path"}
-        )
+        Settings(**{k: v for k, v in WORKER_BASE.items() if k != "docling_artifacts_path"})
 
 
 def test_worker_accepts_a_fully_configured_production_environment() -> None:
     settings = Settings(**WORKER_BASE)
     assert settings.component == "worker"
-    # The worker holds no JWT secret: there is no user to authenticate.
     assert not hasattr(settings, "jwt_secret") or settings.jwt_secret is not None
 
 
@@ -199,9 +192,7 @@ def test_local_environment_tolerates_placeholders() -> None:
 
 def test_raw_and_artifact_buckets_must_differ() -> None:
     with pytest.raises(ValidationError, match="buckets must be different"):
-        Settings(
-            s3_raw_bucket="same-bucket", s3_artifact_bucket="same-bucket"
-        )
+        Settings(s3_raw_bucket="same-bucket", s3_artifact_bucket="same-bucket")
 
 
 def test_retry_ceiling_must_not_undercut_the_base() -> None:
@@ -249,16 +240,14 @@ def test_json_settings_survive_both_dotenv_parsers(
     """
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
-        'RETRIV_CORS_ALLOWED_ORIGINS=\'["https://a.example.test"]\'\n'
-        "RETRIV_OCR_LANGUAGES='[\"ind\",\"eng\"]'\n"
+        "RETRIV_CORS_ALLOWED_ORIGINS='[\"https://a.example.test\"]'\n"
+        'RETRIV_OCR_LANGUAGES=\'["ind","eng"]\'\n'
     )
 
     from_settings = Settings()
     assert from_settings.cors_allowed_origins == ["https://a.example.test"]
     assert from_settings.ocr_languages == ["ind", "eng"]
 
-    # The same file, parsed the way uv --env-file does it. uv treats "
-    # as a quote character, so this is the case that used to break.
     from dotenv import dotenv_values
 
     parsed = dotenv_values(tmp_path / ".env")
@@ -298,11 +287,7 @@ def test_sql_reader_password_mismatch_is_named_at_startup() -> None:
     actually disagrees with it.
     """
     with pytest.raises(ValidationError, match="does not match the password"):
-        Settings(
-            **_reader_settings(
-                sql_reader_password=SecretStr("rotated-but-not-in-the-dsn")
-            )
-        )
+        Settings(**_reader_settings(sql_reader_password=SecretStr("rotated-but-not-in-the-dsn")))
 
 
 def test_sql_reader_username_mismatch_is_rejected() -> None:
@@ -351,9 +336,6 @@ def test_the_check_is_skipped_when_the_tool_is_off() -> None:
 def test_the_check_is_skipped_when_the_reader_password_is_absent() -> None:
     """Also a supported shape: a DSN alone, with the role managed elsewhere."""
     Settings(sql_database_url="postgresql+asyncpg://someone:pw@postgres:5432/retriv")
-
-
-# --- vision --------------------------------------------------------------
 
 
 def test_the_vision_endpoint_must_be_absolute() -> None:
@@ -411,9 +393,6 @@ def test_the_token_ceiling_must_not_be_below_the_budget() -> None:
         Settings(vlm_max_tokens=8192, vlm_max_tokens_ceiling=256)
 
 
-# --- bootstrap admin ------------------------------------------------------
-
-
 def test_bootstrap_admin_username_is_normalized() -> None:
     settings = Settings(
         bootstrap_admin_username=" Admin ",
@@ -443,8 +422,6 @@ def test_production_rejects_a_placeholder_bootstrap_password() -> None:
             **{
                 **PRODUCTION_BASE,
                 "bootstrap_admin_username": "admin",
-                "bootstrap_admin_password": SecretStr(
-                    "change-this-bootstrap-admin-password"
-                ),
+                "bootstrap_admin_password": SecretStr("change-this-bootstrap-admin-password"),
             }
         )

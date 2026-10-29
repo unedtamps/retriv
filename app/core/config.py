@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "production"] = "local"
     database_url: str = "postgresql+asyncpg://retriv:retriv@localhost:5432/retriv"
 
-    # -- authentication -------------------------------------------------
     jwt_secret: SecretStr = Field(default_factory=lambda: SecretStr(token_urlsafe(48)))
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     jwt_issuer: str = "retriv"
@@ -41,11 +40,6 @@ class Settings(BaseSettings):
     login_max_attempts: int = Field(default=5, ge=1, le=100)
     login_window_seconds: int = Field(default=300, ge=1, le=3600)
     max_password_bytes: int = Field(default=1024, ge=64, le=8192)
-    # The first admin account, created by the API on startup. The password
-    # is kept in sync with this value: a changed env password updates the
-    # row and bumps auth_version, which signs out old sessions. Leave both
-    # empty to skip the bootstrap, which is the right shape for a worker
-    # and for a deployment whose users already exist.
     bootstrap_admin_username: str = ""
     bootstrap_admin_password: SecretStr = SecretStr("")
     cors_allowed_origins: list[str] = [
@@ -53,14 +47,6 @@ class Settings(BaseSettings):
         "http://localhost:5173",
     ]
 
-    # -- object storage -------------------------------------------------
-    # Two object-store identities, not one. The API only ever touches
-    # raw documents; the worker reads those and writes extracted
-    # artifacts. Keeping the credentials separate means a compromise in
-    # either component does not grant the other's write access.
-    #
-    # Empty endpoint means the provider's default endpoint (AWS S3).
-    # Cloudflare R2 and other S3-compatible services set their own.
     s3_endpoint_url: str | None = None
     s3_access_key: str = "retriv"
     s3_secret_key: SecretStr = SecretStr("development-s3-secret-placeholder")
@@ -69,40 +55,23 @@ class Settings(BaseSettings):
     s3_raw_bucket: str = "raw-documents"
     s3_artifact_bucket: str = "context-documents"
     s3_region: str = "us-east-1"
-    # "auto" lets boto3 choose. Path style is what self-hosted S3 services
-    # usually need; virtual is the AWS default. R2 works with either, and
-    # the example config pins path because it is the least surprising.
     s3_addressing_style: Literal["auto", "path", "virtual"] = "auto"
 
-    # -- virus scanning -------------------------------------------------
     antivirus_enabled: bool = True
     clamd_host: str = "localhost"
     clamd_port: int = Field(default=3310, ge=1, le=65535)
     clamd_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
 
-    # -- upload validation ----------------------------------------------
     max_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
-    # How long the download_document tool's signed link stays usable. It is a
-    # bearer credential that cannot be revoked once issued, so the window is
-    # deliberately short and the upper bound is an hour rather than a day.
     mcp_download_link_ttl_seconds: int = Field(default=300, ge=30, le=3600)
     max_pdf_pages: int = Field(default=500, gt=0)
     max_archive_entries: int = Field(default=10_000, gt=0)
     max_archive_central_directory_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
-    # A DOCX at the 100 MB source cap is mostly images, and images compress
-    # roughly 1:1, so the uncompressed package is about the file's own size.
-    # 300 MiB leaves headroom for that while the 100x ratio cap still turns a
-    # zip bomb away long before it gets here.
     max_archive_uncompressed_bytes: int = Field(default=300 * 1024 * 1024, gt=0)
     max_archive_entry_bytes: int = Field(default=150 * 1024 * 1024, gt=0)
     max_archive_compression_ratio: float = Field(default=100.0, gt=1)
     max_archive_entry_compression_ratio: float = Field(default=100.0, gt=1)
     max_office_xml_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
-    # CSV rows are stored verbatim for SQL and never embedded, so these caps
-    # bound ingest cost, not context. Following the measured ratio that 100k
-    # rows are ~20MB of JSONB, a million rows -- what a 100 MB file of
-    # 100-byte rows carries -- is ~200MB of JSONB and parses in seconds with
-    # the stdlib reader.
     max_csv_rows: int = Field(default=1_000_000, gt=0)
     max_csv_columns: int = Field(default=512, ge=1, le=4096)
     max_csv_field_bytes: int = Field(default=64 * 1024, gt=0)
@@ -110,7 +79,6 @@ class Settings(BaseSettings):
     request_read_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     upload_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs
 
-    # -- extraction pipeline limits -------------------------------------
     max_source_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     max_chunks_per_document: int = Field(default=10_000, gt=0)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
@@ -123,16 +91,7 @@ class Settings(BaseSettings):
     chunk_tokenizer: str = "cl100k_base"
     docling_artifacts_path: Path | None = None
 
-    # -- worker scheduling ----------------------------------------------
-    # A 182-page PDF measured at 643s of parsing on four cores, so 1800s left
-    # little room for a longer document before the parser was killed for being
-    # slow rather than for being wrong.
     processing_timeout_seconds: int = Field(default=3600, ge=30, le=86_400)
-    # This is an address-space limit (RLIMIT_AS), not resident memory, and the
-    # parser's address space runs well ahead of what it touches: the same
-    # 182-page PDF peaked at 9.5 GiB of address space while holding ~5.9 GiB of
-    # RAM. At 8 GiB docling reported partial_success and kept 0.2% of the text,
-    # which surfaced as a coverage failure rather than a memory one.
     parser_memory_limit_bytes: int = Field(default=16 * 1024 * 1024 * 1024, ge=512 * 1024 * 1024)
     parser_max_processes: int = Field(default=4096, ge=16, le=32_768)
     processing_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs
@@ -142,20 +101,9 @@ class Settings(BaseSettings):
     processing_max_attempts: int = Field(default=3, ge=1, le=100)
     processing_retry_base_seconds: float = Field(default=5.0, gt=0, le=3600)
     processing_retry_max_seconds: float = Field(default=300.0, gt=0, le=86_400)
-    # How many runs one worker process may carry at once. The worker is serial
-    # per phase but not per run: while one document is being described and
-    # embedded -- network-bound, cheap -- the next one can be fetched and
-    # parsed. Two is the shape that removes the queue wait behind a finished
-    # extraction without touching the memory ceiling.
     processing_max_concurrent_runs: int = Field(default=2, ge=1, le=8)
-    # How many parser sandboxes may run at the same time. Each one peaks at
-    # roughly 6.5 GB of resident memory on a large document -- the model load
-    # floor plus the parse -- so this is the RAM knob: one keeps the worker at
-    # today's ceiling, two doubles it and needs the container's mem_limit
-    # raised with it.
     parser_max_concurrent_extractions: int = Field(default=1, ge=1, le=4)
 
-    # -- embeddings -----------------------------------------------------
     embedding_base_url: str = "http://127.0.0.1:1234/v1"
     embedding_api_key: SecretStr = SecretStr("development-embedding-api-key-change-this")
     embedding_model: str = "text-embedding-qwen3-embedding-8b"
@@ -165,21 +113,8 @@ class Settings(BaseSettings):
     embedding_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     embedding_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
 
-    # -- vision ---------------------------------------------------------
-    # The pictures inside a document are described by a multimodal model
-    # behind an OpenAI-compatible API, and the description is folded into
-    # the chunk that holds the picture. The endpoint is a full
-    # chat/completions URL because that is the shape an OpenAI-compatible
-    # gateway hands out; a bare API root is also accepted and gets
-    # "/chat/completions" appended.
     image_processing_enabled: bool = True
-    # How many times larger than the page the picture is rendered. 2.0 puts a
-    # 300x150 point figure at 600x300 pixels, which is enough to read axis
-    # labels. Larger costs the model money and the sandbox memory.
     image_render_scale: float = Field(default=2.0, gt=0, le=8)
-    # Pictures whose rendered area is below this are not worth an API call:
-    # they are logos, rules, bullets and ornaments. The threshold is in
-    # rendered pixels, so it moves with the render scale.
     image_min_pixels: int = Field(default=10_000, ge=0)
     max_image_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     max_total_image_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
@@ -187,29 +122,15 @@ class Settings(BaseSettings):
     vlm_api_key: SecretStr = SecretStr("development-vlm-api-key-change-this")
     vlm_model: str = "minimax/minimax-m3.1-flash"
     vlm_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
-    # The answer budget for one picture, reasoning included. This is a
-    # ceiling, not a limit on how long the model may think: the model stops
-    # on its own well below it. It matters only when it is set below what
-    # the model wanted, because then the endpoint cuts it off mid-thought
-    # and hands back nothing -- and in that case the budget goes up and the
-    # same picture is asked again, up to the ceiling below.
     vlm_max_tokens: int = Field(default=8192, ge=256, le=131_072)
     vlm_max_tokens_ceiling: int = Field(default=131_072, ge=256, le=1_048_576)
-    # How many pictures of one document may be described. The rest are left
-    # undescribed rather than paid for. Zero means no cap.
     vlm_max_images_per_document: int = Field(default=100, ge=0, le=1_000)
     vlm_max_concurrency: int = Field(default=4, ge=1, le=32)
-    # A description longer than this would push the chunk it lands in well
-    # past the chunking budget, and the extra words are noise.
     vlm_max_description_chars: int = Field(default=1200, ge=100, le=8000)
-    # How long the vision stage waits for the model to answer before it
-    # gives the run back to the worker for another attempt. The base and
-    # max are the backoff curve between attempts.
     model_wait_base_seconds: float = Field(default=5.0, gt=0, le=3600)
     model_wait_max_seconds: float = Field(default=60.0, gt=0, le=3600)
     model_wait_timeout_seconds: float = Field(default=3600.0, gt=0, le=86_400)
 
-    # -- vector store ---------------------------------------------------
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_api_key: SecretStr = SecretStr("development-qdrant-api-key-change-this")
     qdrant_read_only_api_key: SecretStr = SecretStr("development-qdrant-read-only-key-change-this")
@@ -217,32 +138,14 @@ class Settings(BaseSettings):
     qdrant_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     qdrant_vectors_on_disk: bool = True
 
-    # -- retrieval --------------------------------------------------------
     max_context_chunks: int = Field(default=8, ge=1, le=20)
     min_relevance_score: float = Field(default=0.25, ge=-1.0, le=1.0)
-    # How many chunks one anchored section may contribute when the vector search
-    # names a section without returning all of it. Per anchor, not per search,
-    # so a long section cannot starve the ones ranked below it.
     section_expand_chunks: int = Field(default=4, ge=0, le=20)
-    # Ceiling on total sources one search may return, completed sections included.
-    # Without it, ``budget`` is unset and a search that fills its match quota has
-    # no room left to complete anything -- which is precisely the case section
-    # completion exists to serve.
     max_context_sources: int = Field(default=12, ge=1, le=40)
-    # Tokens one read_document window may return. The count of chunks is the
-    # wrong unit to bound on: chunk sizes here run from 5 tokens for a bare
-    # heading to the 700-token ceiling, so any fixed count is either wasteful
-    # on a short-headed document or explosive on a dense one.
     navigation_token_budget: int = Field(default=8_000, ge=500, le=64_000)
-    # No DSN means the tool is never registered, so the model cannot reach a
-    # table at all. Pointing this at the primary application DSN would work
-    # but is a full-privilege connection -- the opposite of the design.
     sql_database_url: str | None = None
     sql_statement_timeout_ms: int = Field(default=5_000, ge=100, le=60_000)
     sql_max_result_rows: int = Field(default=200, ge=1, le=5_000)
-    # The credentials postgres-init creates the role with. The app does not
-    # use them to connect -- it uses sql_database_url -- so their only job is
-    # to let the settings below catch the two copies drifting apart.
     sql_reader_user: str = "retriv_reader"
     sql_reader_password: SecretStr | None = None
 
@@ -440,9 +343,6 @@ class Settings(BaseSettings):
         if self.environment != "production":
             return self
 
-        # The API holds the JWT secret and the upload identity; the worker
-        # holds the artifact identity. Each component only validates the
-        # secrets it can actually see.
         secrets: tuple[str, ...]
         if self.component == "api":
             secrets = (

@@ -131,7 +131,7 @@ export function UploadForm({
                 You cannot upload to this workspace.
               </p>
             ) : (
-              <div className="flex items-center justify-between gap-3 rounded-[0.65rem] border border-line bg-sunken/70 px-3.5 py-3">
+              <div className="flex items-center justify-between gap-3 rounded-card border border-line bg-sunken/70 px-3.5 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-ink">{selectedWorkspace.name}</p>
                   <p className="mt-0.5 font-mono text-meta text-ink-faint">
@@ -182,7 +182,7 @@ export function UploadForm({
             Document
           </label>
           <div
-            className={`relative flex min-h-32 flex-col items-center justify-center rounded-[0.65rem] border border-dashed px-5 py-6 text-center transition-colors ${
+            className={`relative flex min-h-32 flex-col items-center justify-center rounded-card border border-dashed px-5 py-6 text-center transition-colors ${
               dragging
                 ? 'border-accent-ink bg-accent-soft'
                 : 'border-line-strong bg-sunken/40 hover:border-ink-faint'
@@ -214,7 +214,7 @@ export function UploadForm({
             count, total and group its lines but not search their wording.
           </p>
           {file === null ? null : (
-            <div className="mt-3 flex items-center gap-3 rounded-[0.65rem] border border-line bg-surface px-3.5 py-2.5 text-sm">
+            <div className="mt-3 flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-2.5 text-sm">
               <FileText aria-hidden="true" className="shrink-0 text-blue" size={18} />
               <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
               <span className="shrink-0 font-mono text-meta text-ink-muted">
@@ -258,7 +258,7 @@ export function UploadForm({
 
       {confirmation === null ? null : (
         <section
-          className="mt-5 rounded-[0.65rem] border border-success/25 bg-success-soft px-4 py-4"
+          className="mt-5 rounded-card border border-success/25 bg-success-soft px-4 py-4"
           role="status"
           aria-live="polite"
           aria-labelledby={`${formId}-result-title`}

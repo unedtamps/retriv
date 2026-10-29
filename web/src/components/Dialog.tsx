@@ -50,10 +50,6 @@ export function Dialog({
         if (preventBackdropClose) event.preventDefault()
       }}
       onClose={(event) => {
-        // A dialog nested inside another one closes with it, and the close
-        // event of the inner one passes through the outer one on the way
-        // down the tree. Without this the drawer would close when a
-        // confirmation inside it was dismissed.
         if (event.target !== dialogRef.current) return
         if (open) onClose()
       }}

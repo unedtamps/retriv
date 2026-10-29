@@ -91,7 +91,7 @@ def harden_worker_process() -> None:
     if not sys.platform.startswith("linux"):
         return
     libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE
+    if libc.prctl(4, 0, 0, 0, 0) != 0:
         error_number = ctypes.get_errno()
         raise OSError(error_number, "Could not disable worker process dumping")
 

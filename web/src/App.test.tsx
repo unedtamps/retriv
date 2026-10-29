@@ -56,8 +56,6 @@ function installApi(
     if (url.startsWith('/v1/workspaces?')) {
       return json({ items: workspaces, total: workspaces.length, offset: 0, limit: 100 })
     }
-    // GET only: the upload POST shares this exact path, and answering it
-    // from here silently broke the duplicate-upload and session tests.
     const documentList = url.match(/^\/v1\/workspaces\/[^/]+\/documents(\?|$)/)
     if (documentList !== null && (init?.method === undefined || init.method === 'GET')) {
       return json(documents.list ?? { items: [], total: 0, offset: 0, limit: 50 })
@@ -65,10 +63,6 @@ function installApi(
     const documentDelete = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)$/)
     if (documentDelete !== null && init?.method === 'DELETE') {
       documents.deleted?.push(documentDelete[1])
-      // The API stops reporting a document once its delete is accepted, so
-      // the mock has to as well. A stateless mock let the row reappear on
-      // the refetch that onChanged triggers, and the test only passed by
-      // timing.
       if (documents.list !== undefined) {
         const list = documents.list as { items: Array<{ id: string }> }
         list.items = list.items.filter((item) => item.id !== documentDelete[1])
@@ -256,14 +250,9 @@ describe('dashboard application', () => {
   })
 
   it('accepts a CSV for upload, which is stored as rows rather than indexed', async () => {
-    // CSV replaced XLSX. A spreadsheet was accepted by the form and then
-    // rejected by the extractor, so the picker must not offer a type the
-    // pipeline cannot read, and must offer the one it now can.
     const user = userEvent.setup()
     const fetchMock = installApi(owner, [workspace])
 
-    // Navigate explicitly rather than inheriting the path a previous test
-    // happened to leave behind.
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
     await user.type(screen.getByLabelText('Username'), 'maya')
@@ -287,11 +276,8 @@ describe('dashboard application', () => {
 
   it('rejects a spreadsheet extension the pipeline cannot read', async () => {
     const user = userEvent.setup()
-    // The stub is needed for its side effect; nothing here inspects the calls.
     installApi(owner, [workspace])
 
-    // Navigate explicitly rather than inheriting the path a previous test
-    // happened to leave behind.
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
     await user.type(screen.getByLabelText('Username'), 'maya')
@@ -300,9 +286,6 @@ describe('dashboard application', () => {
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
 
-    // userEvent.upload honours the input's accept attribute and silently
-    // drops a file it excludes, so the change is fired directly to reach the
-    // application's own check.
     fireEvent.change(screen.getByLabelText('Document'), {
       target: { files: [new File(['x'], 'budget.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })] },
     })
@@ -312,9 +295,6 @@ describe('dashboard application', () => {
   })
 
   it('shows how many rows a CSV holds, and says plainly how a CSV is used', async () => {
-    // A CSV's content is rows, not chunks, so the run reports row_count and
-    // the list shows it. Without this a CSV reads as a bare "Ready" with
-    // nothing behind it, which looks like an upload that did nothing.
     window.history.replaceState(null, '', '/dashboard')
     writeSessionToken('member-token')
     const base = {
@@ -342,19 +322,12 @@ describe('dashboard application', () => {
 
     expect(await screen.findByText('sales.csv')).toBeInTheDocument()
     expect(screen.getByText(/900 rows/)).toBeInTheDocument()
-    // A document that is not a CSV has no rows to report, and must not be
-    // given a "0 rows" label that reads as a broken counter.
     expect(screen.getByText('UNDP.pdf')).toBeInTheDocument()
-    // Exactly one row label, because a document that is not a CSV has no
-    // rows to report. Matching on a bare "0 rows" would also match "900
-    // rows", so the count is what actually pins this.
     expect(screen.getAllByText(/\b900 rows\b/)).toHaveLength(1)
     expect(screen.queryByText(/\b0 rows\b/)).not.toBeInTheDocument()
   })
 
   it('no longer tells the user spreadsheets are unsupported', async () => {
-    // The old copy said spreadsheets were not yet indexed, which was both
-    // stale and now wrong in a second way: a CSV is not indexed on purpose.
     installApi(owner, [workspace])
     const user = userEvent.setup()
     window.history.pushState({}, '', '/upload-context')
@@ -500,9 +473,6 @@ describe('dashboard application', () => {
   })
 
   it('stops requesting processing runs once loaded instead of polling', async () => {
-    // Fake timers are what make this meaningful. The old timer was ten
-    // seconds, so without advancing the clock a short test would pass
-    // against the polling code too and prove nothing.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       window.history.replaceState(null, '', '/dashboard')
@@ -515,8 +485,6 @@ describe('dashboard application', () => {
 
       render(<App />)
 
-      // The bell renders before its data arrives, so wait on the request
-      // itself rather than on the button being present.
       await waitFor(() => expect(countProcessingRequests()).toBeGreaterThan(0))
       const afterMount = countProcessingRequests()
 
@@ -547,8 +515,6 @@ describe('dashboard application', () => {
       started_at: '2026-09-24T08:00:01Z',
       completed_at: '2026-09-24T08:00:30Z',
     }
-    // Kept mutable on purpose: installApi reads these fields per request,
-    // so swapping them between clicks is what the refresh has to pick up.
     const processingResponses = {
       active: { item: null },
       recent: {
@@ -633,11 +599,9 @@ describe('dashboard application', () => {
     const documentRow = screen.getByRole('row', { name: /launch-review.pdf/ })
     expect(within(documentRow).getByText('Ready')).toBeInTheDocument()
 
-    // Deletion is permanent, so it goes through the confirmation dialog.
     await user.click(screen.getByRole('button', { name: 'Delete launch-review.pdf' }))
     expect(screen.getByRole('dialog', { name: /Delete this document/ })).toBeInTheDocument()
 
-    // Cancelling must not call the API.
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(deleted).toEqual([])
     expect(screen.getByText('launch-review.pdf')).toBeInTheDocument()
@@ -665,8 +629,6 @@ describe('dashboard application', () => {
       can_manage_members: false,
       can_delete: false,
     }
-    // Deliberately a platform admin. An admin bypass is the exact mistake
-    // this guards: load_workspace_access has none, so the button would 404.
     installApi(admin, [viewerWorkspace], undefined, {}, {
       list: {
         items: [{
@@ -689,7 +651,6 @@ describe('dashboard application', () => {
 
     render(<App />)
 
-    // A viewer may read the list; only the destructive control is withheld.
     expect(await screen.findByText('shared-notes.pdf')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete shared-notes.pdf' })).toBeNull()
   })

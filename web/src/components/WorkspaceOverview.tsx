@@ -220,7 +220,7 @@ function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: 
           <p className="eyebrow">Quick upload</p>
           <p className="mt-2 text-sm font-semibold text-ink">Add context to this workspace</p>
         </div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-[0.55rem] border border-line bg-sunken text-ink-muted transition-colors group-hover:border-accent-ink group-hover:bg-accent group-hover:text-accent-ink">
+        <span className="flex h-9 w-9 items-center justify-center rounded-card border border-line bg-sunken text-ink-muted transition-colors group-hover:border-accent-ink group-hover:bg-accent group-hover:text-white">
           <UploadCloud aria-hidden="true" size={17} />
         </span>
       </div>

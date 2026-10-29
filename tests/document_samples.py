@@ -39,11 +39,15 @@ def docx_bytes() -> bytes:
 
 
 def csv_bytes(rows: str | None = None) -> bytes:
-    body = rows if rows is not None else (
-        "id,status,amount,currency\n"
-        "1001,OPEN,1500.00,USD\n"
-        "1002,CLOSED,220.50,USD\n"
-        "1003,OPEN,9800.00,EUR\n"
+    body = (
+        rows
+        if rows is not None
+        else (
+            "id,status,amount,currency\n"
+            "1001,OPEN,1500.00,USD\n"
+            "1002,CLOSED,220.50,USD\n"
+            "1003,OPEN,9800.00,EUR\n"
+        )
     )
     return body.encode("utf-8")
 

@@ -76,9 +76,7 @@ def upgrade() -> None:
         sa.Column("document_id", sa.Uuid(), nullable=False),
         sa.Column("processing_run_id", sa.Uuid(), nullable=False),
         sa.Column("row_number", sa.Integer(), nullable=False),
-        sa.Column(
-            "data", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
+        sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -104,8 +102,6 @@ def upgrade() -> None:
         ["workspace_id", "processing_run_id"],
         unique=False,
     )
-    # Filter predicates land in JSONB keys, so this index is what keeps
-    # `data->>'status' = 'OPEN'` from scanning every workspace's rows.
     op.create_index(
         "ix_document_rows_data",
         "document_rows",
@@ -114,20 +110,12 @@ def upgrade() -> None:
         postgresql_using="gin",
     )
 
-    op.execute(
-        "ALTER TABLE document_rows ENABLE ROW LEVEL SECURITY"
-    )
-    op.execute(
-        "ALTER TABLE document_rows FORCE ROW LEVEL SECURITY"
-    )
+    op.execute("ALTER TABLE document_rows ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE document_rows FORCE ROW LEVEL SECURITY")
     op.execute(
         f"CREATE POLICY rows_in_scope ON document_rows "  # noqa: S608
         f"USING (workspace_id = ANY (current_setting('{SCOPE_SETTING}', true)::uuid[]))"
     )
-    # `documents` is readable too, because a row citation has to name the file
-    # it came from. It carries the same workspace column, so it takes the same
-    # policy: granting the reader access to it without one would expose every
-    # workspace's filenames and document ids.
     op.execute("ALTER TABLE documents ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE documents FORCE ROW LEVEL SECURITY")
     op.execute(
@@ -152,8 +140,6 @@ def downgrade() -> None:
     op.execute("ALTER TABLE documents NO FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE documents DISABLE ROW LEVEL SECURITY")
     op.execute("DROP POLICY IF EXISTS rows_in_scope ON document_rows")
-    # Guarded for the same reason as the upgrade GRANT: the role is optional,
-    # and revoking from a role that was never created aborts the downgrade.
     op.execute(
         f"""
         DO $$

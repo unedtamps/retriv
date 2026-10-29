@@ -71,17 +71,12 @@ async def ingest_staged_upload(
 
     existing = await find_document_by_sha(session, staged.sha256)
     if existing is not None:
-        # Lock the canonical row before changing its links. A last-link
-        # delete locks the same row first, so an upload cannot reactivate a
-        # link while the document is being removed.
         existing = await session.scalar(
             select(Document).where(Document.id == existing.id).with_for_update()
         )
         if existing is None or existing.deleted_at is not None:
             raise document_deletion_error()
-        link = await find_document_link(
-            session, workspace_id, existing.id, lock=True
-        )
+        link = await find_document_link(session, workspace_id, existing.id, lock=True)
         if link is None:
             link = DocumentWorkspace(
                 workspace_id=workspace_id,
@@ -93,8 +88,6 @@ async def ingest_staged_upload(
             await enqueue_access_sync(session, existing, settings)
             await session.commit()
         elif link.deleted_at is not None:
-            # The workspace removed this link while another workspace kept
-            # the content alive. Re-uploading the same bytes re-attaches it.
             link.deleted_at = None
             link.filename = staged.original_filename
             await enqueue_access_sync(session, existing, settings)
@@ -142,8 +135,6 @@ async def ingest_staged_upload(
     try:
         session.add(document)
         session.add(link)
-        # Flush before enqueueing so the run's foreign key resolves.
-        # The document, its first link and its run commit together.
         await session.flush()
         run = await enqueue_extract(session, document, settings)
         await session.commit()
@@ -176,8 +167,6 @@ async def ingest_staged_upload(
         await delete_uploaded_object(storage, settings.s3_raw_bucket, object_key)
         raise
 
-    # Accepted, not created: the pipeline has the document and will report
-    # progress through /v1/processing-runs.
     return IngestedDocument(document=document, link=link, run=run, duplicate=False)
 
 
@@ -197,9 +186,7 @@ async def attach_to_existing(
     if locked_document is None or locked_document.deleted_at is not None:
         raise document_deletion_error()
     document = locked_document
-    link = await find_document_link(
-        session, workspace_id, document.id, lock=True
-    )
+    link = await find_document_link(session, workspace_id, document.id, lock=True)
     if link is None:
         link = DocumentWorkspace(
             workspace_id=workspace_id,
@@ -238,8 +225,6 @@ async def accept_document_delete(
     Returns the canonical document, or ``None`` when it disappeared between
     the caller's permission check and this lock.
     """
-    # Lock order is document then link, matching the upload path. Taking the
-    # link first would let a concurrent upload and delete deadlock.
     locked_document = await session.scalar(
         select(Document)
         .where(Document.id == document_id)
@@ -355,16 +340,11 @@ def document_deletion_error() -> AppError:
     )
 
 
-async def delete_uploaded_object(
-    storage: ObjectStorage, bucket: str, key: str
-) -> None:
+async def delete_uploaded_object(storage: ObjectStorage, bucket: str, key: str) -> None:
     try:
         await to_thread.run_sync(partial(storage.delete_object, bucket=bucket, key=key))
     except StorageError:
-        # A reconciliation task can remove the orphan if compensating deletion fails.
-        logger.exception(
-            "Failed to remove orphaned object", extra={"bucket": bucket, "key": key}
-        )
+        logger.exception("Failed to remove orphaned object", extra={"bucket": bucket, "key": key})
 
 
 def storage_unavailable_error(detail: str) -> AppError:

@@ -29,9 +29,6 @@ def format_catalogue(
         return f"{header} none yet.\n\n"
     lines: list[str] = []
     if not queryable:
-        # The most misleading thing a caller could do here is report missing
-        # data when the data is in the workspace and the tool to read it is
-        # simply switched off. That reads as a fact about the data.
         lines.append(
             "These files exist and hold rows, but this deployment cannot query "
             "them: the row-query tool is not enabled. Report the data as "

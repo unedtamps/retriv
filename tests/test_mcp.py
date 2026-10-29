@@ -129,9 +129,7 @@ class McpSession:
     async def post(self, key: str | None, payload: Any) -> httpx.Response:
         return await self._post(key, payload)
 
-    async def request(
-        self, key: str, method: str, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def request(self, key: str, method: str, params: dict[str, Any]) -> dict[str, Any]:
         self._next_id += 1
         response = await self._post(
             key,
@@ -140,15 +138,11 @@ class McpSession:
         return _payload(response)
 
     async def call(self, key: str, name: str, **arguments: Any) -> dict[str, Any]:
-        result = await self.request(
-            key, "tools/call", {"name": name, "arguments": arguments}
-        )
+        result = await self.request(key, "tools/call", {"name": name, "arguments": arguments})
         assert "error" not in result, result["error"]
         return result["result"]
 
-    def _headers(
-        self, key: str | None, *, include_session: bool = True
-    ) -> dict[str, str]:
+    def _headers(self, key: str | None, *, include_session: bool = True) -> dict[str, str]:
         headers = {
             "content-type": "application/json",
             "accept": "application/json, text/event-stream",
@@ -174,9 +168,7 @@ def _payload(response: httpx.Response) -> dict[str, Any]:
 
 def text_of(result: dict[str, Any]) -> str:
     return "\n".join(
-        item.get("text", "")
-        for item in result.get("content", [])
-        if item.get("type") == "text"
+        item.get("text", "") for item in result.get("content", []) if item.get("type") == "text"
     )
 
 
@@ -266,11 +258,6 @@ async def running_mcp(
         )
     )
 
-    # The session manager is run in a task of its own rather than with an
-    # `async with` across the yield: pytest-asyncio drives the setup and the
-    # teardown of an async fixture in two different tasks, and anyio refuses
-    # to leave a cancel scope it entered in a different one. Enter and exit
-    # therefore both happen inside `supervise`.
     started: asyncio.Future[None] = asyncio.get_running_loop().create_future()
     stop = asyncio.Event()
 
@@ -280,25 +267,15 @@ async def running_mcp(
                 started.set_result(None)
             await stop.wait()
 
-    # httpx's ASGI transport never runs a lifespan, so the test drives the
-    # manager that actually accepts requests itself.
     supervisor = asyncio.create_task(supervise())
     transport = httpx.ASGITransport(app=application)
     try:
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             await started
             async with db_session_factory() as database:
-                alice = await mint_api_key(
-                    database, user_id=entities.user.id, name="alice"
-                )
-                bob = await mint_api_key(
-                    database, user_id=entities.second_user.id, name="bob"
-                )
-                admin = await mint_api_key(
-                    database, user_id=entities.admin_user.id, name="admin"
-                )
+                alice = await mint_api_key(database, user_id=entities.user.id, name="alice")
+                bob = await mint_api_key(database, user_id=entities.second_user.id, name="bob")
+                admin = await mint_api_key(database, user_id=entities.admin_user.id, name="admin")
                 await database.commit()
             mcp = McpSession(client)
             await mcp.start(alice.plaintext)
@@ -458,8 +435,6 @@ async def test_search_context_scope_is_derived_from_the_key(mcp: McpEnv) -> None
 
 
 async def test_search_context_scope_follows_each_request(mcp: McpEnv) -> None:
-    # One session, three calls, two keys: the later calls must not inherit a
-    # workspace set from the key that happened to open the session.
     await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
     await mcp.session.call(mcp.bob_key, "search_context", query="revenue")
     await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
@@ -481,7 +456,6 @@ async def test_search_context_narrows_to_one_workspace(mcp: McpEnv) -> None:
 
 
 async def test_search_context_refuses_a_workspace_outside_the_key(mcp: McpEnv) -> None:
-    # Bob can see legal, not finance. Naming finance must not widen his scope.
     result = await mcp.session.call(
         mcp.bob_key,
         "search_context",
@@ -529,8 +503,6 @@ async def test_query_rows_states_the_jsonb_shape_before_any_failure(
     description = tools["query_rows"]["description"]
     assert "JSONB" in description
     assert "document_rows" in description
-    # The shape, not just the vocabulary: a model that is told the keys are
-    # case-sensitive and must be cast has enough to write the statement.
     assert "(data->>'Amount')::numeric" in description
 
 
@@ -547,10 +519,6 @@ def test_the_csv_note_appears_only_when_the_row_tool_does() -> None:
 
 
 async def test_no_tool_writes_to_a_workspace(mcp: McpEnv) -> None:
-    # Upload, status and deletion are decisions a person takes in the
-    # dashboard. Keeping them out of the MCP surface is what keeps a leaked
-    # API key read-only, so the shape of the tool list is itself a security
-    # property and not just a count.
     listed = await mcp.session.request(mcp.alice_key, "tools/list", {})
     names = {tool["name"] for tool in listed["result"]["tools"]}
     assert not names & {"upload_document", "delete_document", "get_document_status"}
@@ -570,9 +538,7 @@ async def test_list_queryable_files_shows_ids_and_columns(mcp: McpEnv) -> None:
 
 
 async def test_query_rows_requires_a_document_id(mcp: McpEnv) -> None:
-    result = await mcp.session.call(
-        mcp.bob_key, "query_rows", sql="select count(*) from rows"
-    )
+    result = await mcp.session.call(mcp.bob_key, "query_rows", sql="select count(*) from rows")
     assert result["isError"] is True
     assert "does not name a document_id" in text_of(result)
     assert mcp.row_query.runs == []
@@ -584,9 +550,7 @@ async def test_query_rows_returns_an_aggregate_as_a_value(mcp: McpEnv) -> None:
         entries=[make_entry(document_id, mcp.entities.legal.id, "invoices.csv")],
         hidden=0,
     )
-    mcp.row_query.outcome = RowQueryResult(
-        sources=[], values=[{"count": 12}], columns=["count"]
-    )
+    mcp.row_query.outcome = RowQueryResult(sources=[], values=[{"count": 12}], columns=["count"])
     result = await mcp.session.call(
         mcp.bob_key,
         "query_rows",
@@ -611,15 +575,11 @@ async def test_find_documents_matches_a_name_and_reports_status(
 ) -> None:
     await _seed_document(mcp, filename="UNDP Financial Regulations.pdf")
     await _seed_document(mcp, filename="Procurement Manual.pdf")
-    result = await mcp.session.call(
-        mcp.alice_key, "find_documents", pattern="financial"
-    )
+    result = await mcp.session.call(mcp.alice_key, "find_documents", pattern="financial")
     assert result["isError"] is False
     body = text_of(result)
     assert "UNDP Financial Regulations.pdf" in body
     assert "Procurement Manual.pdf" not in body
-    # The detail an agent needs before acting: the id to pass on, and whether
-    # searching it will find anything yet.
     assert "status=ready" in body
     assert "workspace_id=" in body
     assert "bytes" in body
@@ -645,15 +605,12 @@ async def test_find_documents_keeps_two_revisions_of_one_name_apart(
     """
     old = await _seed_document(mcp, filename="Peraturan.pdf")
     new = await _seed_document(mcp, filename="Peraturan.pdf")
-    result = await mcp.session.call(
-        mcp.alice_key, "find_documents", pattern="Peraturan.pdf"
-    )
+    result = await mcp.session.call(mcp.alice_key, "find_documents", pattern="Peraturan.pdf")
     body = text_of(result)
     listed = [line for line in body.splitlines() if line.startswith("  [")]
     assert len(listed) == 2
     assert str(old.document_id) in body
     assert str(new.document_id) in body
-    # Each line carries the details that tell the two apart.
     assert all("workspace_id=" in line for line in listed)
     assert all(f"{len(SEED_BYTES)} bytes" in line for line in listed)
 
@@ -664,12 +621,8 @@ async def test_find_documents_ranks_the_exact_name_first(
     await _seed_document(mcp, filename="Peraturan 2020.pdf")
     exact = await _seed_document(mcp, filename="Peraturan")
     await _seed_document(mcp, filename="Peraturan tambahan.pdf")
-    result = await mcp.session.call(
-        mcp.alice_key, "find_documents", pattern="Peraturan"
-    )
-    listed = [
-        line for line in text_of(result).splitlines() if line.startswith("  [")
-    ]
+    result = await mcp.session.call(mcp.alice_key, "find_documents", pattern="Peraturan")
+    listed = [line for line in text_of(result).splitlines() if line.startswith("  [")]
     assert str(exact.document_id) in listed[0]
     assert all(str(exact.document_id) not in line for line in listed[1:])
 
@@ -683,7 +636,6 @@ async def test_find_documents_without_a_pattern_lists_everything(
     body = text_of(result)
     assert "one.pdf" in body
     assert "two.csv" in body
-    # It says what to do with an id, which is the reason to call this at all.
     assert "download_document" in body
 
 
@@ -691,9 +643,7 @@ async def test_find_documents_says_so_when_nothing_matches(
     mcp: McpEnv,
 ) -> None:
     await _seed_document(mcp, filename="one.pdf")
-    result = await mcp.session.call(
-        mcp.alice_key, "find_documents", pattern="nonexistent"
-    )
+    result = await mcp.session.call(mcp.alice_key, "find_documents", pattern="nonexistent")
     assert result["isError"] is False
     body = text_of(result)
     assert "No document whose name contains" in body
@@ -708,9 +658,7 @@ async def test_find_documents_does_not_leave_the_key_scope(
     A name that exists somewhere must not be confirmable from outside scope.
     """
     await _seed_document(mcp, filename="secret.pdf")
-    result = await mcp.session.call(
-        mcp.admin_key, "find_documents", pattern="secret"
-    )
+    result = await mcp.session.call(mcp.admin_key, "find_documents", pattern="secret")
     assert result["isError"] is False
     body = text_of(result)
     assert "No searchable workspace" in body
@@ -766,12 +714,11 @@ async def test_find_documents_reports_when_the_page_is_truncated(
 ) -> None:
     for index in range(3):
         await _seed_document(mcp, filename=f"many-{index}.pdf")
-    result = await mcp.session.call(
-        mcp.alice_key, "find_documents", pattern="many", limit=1
-    )
+    result = await mcp.session.call(mcp.alice_key, "find_documents", pattern="many", limit=1)
     body = text_of(result)
     assert "many-0.pdf" in body or "many-1.pdf" in body or "many-2.pdf" in body
     assert "and 2 more" in body
+
 
 async def test_download_document_returns_a_time_limited_signed_link(
     mcp: McpEnv,
@@ -785,16 +732,11 @@ async def test_download_document_returns_a_time_limited_signed_link(
     )
     assert result["isError"] is False
     body = text_of(result)
-    # The link is the whole point: it points at the object store and carries
-    # its own expiry, so the bytes never come back through this server.
     assert f"link=https://objects.example.test/raw-documents/{seeded.object_key}" in body
     assert "X-Amz-Signature=" in body
     assert "X-Amz-Expires=300" in body
     assert "link_expires_in_seconds=300" in body
-    # It really was signed for the configured window, not just printed as one.
-    assert mcp.storage.presigned == [
-        ("raw-documents", seeded.object_key, 300)
-    ]
+    assert mcp.storage.presigned == [("raw-documents", seeded.object_key, 300)]
 
 
 async def test_the_link_window_is_the_configured_one(
@@ -823,8 +765,6 @@ async def test_download_document_returns_the_api_url_and_metadata(
         document_id=str(seeded.document_id),
     )
     body = text_of(result)
-    # Relative on purpose: the agent already knows the host it talks to, and a
-    # base URL reconstructed here would be wrong behind a proxy.
     assert (
         f"url=/v1/workspaces/{mcp.entities.legal.id}"
         f"/documents/{seeded.document_id}/download" in body
@@ -835,8 +775,6 @@ async def test_download_document_returns_the_api_url_and_metadata(
 
 
 async def test_download_document_returns_no_bytes(mcp: McpEnv) -> None:
-    # Neither address may carry the file. A tool result is what lands in the
-    # model's context, and a 566 KB PDF would be roughly 189k tokens there.
     seeded = await _seed_document(mcp, filename="ledger.csv")
     result = await mcp.session.call(
         mcp.alice_key,
@@ -846,7 +784,6 @@ async def test_download_document_returns_no_bytes(mcp: McpEnv) -> None:
     )
     body = text_of(result)
     assert base64.b64encode(SEED_BYTES).decode() not in body
-    # The object key may appear, but only as part of an address.
     assert body.count("name,amount") == 0
 
 
@@ -875,7 +812,6 @@ async def test_download_document_refuses_a_workspace_without_download_rights(
     mcp: McpEnv,
 ) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
-    # Bob is a viewer on legal: read and search yes, download no.
     result = await mcp.session.call(
         mcp.bob_key,
         "download_document",
@@ -884,7 +820,6 @@ async def test_download_document_refuses_a_workspace_without_download_rights(
     )
     assert result["isError"] is True
     assert "permission" in text_of(result).lower()
-    # Nothing was minted: the refusal happens before either address exists.
     assert mcp.storage.presigned == []
 
 
@@ -892,10 +827,6 @@ async def test_download_document_refuses_a_workspace_outside_the_key(
     mcp: McpEnv,
 ) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
-    # The admin key carries no workspace membership at all, so naming a
-    # workspace it does not hold is refused with the same "not found or not
-    # accessible" the HTTP layer uses, rather than a message that would confirm
-    # the workspace exists.
     result = await mcp.session.call(
         mcp.admin_key,
         "download_document",
@@ -954,6 +885,7 @@ async def test_download_document_reports_a_document_whose_object_is_gone(
     assert result["isError"] is True
     assert "signed" in text_of(result)
 
+
 async def test_the_row_tool_is_absent_when_no_reader_is_configured(
     settings: Settings,
     db_session_factory: async_sessionmaker[AsyncSession],
@@ -961,12 +893,8 @@ async def test_the_row_tool_is_absent_when_no_reader_is_configured(
     scanner: Any,
     entities: SeededEntities,
 ) -> None:
-    # The development .env supplies a reader DSN, so it is turned off here on
-    # purpose: the absence of the tool has to come from configuration.
     no_reader = settings.model_copy(update={"sql_database_url": None})
-    async with running_mcp(
-        no_reader, db_session_factory, object_storage, scanner, entities
-    ) as env:
+    async with running_mcp(no_reader, db_session_factory, object_storage, scanner, entities) as env:
         listed = await env.session.request(env.alice_key, "tools/list", {})
         names = {tool["name"] for tool in listed["result"]["tools"]}
         listing = await env.session.call(env.alice_key, "list_queryable_files")
@@ -987,9 +915,7 @@ class SeededDocument:
     object_key: str
 
 
-async def _seed_document(
-    mcp: McpEnv, *, filename: str, workspace: str = "legal"
-) -> SeededDocument:
+async def _seed_document(mcp: McpEnv, *, filename: str, workspace: str = "legal") -> SeededDocument:
     """A document row and its stored object, as the upload path leaves both."""
     workspace_id = getattr(mcp.entities, workspace).id
     object_key = f"raw-documents/{workspace_id}/{uuid4()}"

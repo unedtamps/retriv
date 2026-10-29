@@ -66,8 +66,7 @@ def test_the_first_offending_page_is_reported_with_its_number() -> None:
         SimpleNamespace(
             page_no=3,
             error_message=(
-                "DefaultCPUAllocator: can't allocate memory: you tried to "
-                "allocate 52428800 bytes"
+                "DefaultCPUAllocator: can't allocate memory: you tried to allocate 52428800 bytes"
             ),
         ),
         SimpleNamespace(page_no=4, error_message="no such page"),
@@ -147,13 +146,10 @@ def _sandboxed_extractor() -> SandboxedDoclingExtractor:
 @pytest.mark.parametrize(
     ("return_code", "stderr_text"),
     [
-        # The cgroup's OOM killer.
         (-9, b""),
-        # The address-space limit: docling reports it per page and exits 1.
         (
             1,
-            b"DefaultCPUAllocator: can't allocate memory: you tried to "
-            b"allocate 26214400 bytes",
+            b"DefaultCPUAllocator: can't allocate memory: you tried to allocate 26214400 bytes",
         ),
     ],
 )
@@ -182,9 +178,7 @@ def test_the_sandbox_reports_running_out_of_room_as_a_resource_failure(
     assert "8.0 GiB" in message, "the message must name the limit to raise"
 
 
-def test_an_ordinary_sandbox_failure_stays_an_extraction_failure(
-    tmp_path, monkeypatch
-) -> None:
+def test_an_ordinary_sandbox_failure_stays_an_extraction_failure(tmp_path, monkeypatch) -> None:
     """Only memory failures get the limit advice; a broken document does not."""
 
     class FakeProcess:

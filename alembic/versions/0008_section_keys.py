@@ -57,9 +57,6 @@ def upgrade() -> None:
             server_default=sa.false(),
         ),
     )
-    # text_pattern_ops is what makes the prefix form of LIKE indexable. Under the
-    # default ops the planner cannot use the index for a pattern that does not
-    # begin with the column value.
     op.create_index(
         "ix_document_chunks_section_key",
         "document_chunks",

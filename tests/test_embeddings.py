@@ -50,9 +50,7 @@ async def test_openai_provider_rejects_wrong_dimensions() -> None:
         dimensions=3,
         timeout_seconds=1,
         transport=httpx.MockTransport(
-            lambda _: httpx.Response(
-                200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]}
-            )
+            lambda _: httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]})
         ),
     )
     try:
@@ -96,13 +94,7 @@ async def test_qdrant_store_creates_collection_upserts_metadata_and_deletes() ->
             return httpx.Response(
                 200,
                 json={
-                    "result": {
-                        "config": {
-                            "params": {
-                                "vectors": {"size": 4, "distance": "Cosine"}
-                            }
-                        }
-                    }
+                    "result": {"config": {"params": {"vectors": {"size": 4, "distance": "Cosine"}}}}
                 },
             )
         if request.method == "PUT" and request.url.path.endswith("/vectors-v1"):
@@ -136,26 +128,20 @@ async def test_qdrant_store_creates_collection_upserts_metadata_and_deletes() ->
     )
     try:
         await store.upsert([point])
-        await store.set_document_workspaces(
-            document_id, [workspace_id, second_workspace_id]
-        )
+        await store.set_document_workspaces(document_id, [workspace_id, second_workspace_id])
         await store.delete_document(document_id)
     finally:
         await store.aclose()
 
     create_request = next(
-        body
-        for method, path, body in requests
-        if method == "PUT" and path.endswith("/vectors-v1")
+        body for method, path, body in requests if method == "PUT" and path.endswith("/vectors-v1")
     )
     assert create_request == {
         "vectors": {"size": 4, "distance": "Cosine", "on_disk": True},
         "hnsw_config": {"on_disk": True},
     }
     upsert_request = next(
-        body
-        for method, path, body in requests
-        if method == "PUT" and path.endswith("/points")
+        body for method, path, body in requests if method == "PUT" and path.endswith("/points")
     )
     assert upsert_request is not None
     assert upsert_request["points"][0]["payload"] == point.payload  # type: ignore[index]
@@ -196,13 +182,7 @@ async def test_qdrant_store_rejects_mismatched_collection_dimensions() -> None:
             lambda _: httpx.Response(
                 200,
                 json={
-                    "result": {
-                        "config": {
-                            "params": {
-                                "vectors": {"size": 8, "distance": "Cosine"}
-                            }
-                        }
-                    }
+                    "result": {"config": {"params": {"vectors": {"size": 8, "distance": "Cosine"}}}}
                 },
             )
         ),
@@ -228,13 +208,7 @@ async def test_qdrant_search_mandates_workspace_and_profile_payload_filters() ->
             return httpx.Response(
                 200,
                 json={
-                    "result": {
-                        "config": {
-                            "params": {
-                                "vectors": {"size": 4, "distance": "Cosine"}
-                            }
-                        }
-                    }
+                    "result": {"config": {"params": {"vectors": {"size": 4, "distance": "Cosine"}}}}
                 },
             )
         if request.url.path.endswith("/index"):

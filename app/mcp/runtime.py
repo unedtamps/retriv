@@ -31,12 +31,9 @@ class McpRuntime:
     settings: Settings
     session_factory: async_sessionmaker[AsyncSession]
     retriever: ContextRetriever
-    # Reading a document in order, which is the other axis from searching it.
     navigator: DocumentNavigator
     row_query: RowQuery | None
     catalogue_reader: CatalogueReader
-    # Only for signing download links. The bytes themselves never travel
-    # through a tool: the link points at the object store.
     storage: "ObjectStorage"
 
 

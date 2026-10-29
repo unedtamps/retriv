@@ -10,9 +10,6 @@ from pathlib import Path
 
 from app.extraction.base import ExtractedImage
 
-# The extension each media type is written under. The name matters only
-# because the parent reads the files back by name, and a file with the
-# wrong extension is a file nobody can tell apart from a stray one.
 _IMAGE_SUFFIX = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
@@ -162,7 +159,6 @@ def main() -> None:
         detail = f"Document extraction failed: {type(exc).__name__}: {exc}"
         trace = traceback.format_exc()
         error_path = args.output_dir / "error.txt"
-        # The parent still gets the exit status if the file cannot be written.
         with suppress(OSError):
             error_path.write_text(
                 f"{detail}\n\n{trace}"[:8000],

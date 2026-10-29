@@ -84,18 +84,11 @@ from app.vision.base import VisionProvider, VisionProviderError, build_context
 
 logger = logging.getLogger(__name__)
 
-# The temporary-file suffix a media type is downloaded under. Explicit rather
-# than inferred, because the parser is chosen by the extension and an
-# inferred suffix silently feeds the wrong parser the wrong bytes. CSV is
-# absent: it is dispatched before this lookup and never parsed by extension.
 _SOURCE_SUFFIX = {
     PDF_MEDIA_TYPE: ".pdf",
     DOCX_MEDIA_TYPE: ".docx",
 }
 
-# Rows are inserted with a core insert rather than ORM objects: at the 100k
-# cap, building identity-mapped instances for the whole file costs far more
-# memory than the transaction does, and nothing here needs an ORM identity.
 _ROW_INSERT_BATCH = 1_000
 
 
@@ -131,10 +124,6 @@ class ProcessingWorker:
         self._vision_provider = vision_provider
         self._next_artifact_reconciliation = datetime.min.replace(tzinfo=UTC)
         self._next_embedding_reconciliation = datetime.min.replace(tzinfo=UTC)
-        # Run-level capacity. Several runs may be in flight at once -- a
-        # document being described and embedded is network-bound and leaves
-        # the process mostly idle -- but the parser sandboxes are the memory
-        # hogs, so they are capped separately.
         self._extraction_slots = asyncio.Semaphore(settings.parser_max_concurrent_extractions)
         self._vlm_slots = asyncio.Semaphore(settings.vlm_max_concurrency)
         self._in_flight: set[asyncio.Task[None]] = set()
@@ -152,13 +141,9 @@ class ProcessingWorker:
     async def _process_claimed(self, run: ProcessingRun) -> None:
         """Carry one claimed run through its whole pipeline.
 
-        The umbrella heartbeat renews the lease for as long as this task
-        lives, which matters now that a claimed run can wait for an
-        extraction slot -- a wait no stage heartbeat covers -- and because
-        the download and chunk-persist stages never had one either. It
-        coexists with the per-stage heartbeats: both only extend
-        ``lease_until``, so two writers are one writer as far as the
-        expiration is concerned.
+        The umbrella heartbeat covers stages with no heartbeat of their own,
+        including the wait for an extraction slot. It only extends
+        ``lease_until``, like the stage heartbeats, so two writers are one.
         """
         stopped = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat_lease(run.id, run.lease_token, stopped))
@@ -187,14 +172,9 @@ class ProcessingWorker:
     async def run(self, stop_event: asyncio.Event) -> None:
         """Claim and carry runs concurrently until asked to stop.
 
-        Several runs may be in flight, bounded by
-        ``processing_max_concurrent_runs``; each one claims itself a
-        pipeline of its own while the loop keeps claiming. The sweeps still
-        run here, on the loop, and nowhere else -- the reconciliation
+        The sweeps run only here, on the loop: the reconciliation
         timestamps they advance are not safe to touch from two places.
-
-        Stopping drains: no new claims, in-flight runs finish the way they
-        would have, and the process exits only when the last one is done.
+        Stopping drains -- no new claims, in-flight runs finish.
         """
         while not stop_event.is_set() or self._in_flight:
             if not stop_event.is_set():
@@ -225,9 +205,6 @@ class ProcessingWorker:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
-                # _process_claimed maps every failure onto the run itself, so
-                # an exception escaping it is a bug in the worker, not in a
-                # document. Log it and move on; the run loop must not die.
                 if not task.cancelled() and task.exception() is not None:
                     logger.error(
                         "Processing task failed unexpectedly",
@@ -382,12 +359,7 @@ class ProcessingWorker:
                         ProcessingRun.status == RUN_READY,
                         Document.deleted_at.is_(None),
                         Document.active_processing_run_id == ProcessingRun.id,
-                        # Chunked runs only: a CSV is ready with no chunks and
-                        # nothing to embed.
                         ProcessingRun.chunk_count > 0,
-                        # Fully indexed runs are excluded in SQL. Without this
-                        # the sweep would re-examine the same oldest 100 rows
-                        # every interval and never reach the runs behind them.
                         or_(
                             ProcessingRun.embedded_chunk_count != ProcessingRun.chunk_count,
                             ProcessingRun.embedding_profile.is_(None),
@@ -404,8 +376,6 @@ class ProcessingWorker:
                 )
             ).all()
             for run in runs:
-                # Only the identity columns are needed to reconcile; loading
-                # the chunk entities would pull every chunk's text along.
                 chunks = (
                     await session.execute(
                         select(
@@ -458,10 +428,6 @@ class ProcessingWorker:
                     embedding.last_error = None
                     embedding.embedded_at = None
                     embedding.updated_at = now
-                # The run was a candidate because a counter or the recorded
-                # embedding configuration disagreed with the rows. Record the
-                # reconciled values either way; only re-queue if work remains,
-                # or the sweep would keep selecting a run it just finished.
                 run.chunk_count = len(chunks)
                 run.embedded_chunk_count = indexed_count
                 run.embedding_profile = settings.embedding_profile
@@ -532,9 +498,6 @@ class ProcessingWorker:
         self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
         suffix = _SOURCE_SUFFIX.get(document.detected_media_type)
         if suffix is None:
-            # Was `".pdf" if pdf else ".docx"`, naming every non-PDF .docx.
-            # Harmless while XLSX was the only other type because the
-            # extractor rejected it first.
             raise PermanentProcessingError(
                 f"No source suffix for media type: {document.detected_media_type}"
             )
@@ -549,12 +512,6 @@ class ProcessingWorker:
         manifest_key: str | None = None
         chunks_persisted = False
         try:
-            # The parser sandbox is the worker's memory hog -- up to ~6.5 GB
-            # on a large document -- so parsing is what the concurrency cap
-            # gates. The slot is held from the fetch through the sandbox call
-            # and released the moment the document is parsed: everything
-            # after that -- describing, embedding, syncing -- is network
-            # work that leaves room for the next document's parse.
             async with self._extraction_slots:
                 downloaded = await to_thread.run_sync(
                     partial(
@@ -583,10 +540,6 @@ class ProcessingWorker:
                         media_type=document.detected_media_type,
                     )
                 except ExtractionResourceError as exc:
-                    # Deterministic, not transient: the same document against the same
-                    # limit fails the same way, so a retry only spends another parser
-                    # run at ~3.5 seconds per page. Say what to change instead, and
-                    # let the operator requeue once it has changed.
                     raise PermanentProcessingError(
                         f"Extraction ran out of memory: {exc}. Raise "
                         f"RETRIV_PARSER_MEMORY_LIMIT_BYTES (currently "
@@ -718,9 +671,6 @@ class ProcessingWorker:
                 raise PermanentProcessingError("Downloaded object hash does not match the event")
 
             await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
-            # Read and decode once, off the event loop, then parse from the
-            # string. Reading inside the transaction would block the loop on
-            # file I/O, and reading twice would double that for no reason.
             csv_text = await to_thread.run_sync(partial(self._decode_csv, temporary_path))
             columns, delimiter = await to_thread.run_sync(partial(self._inspect_csv, csv_text))
 
@@ -871,20 +821,11 @@ class ProcessingWorker:
                         await session.execute(insert(DocumentRow), batch)
                         inserted += len(batch)
                         batch.clear()
-                        # Yield between batches so the heartbeat task and any
-                        # cancellation can run; parsing the whole file in one
-                        # pass would hold the loop for the whole transaction.
                         await asyncio.sleep(0)
                 if batch:
                     await session.execute(insert(DocumentRow), batch)
                     inserted += len(batch)
 
-                # Deleted here rather than at persist time, so a re-upload
-                # cannot leave both versions queryable at once -- workspace
-                # scope is the SQL tool's only isolation, and documents dodge
-                # this because retrieval re-checks the active run. Doing it
-                # inside the activation transaction means a run that dies
-                # partway rolls this back and keeps the working rows.
                 await session.execute(
                     delete(DocumentRow).where(
                         DocumentRow.document_id == stored_document.id,
@@ -892,8 +833,6 @@ class ProcessingWorker:
                     )
                 )
 
-                # Rows are the whole product, so the run is already usable.
-                # chunk_count stays 0 and no embedding records exist for it.
                 run.status = RUN_READY
                 run.lease_until = None
                 run.lease_token = None
@@ -967,16 +906,10 @@ class ProcessingWorker:
         )
         await self._set_phase(claimed_run.id, lease_token, RUN_DELETING)
 
-        # The document row goes last: its cascade takes the chunks, the
-        # embedding ledger and this run, and the point IDs live in the rows
-        # being deleted, so removing it earlier would orphan the vectors.
-        # Hence no UPDATE on the run after the DELETE.
         async with self._session_factory() as session, session.begin():
             run = await session.get(ProcessingRun, claimed_run.id)
             if run is None or run.lease_token != lease_token:
                 raise LeaseLostError()
-            # No status write here: the document DELETE cascades to this run,
-            # so anything set on it in this transaction is never observable.
             document = await session.scalar(
                 select(Document).where(Document.id == claimed_run.document_id).with_for_update()
             )
@@ -1018,9 +951,6 @@ class ProcessingWorker:
         minimum = self._settings.min_extraction_coverage
         source_chars = extraction.source_text_chars
         if source_chars <= 0:
-            # No text layer to compare against: an image-only PDF, or a format whose
-            # text only exists after OCR. There is no signal here, and inventing one
-            # would reject legitimately short documents.
             return
         extracted_chars = sum(len(chunk.text) for chunk in extraction.chunks)
         ratio = extracted_chars / source_chars
@@ -1080,8 +1010,6 @@ class ProcessingWorker:
                 "name": "retriv-context-pipeline",
                 "version": self._settings.pipeline_version,
                 "docling_version": extraction.extractor_version,
-                # The stage decision the extractor actually made. Previously this was
-                # derived from the media type, which claimed OCR ran for every PDF.
                 "ocr_enabled": extraction.ocr_enabled,
                 "ocr_languages": self._settings.ocr_languages,
                 "chunk_max_tokens": self._settings.chunk_max_tokens,
@@ -1171,9 +1099,6 @@ class ProcessingWorker:
             if not activated:
                 await self._vector_store.delete_document(claimed_run.document_id)
             else:
-                # A link may have changed while the batches were in flight.
-                # The queue normally carries that change, but a final refresh
-                # makes the completed run's payload authoritative either way.
                 await self._vector_store.set_document_workspaces(
                     claimed_run.document_id,
                     [
@@ -1261,9 +1186,6 @@ class ProcessingWorker:
             )
             if getattr(result, "rowcount", 0) != len(chunk_ids):
                 raise LeaseLostError()
-            # The UPDATE just moved exactly len(chunk_ids) rows to INDEXED, so
-            # the increment is exact; a COUNT here ran after every batch, and
-            # _activate_embedded_run recounts the true total anyway.
             run.embedded_chunk_count = (run.embedded_chunk_count or 0) + len(chunk_ids)
 
     async def _activate_embedded_run(self, run_id: UUID, lease_token: UUID) -> bool:
@@ -1367,8 +1289,6 @@ class ProcessingWorker:
                 )
                 session.add(stored_chunk)
                 stored_chunks.append(stored_chunk)
-            # No ORM relationship links these rows: flush parents before FK children.
-            # Both writes remain in the same transaction and roll back together.
             await session.flush()
             session.add_all(self._embedding_record(chunk) for chunk in stored_chunks)
             run.status = RUN_EMBEDDING
@@ -1608,8 +1528,6 @@ class ProcessingWorker:
         images: list[ExtractedImage] = []
         if self._settings.image_processing_enabled:
             images = extraction.images
-            # Zero means no cap, the same way the extractor reads it. Slicing
-            # to zero here would drop every picture the extractor collected.
             if self._settings.vlm_max_images_per_document:
                 images = images[: self._settings.vlm_max_images_per_document]
         descriptions: dict[str, str] = {}
@@ -1626,11 +1544,6 @@ class ProcessingWorker:
             finally:
                 stop_event.set()
                 await heartbeat
-        # The merge runs even when nothing was described, because it is what
-        # guarantees that no marker survives into the text that gets
-        # embedded. A marker left in there would be embedded as leftover
-        # syntax and would tell a reader that a picture was where there is
-        # only a picture's name.
         chunks = merge_descriptions(
             extraction.chunks,
             descriptions,
@@ -1647,13 +1560,8 @@ class ProcessingWorker:
     ) -> dict[str, str]:
         """Describe every picture, a few at a time.
 
-        The calls are gathered rather than run one after another because a
-        document with twenty figures would otherwise spend twenty round
-        trips doing it. The cap is the worker's, not this stage's: two runs
-        describing at once must share one budget of in-flight requests to
-        the model, or a busy worker would open twice that many connections.
-        The whole stage is under the processing timeout so a model that
-        never answers cannot hold the run forever.
+        The concurrency cap belongs to the worker, not this stage: two runs
+        describing at once share one budget of in-flight requests.
         """
 
         async def describe_one(image: ExtractedImage) -> str:
@@ -1724,8 +1632,7 @@ class ProcessingWorker:
     ) -> None:
         """Extend the run's lease until the caller's work is done.
 
-        A missing token can never match a row, so a heartbeat started before
-        the lease was claimed simply never renews and exits on its first
+        A missing token matches no row, so the heartbeat exits on its first
         tick -- the same outcome as losing the lease.
         """
         interval = max(1.0, self._settings.processing_lease_seconds / 3)

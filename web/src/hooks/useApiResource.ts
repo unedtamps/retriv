@@ -62,8 +62,6 @@ export function useApiResource<T>(
       })
 
     return () => controller.abort()
-    // The loader is a closure over the values that identify the request, so
-    // the caller's dependency list is what decides when it runs again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, refreshKey])
 

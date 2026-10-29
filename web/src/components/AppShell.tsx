@@ -295,7 +295,7 @@ function Navigation({
 
       <div className="border-b border-line px-3 py-3">
         <p className="px-2 eyebrow">Current workspace</p>
-        <div className="mt-2 flex items-center gap-2.5 rounded-[0.65rem] bg-sunken/70 px-2.5 py-2">
+        <div className="mt-2 flex items-center gap-2.5 rounded-card bg-sunken/70 px-2.5 py-2">
           <Avatar
             name={selectedWorkspace?.name ?? 'Retriv'}
             seed={selectedWorkspace?.id ?? 'retriv'}
@@ -383,7 +383,7 @@ function Navigation({
               <li key={workspace.id}>
                 <button
                   type="button"
-                  className={`flex w-full items-center gap-2.5 rounded-[0.55rem] px-2.5 py-2 text-left text-sm transition-colors ${
+                  className={`flex w-full items-center gap-2.5 rounded-card px-2.5 py-2 text-left text-sm transition-colors ${
                     selected
                       ? 'bg-accent-soft text-accent-ink'
                       : 'text-ink-muted hover:bg-sunken hover:text-ink'

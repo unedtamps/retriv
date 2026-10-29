@@ -208,9 +208,7 @@ def workspace_response(
     )
 
 
-def member_response(
-    membership: WorkspaceMembership, user: User
-) -> WorkspaceMemberResponse:
+def member_response(membership: WorkspaceMembership, user: User) -> WorkspaceMemberResponse:
     return WorkspaceMemberResponse(
         user_id=user.id,
         username=user.username,

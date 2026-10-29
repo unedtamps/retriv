@@ -41,12 +41,14 @@ def _user_insert(session: AsyncSession, values: dict[str, Any]) -> Any:
     """
     dialect = session.get_bind().dialect.name
     if dialect == "sqlite":
-        return sqlite_insert(User).values(**values).on_conflict_do_nothing(
-            index_elements=["username"]
+        return (
+            sqlite_insert(User).values(**values).on_conflict_do_nothing(index_elements=["username"])
         )
     if dialect == "postgresql":
-        return postgresql_insert(User).values(**values).on_conflict_do_nothing(
-            index_elements=["username"]
+        return (
+            postgresql_insert(User)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=["username"])
         )
     return insert(User).values(**values)
 
@@ -67,9 +69,7 @@ async def ensure_bootstrap_admin(
         return
 
     async with sessions() as session, session.begin():
-        user = await session.scalar(
-            select(User).where(User.username == username).with_for_update()
-        )
+        user = await session.scalar(select(User).where(User.username == username).with_for_update())
         if user is None:
             password_hash = await to_thread.run_sync(hash_password, password)
             statement = _user_insert(
@@ -85,8 +85,6 @@ async def ensure_bootstrap_admin(
             if int(getattr(result, "rowcount", 0) or 0) == 1:
                 logger.info("Created bootstrap administrator %r", username)
                 return
-            # Another replica created it between the read and the insert.
-            # Read the row it wrote and carry on to the password check.
             user = await session.scalar(
                 select(User).where(User.username == username).with_for_update()
             )

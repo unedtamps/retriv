@@ -17,21 +17,12 @@ def format_context(sources: list[ContextSource], indices: dict[UUID, int]) -> st
         index = indices[source.chunk_id]
         pages = ", ".join(str(page) for page in source.page_numbers) or "unknown"
         filename = json.dumps(source.filename or "unknown", ensure_ascii=True)
-        # The heading path is what lets the reader tell "Pasal 16" from
-        # "Pasal 16 of a different regulation". Omitted when the source has no
-        # section, which is the case for CSV rows.
         section = (
             f" section={json.dumps(source.section_path, ensure_ascii=True)}"
             if source.section_path
             else ""
         )
-        # A bare heading is a signpost, not an answer. Saying so stops the reader
-        # treating a source that reads like a title as the document having no
-        # content, which is the misreading section completion exists to prevent.
         kind = " kind=heading" if source.is_heading_only else ""
-        # ordinal is what read_document takes as start_ordinal. Without it a
-        # reader that wants to continue from a hit has to guess where to start,
-        # which is the guessing this label exists to end.
         sections.append(
             f"[{index}] filename={filename}{section}{kind} ordinal={source.ordinal} "
             f"workspace_id={source.workspace_id} "
@@ -41,9 +32,7 @@ def format_context(sources: list[ContextSource], indices: dict[UUID, int]) -> st
     return "\n\n".join(sections)
 
 
-def navigation_hint(
-    sources: list[ContextSource], indices: dict[UUID, int]
-) -> str:
+def navigation_hint(sources: list[ContextSource], indices: dict[UUID, int]) -> str:
     """Tell the reader exactly what to call when a hit is a heading, or "".
 
     Only rendered when a heading-only chunk was actually returned. A hint shown

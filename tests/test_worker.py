@@ -257,7 +257,7 @@ class FakeVectorStore(VectorStore):
         workspace_ids: list[UUID],
         embedding_profile: str,
         limit: int,
-    ) -> list[VectorMatch]:  # pragma: no cover - the worker never searches
+    ) -> list[VectorMatch]:
         raise NotImplementedError
 
     async def aclose(self) -> None:
@@ -360,12 +360,10 @@ async def test_worker_indexes_a_document_end_to_end(
     assert finished.embedded_chunk_count == 1
     assert [chunk.text for chunk in chunks] == ["Extracted paragraph one."]
     assert all(embedding.status == EMBEDDING_INDEXED for embedding in embeddings)
-    # the artifact landed under the workspace/document prefix
     assert any(
         key.startswith(f"workspaces/{entities.finance.id}/documents/{document.id}/")
         for _bucket, key in storage.objects
     )
-    # and the vector is in the store, carrying the workspace link array
     assert len(vectors.points) == 1
     point = next(iter(vectors.points.values()))
     assert point.payload["origin_workspace_id"] == str(entities.finance.id)
@@ -636,12 +634,8 @@ async def test_an_embedding_error_schedules_a_backoff(
 
     assert run is not None
     assert run.status in {RUN_RETRY_WAIT, RUN_EXTRACTING}
-    # the chunks are persisted, so a retry resumes at embedding
     assert len(embeddings) == 1
     assert embeddings[0].status == EMBEDDING_RETRY_WAIT
-
-
-# --- the delete path ----------------------------------------------------
 
 
 async def test_delete_removes_vectors_before_the_document_row(
@@ -663,10 +657,8 @@ async def test_delete_removes_vectors_before_the_document_row(
     indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await indexer.run_once() is True
 
-    # the document is now indexed and has a real vector
     assert len(vectors.points) == 1
 
-    # queue the delete the way the route does
     from app.processing.service import enqueue_delete
 
     async with db_session_factory() as session, session.begin():
@@ -736,7 +728,6 @@ async def test_delete_cancels_an_extraction_still_in_flight(
     assert cancelled.status == RUN_CANCELLED
     assert delete_run is not None
     assert delete_run.status == RUN_QUEUED
-    # re-read: the tombstone was written in another session
     async with db_session_factory() as session:
         reloaded = await session.get(Document, document.id)
     assert reloaded is not None
@@ -791,8 +782,6 @@ async def test_a_tombstone_sweep_removes_leaked_artifacts(
         stored.deleted_at = datetime.now(UTC)
 
     worker = build_worker(db_session_factory, settings, storage=storage)
-    # The sweep runs before the claim, so the leaked artifact is removed
-    # even though a run is still waiting to be picked up.
     await worker.run_once()
 
     assert any(
@@ -818,7 +807,6 @@ async def test_embedding_backfill_requeues_a_run_left_half_indexed(
     indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     await indexer.run_once()
 
-    # rewind to the state a crash would leave
     async with db_session_factory() as session, session.begin():
         for embedding in (
             await session.scalars(
@@ -873,8 +861,6 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
         assert stored_run is not None
         stored_run.embedded_chunk_count = 0
 
-        # Older and already fully indexed: the pre-fix sweep selected these
-        # first and stopped at the window, never reaching the run above.
         finished = datetime.now(UTC) - timedelta(days=1)
         for index in range(100):
             finished_run_id = uuid4()
@@ -924,17 +910,6 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
     assert [embedding.status for embedding in embeddings] == [EMBEDDING_INDEXED]
 
 
-# -- CSV -----------------------------------------------------------------
-#
-# A CSV is stored as rows and deliberately never embedded. These tests pin
-# that: the columns these files carry are numeric, so a vector per row buys
-# noise at 16KB each and finds nothing a filter would not. The load-bearing
-# part is the activation gate, which used to reject these documents twice
-# over -- rows with no vectors failed `indexed_count != chunk_count`, and a
-# run with no chunks at all failed `not chunk_count` -- and reported both as
-# a missing embedding, naming neither cause.
-
-
 async def test_worker_stores_csv_rows_and_never_embeds_them(
     db_session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
@@ -978,8 +953,6 @@ async def test_worker_stores_csv_rows_and_never_embeds_them(
     assert stored.row_count == 3
     assert stored.chunk_count == 0
     assert stored.embedded_chunk_count == 0
-    # The header is what labels each cell when a query comes back, so it has
-    # to be on the run rather than repeated across every row.
     assert stored.csv_columns == ["id", "status", "amount", "currency"]
     assert embeddings.embedded == []
     assert vectors.points == {}
@@ -1051,7 +1024,6 @@ async def test_a_reingest_removes_the_superseded_rows(
     worker = build_worker(db_session_factory, settings, storage=storage)
     assert await worker.run_once() is True
 
-    # A second run over the same document, as a superseding upload makes.
     second = ProcessingRun(
         id=uuid4(),
         document_id=document.id,
@@ -1114,7 +1086,6 @@ async def test_a_retry_of_the_same_run_reuses_row_ids(
             ).scalars()
         )
 
-    # Put the same run back in the queue, as a retry does.
     async with db_session_factory() as session, session.begin():
         stored = await session.get(ProcessingRun, run.id)
         assert stored is not None
@@ -1253,9 +1224,6 @@ async def test_deleting_a_csv_document_removes_its_rows(
     assert remaining == []
 
 
-# --- the vision stage ----------------------------------------------------
-
-
 def an_extracted_image(ref: str = "#/pictures/0") -> ExtractedImage:
     return ExtractedImage(
         ref=ref,
@@ -1312,10 +1280,8 @@ async def test_a_picture_description_is_folded_into_the_chunk_that_held_it(
     assert finished.status == RUN_READY
     assert len(chunks) == 1
     assert "A description of #/pictures/0." in chunks[0].text
-    # and the description is what was embedded, not the picture's absence
     assert len(embeddings.embedded) == 1
     assert "A description of #/pictures/0." in embeddings.embedded[0]
-    # the model is told where the picture sits, so it can describe it in context
     assert vision.described == ["#/pictures/0"]
     assert "Figure 1: Net revenue by segment." in vision.contexts[0]
 
@@ -1434,7 +1400,6 @@ async def test_the_picture_stage_is_skipped_when_it_is_switched_off(
     assert finished is not None
     assert finished.status == RUN_READY
     assert vision.described == []
-    # and the marker never reaches the text that gets embedded
     assert "PICTURE" not in chunks[0].text
     assert chunks[0].text == "Body text.\n[Image]"
 
@@ -1557,23 +1522,8 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
     assert set(point.payload["workspace_ids"]) == expected
 
 
-# --- concurrent runs -------------------------------------------------------
-#
-# The worker carries several runs at once and gates the parser sandbox
-# separately from the pipeline. These tests observe that overlap directly:
-# the fake parser blocks inside a worker thread (the shape the real sandbox
-# has), and the fakes that stand in for the network stages block on events
-# the test holds, so "the next document started parsing while this one was
-# still being indexed" is an assertion, not a race.
-
-
 class GatedExtractor:
-    """An extractor whose parse blocks until the test releases it.
-
-    ``extract`` runs in a thread the worker does not wait on the event loop
-    for, so blocking there freezes exactly one pipeline while the loop keeps
-    claiming. The concurrency counter is what the slot-cap assertions read.
-    """
+    """An extractor whose parse blocks in a worker thread until released."""
 
     def __init__(self) -> None:
         self._gate = threading.Event()
@@ -1686,13 +1636,9 @@ class SplitExtractor:
 async def concurrent_session_factory(
     tmp_path: Path,
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """A file-backed sqlite engine for tests that run pipelines concurrently.
-
-    The shared in-memory ``StaticPool`` hands every session the same
-    connection, which two interleaved transactions cannot honestly share.
-    A file database gives each session its own connection, and WAL plus a
-    busy timeout let the writers take turns instead of erroring.
-    """
+    """A file-backed sqlite engine: concurrent pipelines need real
+    per-session connections, which the shared in-memory StaticPool cannot
+    give."""
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{tmp_path / 'worker-concurrent.db'}",
         connect_args={"check_same_thread": False, "timeout": 30.0},
@@ -1794,8 +1740,7 @@ async def test_a_second_document_starts_parsing_while_the_first_is_still_indexin
     stop_event = asyncio.Event()
     runner = asyncio.create_task(worker.run(stop_event))
     try:
-        # One document holds the parse; the other is claimed and waits for
-        # the slot instead of the queue.
+
         async def one_parsing_one_waiting() -> bool:
             statuses = {
                 await run_status(session_factory, first_run.id),
@@ -1811,8 +1756,6 @@ async def test_a_second_document_starts_parsing_while_the_first_is_still_indexin
             message="second run to be claimed while the first parses",
         )
 
-        # Let the parse finish. The other document starts parsing before
-        # either run reaches ready -- the embeddings are held on purpose.
         extractor.release()
 
         async def second_parse_started() -> bool:

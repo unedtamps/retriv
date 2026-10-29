@@ -159,7 +159,7 @@ function BootScreen() {
   return (
     <main className="flex min-h-svh items-center justify-center bg-paper">
       <div className="text-center">
-        <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-card bg-accent text-accent-ink">
+        <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-card bg-accent text-white">
           <BrandMark size={19} />
         </span>
         <LoaderCircle className="mx-auto mt-4 animate-spin text-ink-faint" aria-hidden="true" size={22} />

@@ -151,9 +151,7 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_processing_runs_dispatch"), "processing_runs", ["status", "available_at"]
     )
-    op.create_index(
-        op.f("ix_processing_runs_lease"), "processing_runs", ["status", "lease_until"]
-    )
+    op.create_index(op.f("ix_processing_runs_lease"), "processing_runs", ["status", "lease_until"])
     op.create_index(op.f("ix_processing_runs_document"), "processing_runs", ["document_id"])
     op.create_index(
         op.f("ix_processing_runs_workspace_created"),
@@ -191,21 +189,14 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_documents")),
         sa.UniqueConstraint("object_key", name=op.f("uq_documents_object_key")),
-        sa.UniqueConstraint(
-            "workspace_id", "sha256", name="uq_documents_workspace_sha256"
-        ),
+        sa.UniqueConstraint("workspace_id", "sha256", name="uq_documents_workspace_sha256"),
     )
     op.create_index(op.f("ix_documents_workspace_id"), "documents", ["workspace_id"])
     op.create_index(op.f("ix_documents_created_by_user_id"), "documents", ["created_by_user_id"])
-    op.create_index(
-        op.f("ix_documents_active_run"), "documents", ["active_processing_run_id"]
-    )
+    op.create_index(op.f("ix_documents_active_run"), "documents", ["active_processing_run_id"])
     op.create_index(
         op.f("ix_documents_workspace_created"), "documents", ["workspace_id", "created_at"]
     )
-    # Created after documents so the foreign key resolves. Intentionally
-    # has no constraint: processing_runs.document_id already points at
-    # documents, so a second one would make the pair circular.
     op.create_foreign_key(
         op.f("fk_processing_runs_document_id_documents"),
         "processing_runs",
@@ -250,9 +241,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_document_chunks")),
-        sa.UniqueConstraint(
-            "processing_run_id", "ordinal", name="uq_document_chunks_run_ordinal"
-        ),
+        sa.UniqueConstraint("processing_run_id", "ordinal", name="uq_document_chunks_run_ordinal"),
     )
     op.create_index(
         op.f("ix_document_chunks_document"),
@@ -293,9 +282,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("chunk_id", "embedding_profile", name=op.f("pk_chunk_embeddings")),
-        sa.UniqueConstraint(
-            "qdrant_point_id", name="uq_chunk_embeddings_qdrant_point_id"
-        ),
+        sa.UniqueConstraint("qdrant_point_id", name="uq_chunk_embeddings_qdrant_point_id"),
     )
     op.create_index(
         op.f("ix_chunk_embeddings_dispatch"),
@@ -411,9 +398,7 @@ def upgrade() -> None:
         ["migration_id"],
         unique=True,
     )
-    op.create_index(
-        op.f("ix_provisioning_runs_created_at"), "provisioning_runs", ["created_at"]
-    )
+    op.create_index(op.f("ix_provisioning_runs_created_at"), "provisioning_runs", ["created_at"])
 
 
 def downgrade() -> None:

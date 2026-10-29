@@ -114,9 +114,6 @@ class _S3Client:
                 signature_version="s3v4",
                 retries={"mode": "standard", "total_max_attempts": 4},
                 s3={"addressing_style": addressing_style},
-                # R2 rejects the checksum headers boto3 now adds by default.
-                # Asking for them only when the operation requires one keeps
-                # the same client working against AWS, R2 and self-hosted S3.
                 request_checksum_calculation="when_required",
                 response_checksum_validation="when_required",
                 connect_timeout=5,
@@ -177,26 +174,19 @@ class S3ObjectStorage(_S3Client):
         except ClientError as exc:
             error_code = exc.response.get("Error", {}).get("Code", "")
             if error_code in {"PreconditionFailed", "412"}:
-                self._verify_existing_object(
-                    path, bucket=bucket, key=key, sha256=sha256
-                )
+                self._verify_existing_object(path, bucket=bucket, key=key, sha256=sha256)
                 return
             raise StorageError("Object upload failed") from exc
         except (BotoCoreError, OSError) as exc:
             raise StorageError("Object upload failed") from exc
 
-    def _verify_existing_object(
-        self, path: Path, *, bucket: str, key: str, sha256: str
-    ) -> None:
+    def _verify_existing_object(self, path: Path, *, bucket: str, key: str, sha256: str) -> None:
         try:
             response = self._client.head_object(Bucket=bucket, Key=key)
         except (BotoCoreError, ClientError) as exc:
             raise StorageError("Existing object could not be verified") from exc
         metadata = response.get("Metadata", {})
-        if (
-            metadata.get("sha256") != sha256
-            or response.get("ContentLength") != path.stat().st_size
-        ):
+        if metadata.get("sha256") != sha256 or response.get("ContentLength") != path.stat().st_size:
             raise StorageError("Object key collision detected")
 
     def open_object(self, *, bucket: str, key: str) -> ReadableObject:
@@ -284,9 +274,7 @@ class S3ArtifactStorage(_S3Client):
                 while chunk := stream.read(1024 * 1024):
                     total_bytes += len(chunk)
                     if total_bytes > max_bytes:
-                        raise ObjectTooLargeError(
-                            "Source object exceeds the processing limit"
-                        )
+                        raise ObjectTooLargeError("Source object exceeds the processing limit")
                     digest.update(chunk)
                     output.write(chunk)
             return DownloadResult(size_bytes=total_bytes, sha256=digest.hexdigest())
@@ -345,9 +333,7 @@ class S3ArtifactStorage(_S3Client):
                     MaxKeys=1000,
                 )
                 objects = [
-                    {"Key": item["Key"]}
-                    for item in page.get("Contents", [])
-                    if item.get("Key")
+                    {"Key": item["Key"]} for item in page.get("Contents", []) if item.get("Key")
                 ]
                 if not objects:
                     return
@@ -361,9 +347,7 @@ class S3ArtifactStorage(_S3Client):
             raise StorageError("Artifact prefix deletion failed") from exc
 
 
-def iter_object(
-    stream: ReadableObject, chunk_size: int = 1024 * 1024
-) -> Iterator[bytes]:
+def iter_object(stream: ReadableObject, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
     try:
         while chunk := stream.read(chunk_size):
             yield chunk

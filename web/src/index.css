@@ -1,67 +1,58 @@
 @import "tailwindcss";
 
-/*
- * One palette, one type scale, and colour that carries meaning.
- *
- * Everything below is a token, so a change here changes the whole app. Lime
- * is the brand accent and is reserved for the primary action. Blue, teal,
- * amber, coral and violet identify workspace state and document status; they
- * are functional accents, not decoration. The status colours remain semantic
- * and are used for outcomes such as ready, failed and warning.
- */
 @theme {
-  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Fira Code", ui-monospace, monospace;
 
-  /* Surfaces, lightest to darkest. */
-  --color-paper: #f7f5ef;
+  
+  --color-paper: #ffffff;
   --color-surface: #ffffff;
-  --color-sunken: #f1efe8;
+  --color-sunken: #f4f6f8;
 
-  /* Lines. */
-  --color-line: #e5e2d8;
-  --color-line-strong: #ccc8ba;
+  
+  --color-line: #e2e6ea;
+  --color-line-strong: #c6cdd4;
 
-  /* Ink. */
-  --color-ink: #1c1e1a;
-  --color-ink-muted: #5d5f58;
-  --color-ink-faint: #8d8f88;
+  
+  --color-ink: #15222e;
+  --color-ink-muted: #4a5561;
+  --color-ink-faint: #8593a0;
 
-  /* The brand accent: one hue, two tones. */
-  --color-accent: #d9f15f;
-  --color-accent-soft: #f4f9dd;
-  --color-accent-ink: #47520f;
+  
+  --color-accent: #1f3a5c;
+  --color-accent-soft: #eef2f6;
+  --color-accent-ink: #16304d;
 
-  /* Functional accents. Each one has a meaning in the workspace view. */
-  --color-blue: #3b6fb6;
-  --color-blue-soft: #edf3fb;
-  --color-teal: #2f8f83;
-  --color-teal-soft: #eaf5f2;
-  --color-violet: #6f56a8;
-  --color-violet-soft: #f2eef9;
-  --color-coral: #b44b3f;
-  --color-coral-soft: #fbeeec;
-  --color-amber: #b7791f;
-  --color-amber-soft: #fdf5e4;
+  
+  --color-blue: #2f6aae;
+  --color-blue-soft: #ecf2f9;
+  --color-teal: #22756c;
+  --color-teal-soft: #e9f3f1;
+  --color-violet: #5c4a92;
+  --color-violet-soft: #f0edf8;
+  --color-coral: #a64438;
+  --color-coral-soft: #faeeec;
+  --color-amber: #986a1b;
+  --color-amber-soft: #faf3e2;
 
-  /* Status. Semantic, not brand. */
-  --color-danger: #a02c2c;
-  --color-danger-soft: #fdf1f1;
-  --color-success: #2f6b3a;
-  --color-success-soft: #eef5ef;
-  --color-warn: #8a5a12;
-  --color-warn-soft: #fbf4e6;
+  
+  --color-danger: #9c2b2b;
+  --color-danger-soft: #fbf0f0;
+  --color-success: #2a6335;
+  --color-success-soft: #edf4ee;
+  --color-warn: #82540f;
+  --color-warn-soft: #f9f2e3;
 
-  /* The type scale, once. */
+  
   --text-eyebrow: 0.6875rem;
   --text-eyebrow--line-height: 1rem;
   --tracking-eyebrow: 0.14em;
   --text-meta: 0.75rem;
   --text-meta--line-height: 1.1rem;
 
-  --radius-card: 0.65rem;
-  --shadow-card: 0 1px 2px rgb(28 30 26 / 0.05);
-  --shadow-raised: 0 18px 48px rgb(28 30 26 / 0.12);
+  --radius-card: 0.375rem;
+  --shadow-card: 0 1px 2px rgb(21 34 46 / 0.06);
+  --shadow-raised: 0 16px 40px rgb(21 34 46 / 0.16);
 }
 
 @layer base {
@@ -105,15 +96,10 @@
 
   ::selection {
     background: var(--color-accent);
-    color: var(--color-accent-ink);
+    color: #ffffff;
   }
 }
 
-/*
- * Nine classes carry the whole interface. Everything else is a Tailwind
- * utility over the tokens above, so a component is described once rather
- * than restated in a stylesheet.
- */
 @layer components {
   .btn,
   .btn-primary,
@@ -129,7 +115,7 @@
   }
 
   .btn-primary {
-    @apply border-accent bg-accent text-accent-ink hover:bg-accent/80;
+    @apply border-accent bg-accent text-white hover:bg-accent-ink;
   }
 
   .btn-secondary {
@@ -165,7 +151,7 @@
   }
 
   .table th {
-    @apply border-b border-line bg-sunken px-5 py-2.5 font-mono text-eyebrow font-semibold uppercase tracking-eyebrow text-ink-faint;
+    @apply border-b border-line-strong bg-sunken px-5 py-2.5 font-mono text-eyebrow font-semibold uppercase tracking-eyebrow text-ink-muted;
   }
 
   .table td {
@@ -181,11 +167,11 @@
   }
 
   .nav-link {
-    @apply flex cursor-pointer items-center gap-3 rounded-[0.55rem] px-2.5 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
+    @apply flex cursor-pointer items-center gap-3 rounded-[0.25rem] px-2.5 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
   }
 
   .nav-link-active {
-    @apply bg-accent-soft font-medium text-accent-ink;
+    @apply border-l-2 border-accent bg-accent-soft pl-2 font-medium text-accent-ink;
   }
 
   .choice {
@@ -217,15 +203,10 @@
   }
 
   .skip-link {
-    @apply fixed left-3 top-3 z-[100] -translate-y-20 rounded-card bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition-transform focus:translate-y-0;
+    @apply fixed left-3 top-3 z-[100] -translate-y-20 rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white transition-transform focus:translate-y-0;
   }
 }
 
-/*
- * The dialog and the drawer are native <dialog> elements, so the modal
- * behaviour, the focus trap and the top layer come from the browser. What
- * is left is the shape.
- */
 .app-dialog {
   width: min(calc(100% - 2rem), 34rem);
   max-height: min(90svh, 54rem);
@@ -238,7 +219,7 @@
 }
 
 .app-dialog::backdrop {
-  background: rgb(28 30 26 / 0.45);
+  background: rgb(21 34 46 / 0.5);
   backdrop-filter: blur(2px);
 }
 

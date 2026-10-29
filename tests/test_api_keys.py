@@ -44,9 +44,7 @@ async def test_mint_stores_hash_not_plaintext(
     entities: SeededEntities,
 ) -> None:
     async with db_session_factory() as session:
-        minted = await mint_api_key(
-            session, user_id=entities.user.id, name="ci-agent"
-        )
+        minted = await mint_api_key(session, user_id=entities.user.id, name="ci-agent")
         await session.commit()
 
         stored = await session.get(ApiKey, minted.record.id)
@@ -63,9 +61,7 @@ async def test_authenticate_resolves_owner_and_rejects_junk(
     entities: SeededEntities,
 ) -> None:
     async with db_session_factory() as session:
-        minted = await mint_api_key(
-            session, user_id=entities.user.id, name="local"
-        )
+        minted = await mint_api_key(session, user_id=entities.user.id, name="local")
         await session.commit()
 
         user = await authenticate_api_key(session, minted.plaintext)
@@ -82,9 +78,7 @@ async def test_revoked_key_authenticates_no_more(
     entities: SeededEntities,
 ) -> None:
     async with db_session_factory() as session:
-        minted = await mint_api_key(
-            session, user_id=entities.user.id, name="to-revoke"
-        )
+        minted = await mint_api_key(session, user_id=entities.user.id, name="to-revoke")
         record = await session.get(ApiKey, minted.record.id)
         assert record is not None
         record.revoked_at = datetime.now(UTC)
@@ -133,9 +127,7 @@ async def test_listing_never_returns_key_material(
 async def test_created_key_is_returned_once_with_warning(
     client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    response = await client.post(
-        "/v1/api-keys", json={"name": "  spaced  "}, headers=auth_headers
-    )
+    response = await client.post("/v1/api-keys", json={"name": "  spaced  "}, headers=auth_headers)
 
     assert response.status_code == 201
     body = response.json()
@@ -148,9 +140,7 @@ async def test_created_key_is_returned_once_with_warning(
 async def test_blank_name_is_rejected(
     client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    response = await client.post(
-        "/v1/api-keys", json={"name": "   "}, headers=auth_headers
-    )
+    response = await client.post("/v1/api-keys", json={"name": "   "}, headers=auth_headers)
 
     assert response.status_code == 422
 
@@ -164,9 +154,7 @@ async def test_revoke_requires_authentication(client: httpx.AsyncClient) -> None
 async def test_revoke_removes_the_key_and_is_idempotent_for_the_owner(
     client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    created = await client.post(
-        "/v1/api-keys", json={"name": "revoke me"}, headers=auth_headers
-    )
+    created = await client.post("/v1/api-keys", json={"name": "revoke me"}, headers=auth_headers)
     key_id = created.json()["id"]
 
     first = await client.delete(f"/v1/api-keys/{key_id}", headers=auth_headers)
@@ -181,12 +169,9 @@ async def test_cannot_revoke_another_users_key(
     auth_headers: dict[str, str],
     entities: SeededEntities,
 ) -> None:
-    created = await client.post(
-        "/v1/api-keys", json={"name": "alice key"}, headers=auth_headers
-    )
+    created = await client.post("/v1/api-keys", json={"name": "alice key"}, headers=auth_headers)
     key_id = created.json()["id"]
 
-    # Bob's credentials: the key exists, but it is not his.
     login = await client.post(
         "/v1/auth/token",
         data={"username": "bob", "password": "another-correct-password"},
@@ -226,15 +211,11 @@ async def test_minted_key_resolves_to_owner_through_dependency(
     entities: SeededEntities,
 ) -> None:
     """End-to-end: mint over REST, then authenticate the plaintext."""
-    created = await client.post(
-        "/v1/api-keys", json={"name": "mcp"}, headers=auth_headers
-    )
+    created = await client.post("/v1/api-keys", json={"name": "mcp"}, headers=auth_headers)
     plaintext = created.json()["key"]
 
     async with db_session_factory() as session:
-        user = await authenticate_api_key(
-            session, bearer_api_key(f"Bearer {plaintext}")
-        )
+        user = await authenticate_api_key(session, bearer_api_key(f"Bearer {plaintext}"))
     assert user is not None
     assert user.username == "alice"
 
@@ -257,9 +238,7 @@ async def test_inactive_user_cannot_mint_keys(
         await session.merge(entities.user)
         await session.commit()
 
-    response = await client.post(
-        "/v1/api-keys", json={"name": "nope"}, headers=auth_headers
-    )
+    response = await client.post("/v1/api-keys", json={"name": "nope"}, headers=auth_headers)
 
     assert response.status_code == 401
 
@@ -269,18 +248,14 @@ async def test_users_see_only_their_own_keys(
     auth_headers: dict[str, str],
     entities: SeededEntities,
 ) -> None:
-    await client.post(
-        "/v1/api-keys", json={"name": "alice-1"}, headers=auth_headers
-    )
+    await client.post("/v1/api-keys", json={"name": "alice-1"}, headers=auth_headers)
 
     login = await client.post(
         "/v1/auth/token",
         data={"username": "bob", "password": "another-correct-password"},
     )
     bob_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-    await client.post(
-        "/v1/api-keys", json={"name": "bob-1"}, headers=bob_headers
-    )
+    await client.post("/v1/api-keys", json={"name": "bob-1"}, headers=bob_headers)
 
     alice_list = await client.get("/v1/api-keys", headers=auth_headers)
     bob_list = await client.get("/v1/api-keys", headers=bob_headers)
@@ -305,7 +280,6 @@ async def test_touch_throttles_last_used_writes(
         first_write = record.last_used_at
         assert first_write is not None
 
-    # Backdate past the window: the next authentication must move it.
     async with db_session_factory() as session:
         record = await session.get(ApiKey, minted.record.id)
         assert record is not None
@@ -317,7 +291,6 @@ async def test_touch_throttles_last_used_writes(
         record = await session.get(ApiKey, minted.record.id)
         assert record is not None
         assert record.last_used_at is not None
-        # SQLite hands back naive datetimes; normalise before comparing.
         seen = record.last_used_at
         if seen.tzinfo is None:
             seen = seen.replace(tzinfo=UTC)
@@ -383,9 +356,7 @@ async def test_get_bearer_user_accepts_an_api_key(
     async with db_session_factory() as session:
         key = await mint_api_key(session, user_id=entities.user.id, name="agent")
         await session.commit()
-        user = await get_bearer_user(
-            f"Bearer {key.plaintext}", session=session, settings=settings
-        )
+        user = await get_bearer_user(f"Bearer {key.plaintext}", session=session, settings=settings)
     assert user.username == "alice"
 
 
@@ -408,9 +379,7 @@ async def test_get_bearer_user_rejects_a_revoked_key(
     settings: Settings,
     entities: SeededEntities,
 ) -> None:
-    created = await client.post(
-        "/v1/api-keys", json={"name": "agent"}, headers=auth_headers
-    )
+    created = await client.post("/v1/api-keys", json={"name": "agent"}, headers=auth_headers)
     async with db_session_factory() as session:
         record = await session.scalar(
             select(ApiKey).where(ApiKey.key_hash == hash_api_key(created.json()["key"]))

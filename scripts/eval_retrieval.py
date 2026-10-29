@@ -87,22 +87,11 @@ class EvalError(Exception):
 @dataclass(frozen=True)
 class QueryOutcome:
     query: str
-    # 1-based position among similarity matches, None when the expected chunk
-    # did not clear the threshold at all.
     rank: int | None
-    # Whether the expected chunk reached the expanded output the model sees.
     in_final: bool
     matches: int
     final: int
-    # Position among similarity matches in a deliberately over-fetched search.
-    # None when the probe did not run or the expected chunk still did not
-    # surface. This is what separates "the ranker put it in the wrong place"
-    # from "the vector search never had it": a reranker can only reorder what
-    # stage one returned, so recall at depth bounds every reordering method.
     deep_rank: int | None = None
-    # Returned ids keep a miss auditable: without them, deciding whether the
-    # expected chunk lost to a wrong match or to a legitimate duplicate answer
-    # means digging through the database again.
     matched_ids: tuple[str, ...] = ()
     final_ids: tuple[str, ...] = ()
     error: str | None = None
@@ -114,11 +103,7 @@ async def generate(args: argparse.Namespace) -> int:
     try:
         async with engine.connect() as connection:
             if args.seed is not None:
-                # PostgreSQL's random() is seeded per session, so the same seed
-                # samples the same chunks for a repeatable golden set.
-                await connection.execute(
-                    text("SELECT setseed(:seed)"), {"seed": args.seed}
-                )
+                await connection.execute(text("SELECT setseed(:seed)"), {"seed": args.seed})
             rows = (
                 (
                     await connection.execute(
@@ -134,8 +119,7 @@ async def generate(args: argparse.Namespace) -> int:
 
     if not rows:
         raise EvalError(
-            "No indexed chunks were found. Ingest a document first, or lower "
-            "--min-tokens."
+            "No indexed chunks were found. Ingest a document first, or lower --min-tokens."
         )
 
     queries: list[dict[str, str]] = []
@@ -165,16 +149,12 @@ async def generate(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _write_question(
-    client: httpx.AsyncClient, model: str, passage: str
-) -> str:
+async def _write_question(client: httpx.AsyncClient, model: str, passage: str) -> str:
     response = await client.post(
         "chat/completions",
         json={
             "model": model,
-            "messages": [
-                {"role": "user", "content": QUESTION_PROMPT.format(passage=passage)}
-            ],
+            "messages": [{"role": "user", "content": QUESTION_PROMPT.format(passage=passage)}],
             "temperature": 0.2,
             "max_tokens": 120,
         },
@@ -194,9 +174,7 @@ async def _write_question(
 async def run(args: argparse.Namespace) -> int:
     golden_path = Path(args.queries)
     if not await asyncio.to_thread(golden_path.exists):
-        raise EvalError(
-            f"{golden_path} does not exist. Run the generate step first."
-        )
+        raise EvalError(f"{golden_path} does not exist. Run the generate step first.")
     golden = json.loads(await asyncio.to_thread(golden_path.read_text))
     queries = golden.get("queries", [])
     if not queries:
@@ -211,11 +189,7 @@ async def run(args: argparse.Namespace) -> int:
     if args.expand_width is not None:
         overrides["section_expand_chunks"] = args.expand_width
     settings = settings.model_copy(update=overrides)
-    # The raw pass disables section completion so a completed chunk cannot stand
-    # in for a similarity match that was missed.
     raw_settings = settings.model_copy(update={"section_expand_chunks": 0})
-    # A budget the MCP tool would never grant, so the probe measures what stage
-    # one could have found rather than what it was allowed to return.
     probe_settings = raw_settings.model_copy(update={"max_context_sources": 10_000})
 
     engine = create_async_engine(settings.database_url)
@@ -303,9 +277,7 @@ def _uuid_field(item: dict[str, str], field: str, path: Path) -> UUID:
         ) from exc
 
 
-def _report(
-    outcomes: list[QueryOutcome], settings: Settings, args: argparse.Namespace
-) -> None:
+def _report(outcomes: list[QueryOutcome], settings: Settings, args: argparse.Namespace) -> None:
     width = min(max(len(outcome.query) for outcome in outcomes), 60)
     print(
         f"\nlimit={settings.max_context_chunks} "
@@ -315,11 +287,7 @@ def _report(
     )
     for outcome in outcomes:
         rank = "  -" if outcome.rank is None else f"{outcome.rank:>3}"
-        deep = (
-            "  -"
-            if outcome.deep_rank is None
-            else f"{outcome.deep_rank:>3}"
-        )
+        deep = "  -" if outcome.deep_rank is None else f"{outcome.deep_rank:>3}"
         state = "error" if outcome.error else ("hit" if outcome.in_final else "miss")
         print(
             f"rank={rank}  deep={deep}  {state:<5}  "
@@ -337,9 +305,7 @@ def _report(
         "recall@1": sum(1 for outcome in outcomes if outcome.rank == 1) / total,
         f"recall@{settings.max_context_chunks}": len(ranked) / total,
         "mrr": sum(1.0 / outcome.rank for outcome in ranked if outcome.rank) / total,
-        "in_final_output": (
-            sum(1 for outcome in outcomes if outcome.in_final) / total
-        ),
+        "in_final_output": (sum(1 for outcome in outcomes if outcome.in_final) / total),
         "section_completion_only_hits": sum(
             1 for outcome in outcomes if outcome.rank is None and outcome.in_final
         ),
@@ -391,9 +357,7 @@ def _report(
 def _model_client(settings: Settings) -> httpx.AsyncClient:
     return httpx.AsyncClient(
         base_url=f"{settings.embedding_base_url.rstrip('/')}/",
-        headers={
-            "Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"
-        },
+        headers={"Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"},
         timeout=settings.embedding_timeout_seconds,
     )
 
@@ -404,9 +368,7 @@ def main() -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    generate_parser = subparsers.add_parser(
-        "generate", help="write questions from sampled chunks"
-    )
+    generate_parser = subparsers.add_parser("generate", help="write questions from sampled chunks")
     generate_parser.add_argument(
         "--chat-model", required=True, help="model id to ask for questions"
     )
@@ -422,9 +384,7 @@ def main() -> int:
     )
     generate_parser.add_argument("--out", default=str(DEFAULT_GOLDEN))
 
-    run_parser = subparsers.add_parser(
-        "run", help="replay a golden set through the retriever"
-    )
+    run_parser = subparsers.add_parser("run", help="replay a golden set through the retriever")
     run_parser.add_argument("--queries", default=str(DEFAULT_GOLDEN))
     run_parser.add_argument("--limit", type=int, default=None)
     run_parser.add_argument("--min-score", type=float, default=None)

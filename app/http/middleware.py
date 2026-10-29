@@ -57,9 +57,7 @@ class UploadSizeLimitMiddleware:
         too_large = False
         timed_out = False
         response_messages: list[Message] = []
-        deadline = (
-            asyncio.get_running_loop().time() + self.settings.request_read_timeout_seconds
-        )
+        deadline = asyncio.get_running_loop().time() + self.settings.request_read_timeout_seconds
 
         async def limited_receive() -> Message:
             nonlocal received_bytes, timed_out, too_large
@@ -69,9 +67,7 @@ class UploadSizeLimitMiddleware:
                 remaining_seconds = deadline - asyncio.get_running_loop().time()
                 if remaining_seconds <= 0:
                     raise TimeoutError
-                message = await asyncio.wait_for(
-                    receive(), timeout=remaining_seconds
-                )
+                message = await asyncio.wait_for(receive(), timeout=remaining_seconds)
             except TimeoutError:
                 timed_out = True
                 return {"type": "http.disconnect"}

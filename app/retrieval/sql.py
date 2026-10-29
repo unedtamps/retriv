@@ -33,12 +33,9 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-if TYPE_CHECKING:  # avoids a cycle: the agent imports this module
+if TYPE_CHECKING:
     from app.retrieval.schemas import ContextSource
 
-# The columns a returned row is built from. A row that does not carry all of
-# them is dropped: an aggregate projects a count and no id, so there is
-# nothing to cite and nothing to render.
 _REQUIRED_COLUMNS = (
     "id",
     "origin_workspace_id",
@@ -49,14 +46,8 @@ _REQUIRED_COLUMNS = (
 )
 _ALLOWED_TABLES = frozenset({"document_rows", "documents"})
 
-# The catalogue the model reads before writing a query. `processing_runs` is
-# deliberately absent: the wrapper reads it to learn a file's columns, but the
-# model has no use for it and it carries lease_token and last_error.
 CATALOGUE_PAGE = 100
 
-# Read every reference after FROM or JOIN, including inside subqueries, so a
-# nested read cannot slip past. A name declared as a CTE is not a table and is
-# added to the allowed set before this runs.
 _TABLE_REFERENCE = re.compile(r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_.]*)", re.IGNORECASE)
 _CTE_NAME = re.compile(r"(?:\bwith\b|,)\s*([A-Za-z_][A-Za-z0-9_]*)\s+as\s*\(", re.IGNORECASE)
 _STATEMENT_END = re.compile(r";\s*\S")
@@ -98,10 +89,6 @@ class RowResult:
             score=1.0,
             content_hash="",
             filename=filename,
-            # Empty on purpose. For a document this field is the heading path
-            # and useful; here it would be the CSV's column names, which the
-            # rendered text already carries and which the citation list only
-            # displays as a breadcrumb reading "id / status / amount".
             section_path=[],
             page_numbers=[],
             text=rendered,
@@ -113,9 +100,6 @@ class CatalogueEntry:
     """One CSV file the model is allowed to see and query."""
 
     document_id: UUID
-    # Carried so a computed result can be attributed to the workspace and run
-    # it came from. A zero UUID here would be written into persisted source
-    # references as if it were real provenance.
     workspace_id: UUID
     processing_run_id: UUID
     filename: str
@@ -138,8 +122,6 @@ class RowQueryResult:
     """What one statement produced, split by whether it can be cited."""
 
     sources: list[RowResult]
-    # Aggregate or grouped rows: no row identity, so no citation, but these
-    # are usually the answer itself.
     values: list[dict[str, Any]]
     columns: list[str]
 
@@ -314,9 +296,7 @@ class RowQuery:
                 "dedicated read-only role."
             )
 
-    async def run(
-        self, sql: str, *, workspace_ids: tuple[UUID, ...]
-    ) -> RowQueryResult:
+    async def run(self, sql: str, *, workspace_ids: tuple[UUID, ...]) -> RowQueryResult:
         """Run one statement, separating citable rows from computed values.
 
         Two different kinds of result come back and they must not be conflated.
@@ -328,16 +308,9 @@ class RowQuery:
         """
         self._validate(sql)
         if not workspace_ids:
-            # An empty scope hides every row through RLS, but saying so
-            # directly beats returning an empty result the model reads as
-            # "no such data".
             raise RowQueryError("No workspace scope was provided")
 
         scope = "{" + ",".join(str(workspace_id) for workspace_id in workspace_ids) + "}"
-        # Model-authored SQL is the point of the tool, so S608 is expected
-        # here. What makes it safe: a role with SELECT grants and no RLS
-        # bypass, a read-only transaction, and workspace scope applied by
-        # policy rather than by this text. The allowlist is the weakest layer.
         limited = (
             f"select * from ({sql.rstrip().rstrip(';')}) "  # noqa: S608
             f"as retriv_rows limit {self._max_result_rows}"
@@ -356,9 +329,7 @@ class RowQuery:
                 result = await connection.execute(text(limited))
                 rows = result.fetchall()
                 keys = tuple(result.keys())
-                link_scope = await self._link_scope_map(
-                    connection, rows, keys, workspace_ids
-                )
+                link_scope = await self._link_scope_map(connection, rows, keys, workspace_ids)
             except DBAPIError as exc:
                 raise RowQueryError(_explain(exc)) from exc
             finally:
@@ -413,14 +384,10 @@ class RowQuery:
         statement = sql.strip()
         if not statement:
             raise RowQueryError("The query is empty")
-        # A trailing semicolon is fine; a second statement is not.
         if _STATEMENT_END.search(statement):
             raise RowQueryError("Only a single statement may be run")
         if not statement.lower().startswith(("select", "with")):
             raise RowQueryError("Only SELECT queries may be run")
-        # A CTE name is referenced by FROM but is not a table. Allowing them
-        # does not widen what is readable: the body of each CTE is itself
-        # scanned, and grants and row-level security hold regardless.
         permitted = _ALLOWED_TABLES | {name.lower() for name in _CTE_NAME.findall(statement)}
         for table in _TABLE_REFERENCE.findall(statement):
             name = table.split(".")[-1].lower()
@@ -437,14 +404,7 @@ class RowQuery:
         values: list[dict[str, Any]] = []
         for row in rows:
             mapping = dict(zip(keys, row, strict=True))
-            # Extra columns are ignored rather than treated as a reason to
-            # drop the row. The statement is wrapped to add a LIMIT, so a
-            # plain `select *` always brings the table's own columns along
-            # with it, and rejecting on those would discard every row.
             if not all(column in mapping for column in _REQUIRED_COLUMNS):
-                # A computed row: no identity, so uncitable, but the values
-                # must still reach the model. Unconditional -- an aggregate
-                # has no `data` column at all.
                 values.append(dict(mapping))
                 continue
             data = mapping["data"]
@@ -468,8 +428,6 @@ class RowQuery:
             values=values,
             columns=[str(key) for key in keys],
         )
-        # Checked here rather than by the callers: this is the one place a
-        # result is assembled, so every tool is covered by construction.
         _require_one_document(outcome)
         return outcome
 
@@ -510,9 +468,6 @@ class RowQuery:
                 "d.deleted_at is null",
                 "dw.deleted_at is null",
                 "d.detected_media_type = 'text/csv'",
-                # Only a finished run becomes active, so a file still
-                # processing or a re-ingest that failed stays invisible
-                # rather than appearing as queryable and answering nothing.
                 "pr.status = 'ready'",
             ]
             parameters: dict[str, object] = {}
@@ -526,8 +481,6 @@ class RowQuery:
                 parameters,
             )
             rows = result.fetchall()
-        # Last column is the window count; the six before it are projected in
-        # the order given to catalogue_statement.
         total = int(rows[0][6]) if rows else 0
         return Catalogue(
             entries=[
@@ -556,9 +509,6 @@ def catalogue_statement(conditions: list[str]) -> str:
     the caller so the one place that composes SQL reads as obviously literal.
     """
     return (
-        # Fragments are literals and values bind as parameters, so nothing
-        # model-authored reaches this string. count(*) over () counts past
-        # limit/offset, letting the catalogue report what it is not showing.
         "select d.id, dw.workspace_id, pr.id, "  # noqa: S608
         "dw.filename, pr.row_count, pr.csv_columns, "
         "count(*) over () as total "
@@ -566,8 +516,6 @@ def catalogue_statement(conditions: list[str]) -> str:
         "join document_workspaces dw on dw.document_id = d.id "
         "join processing_runs pr on pr.id = d.active_processing_run_id "
         f"where {' and '.join(conditions)} "
-        # A total order, so paging cannot repeat or skip a file when two
-        # share a name.
         "order by dw.filename, d.id "
         "limit :limit offset :offset"
     )
@@ -611,12 +559,14 @@ def _explain(exc: DBAPIError) -> str:
             "header exactly as the catalogue spells it, including capitals. "
             f"Read a number as (data->>'Revenue_USD')::numeric and text as "
             "data->>'Header', matching a whole value with data @> "
-            "'{\"Key\": \"value\"}'. Copy the key from the catalogue rather "
+            '\'{"Key": "value"}\'. Copy the key from the catalogue rather '
             "than from this message: this one has been lowercased by Postgres."
         )
 
-    if "operator does not exist" in message or "SyntaxError" in message or (
-        "syntax error" in message
+    if (
+        "operator does not exist" in message
+        or "SyntaxError" in message
+        or ("syntax error" in message)
     ):
         return (
             "That syntax is not valid. CSV cells are values inside a JSONB "

@@ -47,9 +47,7 @@ def test_download_hashes_bytes_and_closes_stream(tmp_path: Path) -> None:
     storage = storage_with_client(FakeClient(body, 6))
     destination = tmp_path / "source.pdf"
 
-    result = storage.download_file(
-        destination, bucket="raw-documents", key="key", max_bytes=6
-    )
+    result = storage.download_file(destination, bucket="raw-documents", key="key", max_bytes=6)
 
     assert destination.read_bytes() == b"abcdef"
     assert result.sha256 == hashlib.sha256(b"abcdef").hexdigest()
@@ -62,9 +60,7 @@ def test_declared_oversized_download_closes_stream(tmp_path: Path) -> None:
     destination = tmp_path / "source.pdf"
 
     with pytest.raises(ObjectTooLargeError):
-        storage.download_file(
-            destination, bucket="raw-documents", key="key", max_bytes=6
-        )
+        storage.download_file(destination, bucket="raw-documents", key="key", max_bytes=6)
 
     assert body.closed is True
     assert not destination.exists()
@@ -76,9 +72,7 @@ def test_streamed_oversized_download_removes_partial_file(tmp_path: Path) -> Non
     destination = tmp_path / "source.pdf"
 
     with pytest.raises(ObjectTooLargeError):
-        storage.download_file(
-            destination, bucket="raw-documents", key="key", max_bytes=6
-        )
+        storage.download_file(destination, bucket="raw-documents", key="key", max_bytes=6)
 
     assert body.closed is True
     assert not destination.exists()
@@ -121,6 +115,5 @@ def test_the_client_passes_provider_settings_to_boto3(
     assert kwargs["region_name"] == "auto"
     config = kwargs["config"]
     assert config.s3 == {"addressing_style": addressing_style}
-    # R2 rejects the checksum headers boto3 adds by default.
     assert config.request_checksum_calculation == "when_required"
     assert config.response_checksum_validation == "when_required"

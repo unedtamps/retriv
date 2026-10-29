@@ -47,9 +47,7 @@ def build_context(section_path: list[str], caption: str) -> str:
     if section_path:
         heading = " > ".join(part for part in section_path if part.strip())
         if heading:
-            parts.append(
-                f'The picture appears in a document under the heading "{heading}".'
-            )
+            parts.append(f'The picture appears in a document under the heading "{heading}".')
     if caption.strip():
         parts.append(f"The caption printed next to it reads: {caption.strip()}")
     if not parts:

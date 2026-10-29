@@ -41,8 +41,6 @@ def upgrade() -> None:
         f"CREATE POLICY runs_in_scope ON processing_runs "  # noqa: S608
         f"USING (workspace_id = ANY (current_setting('{SCOPE_SETTING}', true)::uuid[]))"
     )
-    # Optional role, same as 0002: it is created operationally so its password
-    # never lands in a migration.
     op.execute(
         f"""
         DO $$

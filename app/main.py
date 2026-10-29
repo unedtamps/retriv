@@ -41,20 +41,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        # The first admin comes from the environment, so a fresh database has
-        # somebody who can create users and workspaces. It is a no-op when the
-        # pair is unset or the stored password already matches the env.
         await ensure_bootstrap_admin(settings, session_factory)
-        # The retriever is process-wide: the Qdrant and embedding clients hold
-        # connection pools, and building them per request would pay for a
-        # handshake on every search.
         retriever = ContextRetriever(settings, engine)
-        # Reading in order borrows the application's session factory and holds
-        # no client of its own.
         navigator = DocumentNavigator(settings, session_factory)
-        # A reader DSN is what enables row queries. With none configured the
-        # tool is simply absent, which is the safe default: an unset DSN
-        # cannot be misread as "no restriction".
         rows: RowQuery | None = None
         if settings.sql_database_url:
             rows = RowQuery.from_url(
@@ -66,18 +55,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await rows.verify_reader()
             except RowQueryError as exc:
                 await rows.aclose()
-                raise RuntimeError(
-                    "RETRIV_SQL_DATABASE_URL is configured but unusable"
-                ) from exc
-        # Reading through the app's own session lets a deployment without a
-        # reader DSN still tell the client which CSVs exist, rather than have
-        # it report the data as missing when only the tool is off. The names
-        # are not privileged: the document list already returns them.
+                raise RuntimeError("RETRIV_SQL_DATABASE_URL is configured but unusable") from exc
         catalogue_reader = CatalogueReader(session_factory)
-        # The MCP tools cannot reach this container through Depends: they run
-        # in the session manager's task group. The box is how they get the
-        # objects the lifespan just built, and clearing it stops the server
-        # accepting new work before the objects it borrows are torn down.
         application.state.mcp.set(
             McpRuntime(
                 settings=settings,
@@ -90,9 +69,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
         try:
-            # The mounted MCP application has no lifespan of its own -- Starlette
-            # does not run a sub-application's lifespan -- so the session
-            # manager the transport depends on is started here instead.
             async with application.state.mcp_server.session_manager.run():
                 yield
         finally:
@@ -117,10 +93,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         UploadSizeLimitMiddleware,
         settings=settings,
     )
-    # Added after the size limiter so an unauthenticated call is rejected
-    # before any of its body is read. The limiter passes /mcp through anyway:
-    # the transport applies its own body cap, and buffering a response here
-    # would stall the long-lived GET stream.
     application.add_middleware(
         McpEndpointMiddleware,
         mcp_app=mcp_app,

@@ -32,9 +32,6 @@ from app.sections import encode_section_key
 
 
 def make_settings() -> Settings:
-    # No api token and no scope keypair: the answer path is a direct call,
-    # so the only credential the retriever holds is the read-only Qdrant
-    # key. That is the assertion these tests now protect.
     return Settings(
         environment="test",
         database_url="sqlite+aiosqlite://",
@@ -153,9 +150,7 @@ async def seed_section(
                     content_hash=content_hash,
                     section_path=path,
                     section_key=encode_section_key(path),
-                    # Only a chunk the parser reported as nothing but headings.
-                    is_heading_only=text.rstrip().endswith(":")
-                    and len(text.split()) <= 6,
+                    is_heading_only=text.rstrip().endswith(":") and len(text.split()) <= 6,
                     page_numbers=[23],
                 )
             )
@@ -294,18 +289,14 @@ async def make_retriever(
 
     def vector_handler(request: httpx.Request) -> httpx.Response:
         qdrant_requests.append(request)
-        assert request.headers["api-key"] == (
-            settings.qdrant_read_only_api_key.get_secret_value()
-        )
+        assert request.headers["api-key"] == (settings.qdrant_read_only_api_key.get_secret_value())
         if qdrant_handler is not None:
             return qdrant_handler(request)
         return httpx.Response(200, json={"result": {"points": [qdrant_point]}})
 
     embedding_client = httpx.AsyncClient(
         base_url="http://embedding.test/v1/",
-        headers={
-            "Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"
-        },
+        headers={"Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"},
         transport=httpx.MockTransport(embedding_handler),
     )
     qdrant_client = httpx.AsyncClient(
@@ -341,9 +332,7 @@ async def test_retrieval_filters_qdrant_and_returns_only_validated_postgres_text
         "score": 0.93,
         "payload": qdrant_payload(row),
     }
-    retriever, embedding_requests, qdrant_requests = await make_retriever(
-        settings, engine, point
-    )
+    retriever, embedding_requests, qdrant_requests = await make_retriever(settings, engine, point)
     try:
         sources = await retriever.retrieve("What is in the report?", [workspace_id], 4)
     finally:
@@ -605,9 +594,7 @@ async def test_a_heading_match_pulls_in_the_subtree_it_heads() -> None:
         "score": 0.81,
         "payload": qdrant_payload(heading),
     }
-    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
-        settings, engine, point
-    )
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(settings, engine, point)
     try:
         sources = await retriever.retrieve("details about article 16", [workspace_id], 4)
     finally:
@@ -617,7 +604,6 @@ async def test_a_heading_match_pulls_in_the_subtree_it_heads() -> None:
     assert "Pasal 16: Kerangka Umum" in texts
     assert "Regulation 16.01: The Executive Board shall have sole authority." in texts
     assert "Regulation 16.02: The Administrator is authorized to approve." in texts
-    # Reading order is preserved so the model sees the section as written.
     assert texts[0] == "Pasal 16: Kerangka Umum"
     assert sources[0].score == pytest.approx(0.81), "the match keeps its own score"
     assert sources[1].score < sources[0].score, "completion never outranks the match"
@@ -676,9 +662,7 @@ async def test_completion_never_reaches_a_cousin_section() -> None:
         "score": 0.81,
         "payload": qdrant_payload(seeded[0]),
     }
-    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
-        settings, engine, point
-    )
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(settings, engine, point)
     try:
         sources = await retriever.retrieve("details about article 16", [workspace_id], 4)
     finally:
@@ -688,10 +672,7 @@ async def test_completion_never_reaches_a_cousin_section() -> None:
     assert "belongs to article sixteen." in joined
     assert "one-sixty" not in joined
     assert "Retensiophil" not in joined
-    assert all(
-        source.section_path[:2] == ["PMK", "Pasal 16: Kerangka Umum"]
-        for source in sources
-    )
+    assert all(source.section_path[:2] == ["PMK", "Pasal 16: Kerangka Umum"] for source in sources)
 
 
 async def test_an_underscore_in_a_heading_does_not_widen_the_subtree() -> None:
@@ -733,9 +714,7 @@ async def test_an_underscore_in_a_heading_does_not_widen_the_subtree() -> None:
         "score": 0.81,
         "payload": qdrant_payload(seeded[0]),
     }
-    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
-        settings, engine, point
-    )
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(settings, engine, point)
     try:
         sources = await retriever.retrieve("ketentuan ayat satu", [workspace_id], 4)
     finally:
@@ -802,17 +781,11 @@ async def test_heading_expansion_never_exceeds_the_callers_budget() -> None:
         "score": 0.81,
         "payload": qdrant_payload(seeded[0]),
     }
-    # Both retrievers share one engine: the test database is in-memory SQLite, so a
-    # second engine would be a second, empty database.
     generous, _e, _q = await make_retriever(settings, engine, point)
     tight, _e, _q = await make_retriever(settings, engine, point)
     try:
-        sources = await generous.retrieve(
-            "details about article 16", [workspace_id], 2, budget=3
-        )
-        capped = await tight.retrieve(
-            "details about article 16", [workspace_id], 2, budget=2
-        )
+        sources = await generous.retrieve("details about article 16", [workspace_id], 2, budget=3)
+        capped = await tight.retrieve("details about article 16", [workspace_id], 2, budget=2)
     finally:
         await generous.aclose()
 
@@ -870,9 +843,7 @@ async def test_a_fully_matched_section_adds_nothing() -> None:
         settings, engine, None, qdrant_handler=handler
     )
     try:
-        sources = await retriever.retrieve(
-            "executive board authority", [workspace_id], 4, budget=8
-        )
+        sources = await retriever.retrieve("executive board authority", [workspace_id], 4, budget=8)
     finally:
         await retriever.aclose()
 
@@ -938,9 +909,7 @@ async def test_completion_never_reaches_outside_the_signed_scope() -> None:
         "score": 0.81,
         "payload": qdrant_payload(seeded[0]),
     }
-    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
-        settings, engine, point
-    )
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(settings, engine, point)
     try:
         sources = await retriever.retrieve("details about article 16", [workspace_id], 6)
     finally:
@@ -949,9 +918,9 @@ async def test_completion_never_reaches_outside_the_signed_scope() -> None:
     joined = " ".join(source.text for source in sources)
     assert "Regulation 16.01 in the signed scope." in joined
     assert "SECRET" not in joined
-    assert all(
-        source.workspace_id == workspace_id for source in sources
-    ), "every source stays inside the requested scope"
+    assert all(source.workspace_id == workspace_id for source in sources), (
+        "every source stays inside the requested scope"
+    )
 
 
 async def test_completion_still_fires_when_qdrant_fills_its_quota() -> None:
@@ -1001,7 +970,6 @@ async def test_completion_still_fires_when_qdrant_fills_its_quota() -> None:
             ),
         ],
     )
-    # Qdrant returns the heading plus unrelated matches, filling the limit exactly.
     points = [
         {
             "id": str(seeded[index]["qdrant_point_id"]),
@@ -1013,13 +981,12 @@ async def test_completion_still_fires_when_qdrant_fills_its_quota() -> None:
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"result": {"points": points}})
+
     retriever, _embedding_requests, _qdrant_requests = await make_retriever(
         settings, engine, None, qdrant_handler=handler
     )
     try:
-        sources = await retriever.retrieve(
-            "details about article 16", [workspace_id], 2, budget=5
-        )
+        sources = await retriever.retrieve("details about article 16", [workspace_id], 2, budget=5)
     finally:
         await retriever.aclose()
 
@@ -1072,9 +1039,7 @@ async def test_completion_is_off_when_no_budget_is_granted() -> None:
         "score": 0.81,
         "payload": qdrant_payload(seeded[0]),
     }
-    retriever, _embedding_requests, _qdrant_requests = await make_retriever(
-        settings, engine, point
-    )
+    retriever, _embedding_requests, _qdrant_requests = await make_retriever(settings, engine, point)
     try:
         without = await retriever.retrieve("article 16", [workspace_id], 1)
         with_budget = await retriever.retrieve(
@@ -1105,9 +1070,7 @@ async def test_a_document_linked_to_two_workspaces_is_found_from_either() -> Non
         await connection.run_sync(metadata.create_all)
     first_workspace = uuid4()
     second_workspace = uuid4()
-    row = await seed_active_chunk(
-        engine, documents, chunks, embeddings, links, first_workspace
-    )
+    row = await seed_active_chunk(engine, documents, chunks, embeddings, links, first_workspace)
     async with engine.begin() as connection:
         await connection.execute(
             insert(links).values(

@@ -113,7 +113,7 @@ export function DocumentTable({
       {loading && documents.length === 0 ? (
         <div className="space-y-2 p-4" aria-label="Loading documents">
           {Array.from({ length: 4 }, (_, index) => (
-            <div key={index} className="h-14 animate-pulse rounded-[0.55rem] bg-sunken" />
+            <div key={index} className="h-14 animate-pulse rounded-card bg-sunken" />
           ))}
         </div>
       ) : visible.length === 0 ? (
@@ -159,7 +159,7 @@ export function DocumentTable({
                   <tr key={document.id} className="group border-b border-line last:border-b-0">
                     <td className="px-4 py-3 sm:px-5">
                       <div className="flex min-w-0 items-center gap-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.55rem] border border-line bg-sunken text-ink-muted">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-card border border-line bg-sunken text-ink-muted">
                           <FileText aria-hidden="true" size={16} />
                         </span>
                         <div className="min-w-0">

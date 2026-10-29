@@ -42,9 +42,6 @@ RUN_FAILED = "failed"
 RUN_CANCELLED = "cancelled"
 RUN_UNSUPPORTED = "unsupported_format"
 
-# A claimed run is in exactly one of these. RUN_QUEUED is deliberately
-# absent: an unclaimed run is not in flight, so lease recovery must not
-# touch it.
 ACTIVE_RUN_STATUSES: tuple[str, ...] = (
     RUN_FETCHING,
     RUN_EXTRACTING,
@@ -75,13 +72,9 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(64), default="user")
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true"
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     auth_version: Mapped[int] = mapped_column(default=0, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -94,9 +87,7 @@ class Workspace(Base):
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -159,7 +150,6 @@ class Document(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    # Origin workspace, not access scope. See DocumentWorkspace.
     origin_workspace_id: Mapped[UUID] = mapped_column(
         ForeignKey("workspaces.id", ondelete="RESTRICT"), index=True
     )
@@ -172,14 +162,8 @@ class Document(Base):
     created_by_user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    # Not a foreign key: processing_runs.document_id already points back
-    # here, so a constraint would make the pair circular.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     active_processing_run_id: Mapped[UUID | None] = mapped_column(nullable=True)
 
 
@@ -215,9 +199,7 @@ class DocumentWorkspace(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ProcessingRun(Base):
@@ -265,25 +247,15 @@ class ProcessingRun(Base):
     available_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    lease_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_token: Mapped[UUID | None] = mapped_column(nullable=True)
 
-    # Where this attempt's extracted artifact landed, so a failed or
-    # superseded run can clean up after itself and a delete can find it.
     artifact_bucket: Mapped[str | None] = mapped_column(String(255), nullable=True)
     artifact_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     manifest_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
-    # Progress counters drive the workspace-scoped status queries the UI
-    # polls, so they live with the run rather than on the document.
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    embedded_chunk_count: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0"
-    )
-    # A CSV run's progress and provenance. csv_columns labels each returned
-    # cell, so it lives on the run rather than on all 100k rows.
+    embedded_chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     row_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     csv_columns: Mapped[list[str] | None] = mapped_column(JSON_TYPE, nullable=True)
     embedding_profile: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -294,12 +266,8 @@ class ProcessingRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DocumentChunk(Base):
@@ -312,9 +280,6 @@ class DocumentChunk(Base):
             "origin_workspace_id",
             "processing_run_id",
         ),
-        # Section completion looks a section up by its own key and its
-        # sub-sections by prefix. text_pattern_ops is what makes the prefix
-        # form of LIKE indexable; the default ops would force a scan.
         Index(
             "ix_document_chunks_section_key",
             "processing_run_id",
@@ -324,7 +289,6 @@ class DocumentChunk(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    # Origin workspace, not access scope. See DocumentWorkspace.
     origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(nullable=False)
     processing_run_id: Mapped[UUID] = mapped_column(
@@ -334,13 +298,7 @@ class DocumentChunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     section_path: Mapped[list[str]] = mapped_column(JSON_TYPE, default=list)
-    # Canonical text form of section_path. See app.sections for why this exists
-    # rather than querying the JSON column directly.
     section_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # True when the chunk is nothing but headings. Recorded from the parser's own
-    # item labels rather than inferred from length: a chunk's token count includes
-    # the ancestor breadcrumb, so a length test starts misreading deep headings
-    # as body text.
     is_heading_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     page_numbers: Mapped[list[int]] = mapped_column(JSON_TYPE, default=list)
     provenance: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
@@ -368,34 +326,17 @@ class DocumentRow(Base):
 
     __tablename__ = "document_rows"
     __table_args__ = (
-        UniqueConstraint(
-            "processing_run_id", "row_number", name="uq_document_rows_run_row"
-        ),
+        UniqueConstraint("processing_run_id", "row_number", name="uq_document_rows_run_row"),
         Index(
             "ix_document_rows_active_lookup",
             "origin_workspace_id",
             "processing_run_id",
         ),
-        # The one index that answers the query every caller makes. RowQuery
-        # refuses a statement that does not name a document_id, so this
-        # predicate is present in every statement it will run -- and without an
-        # index on it, each one began with a sequential scan of the whole
-        # table. With it, a query reads its one file and costs the same
-        # whether the workspace holds ten files or ten thousand.
         Index("ix_document_rows_document", "document_id"),
-        # A GIN index over the payload, using the default jsonb_ops operator
-        # class. Correcting an earlier claim in this file: that operator class
-        # accelerates `@>`, `?`, `?|` and `?&`, and NOT the `data->>'col' = x`
-        # form that model-written statements actually use -- that stays a
-        # scan. It is kept because it is the only index that can answer a
-        # key-existence question, and the row cost is small next to the
-        # document_id index above; it is not what makes a row query fast, and
-        # the comment should not pretend otherwise.
         Index("ix_document_rows_data", "data", postgresql_using="gin"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    # Origin workspace, not access scope. See DocumentWorkspace.
     origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(nullable=False)
     processing_run_id: Mapped[UUID] = mapped_column(
@@ -430,7 +371,6 @@ class ChunkEmbedding(Base):
         ForeignKey("document_chunks.id", ondelete="CASCADE"), primary_key=True
     )
     embedding_profile: Mapped[str] = mapped_column(String(255), primary_key=True)
-    # Origin workspace, not access scope. See DocumentWorkspace.
     origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(nullable=False)
     processing_run_id: Mapped[UUID] = mapped_column(nullable=False)
@@ -443,9 +383,7 @@ class ChunkEmbedding(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    embedded_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -479,9 +417,5 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

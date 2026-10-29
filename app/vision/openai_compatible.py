@@ -30,9 +30,6 @@ import httpx
 from app.extraction.base import ExtractedImage
 from app.vision.base import DESCRIPTION_PROMPT, VisionProviderError
 
-# The endpoint may be given as a bare API root or as the full chat endpoint.
-# Both are common, so both are accepted rather than one of them silently
-# producing a 404.
 _CHAT_SUFFIX = "/chat/completions"
 
 _MARKDOWN_FENCE = re.compile(r"^```[a-zA-Z0-9]*\s*|\s*```$")
@@ -160,9 +157,7 @@ class OpenAICompatibleVisionProvider:
                 self._url, json=body, timeout=self._timeout_for(budget)
             )
         except httpx.TimeoutException as exc:
-            raise VisionProviderError(
-                "The vision endpoint timed out", retryable=True
-            ) from exc
+            raise VisionProviderError("The vision endpoint timed out", retryable=True) from exc
         except httpx.HTTPError as exc:
             raise VisionProviderError(
                 f"The vision endpoint could not be reached: {exc}", retryable=True
@@ -214,9 +209,6 @@ class OpenAICompatibleVisionProvider:
             and answered_by.strip()
             and answered_by.strip().lower() != self._model.strip().lower()
         ):
-            # A different model answered, so the answer is about something
-            # else -- or about nothing, if it could not see the image. Either
-            # way it is not what was asked for, and it must not be indexed.
             raise VisionProviderError(
                 f"The vision endpoint answered with model {answered_by!r} "
                 f"but {self._model!r} was requested",
@@ -224,21 +216,13 @@ class OpenAICompatibleVisionProvider:
             )
         choices = body.get("choices")
         if not isinstance(choices, list) or not choices:
-            raise VisionProviderError(
-                "The vision endpoint returned no choices", retryable=True
-            )
+            raise VisionProviderError("The vision endpoint returned no choices", retryable=True)
         choice = choices[0] if isinstance(choices[0], dict) else {}
         message = choice.get("message")
         if not isinstance(message, dict):
-            raise VisionProviderError(
-                "The vision endpoint returned no message", retryable=True
-            )
+            raise VisionProviderError("The vision endpoint returned no message", retryable=True)
         text = self._message_text(message.get("content"))
         if not text:
-            # A model that reasons spends the budget on reasoning before it
-            # writes anything. When the budget runs out first, the answer
-            # never starts: the model was not finished, not wrong. That is
-            # the caller's cue to give it more room and ask again.
             if choice.get("finish_reason") == "length":
                 raise _BudgetExhausted(
                     f"The vision model used its whole answer budget "
@@ -281,9 +265,7 @@ class OpenAICompatibleVisionProvider:
                         {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{image.media_type};base64,{encoded}"
-                            },
+                            "image_url": {"url": f"data:{image.media_type};base64,{encoded}"},
                         },
                     ],
                 }

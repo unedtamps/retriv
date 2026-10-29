@@ -195,18 +195,12 @@ class ContextRetriever:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._embedding_client = embedding_client or httpx.AsyncClient(
             base_url=f"{settings.embedding_base_url.rstrip('/')}/",
-            headers={
-                "Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"
-            },
+            headers={"Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"},
             timeout=settings.embedding_timeout_seconds,
         )
-        # Read-only key: this process writes vectors only from the worker,
-        # so the answer path never needs write access to the collection.
         self._qdrant_client = qdrant_client or httpx.AsyncClient(
             base_url=f"{settings.qdrant_url.rstrip('/')}/",
-            headers={
-                "api-key": settings.qdrant_read_only_api_key.get_secret_value()
-            },
+            headers={"api-key": settings.qdrant_read_only_api_key.get_secret_value()},
             timeout=settings.qdrant_timeout_seconds,
         )
 
@@ -228,9 +222,7 @@ class ContextRetriever:
         without its content is only visible when the search returned its quota.
         """
         if not workspace_ids:
-            raise RetrievalUnavailable(
-                "A verified non-empty workspace scope is required"
-            )
+            raise RetrievalUnavailable("A verified non-empty workspace scope is required")
         if len(workspace_ids) != len(set(workspace_ids)):
             raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
 
@@ -254,9 +246,7 @@ class ContextRetriever:
             TypeError,
             ValueError,
         ) as exc:
-            raise RetrievalUnavailable(
-                "Scoped context retrieval failed validation"
-            ) from exc
+            raise RetrievalUnavailable("Scoped context retrieval failed validation") from exc
 
     async def _embed_query(self, query: str) -> list[float]:
         response = await self._embedding_client.post(
@@ -277,20 +267,14 @@ class ContextRetriever:
             not isinstance(raw_vector, list)
             or len(raw_vector) != self._settings.embedding_dimensions
         ):
-            raise ValueError(
-                "Embedding response dimensions do not match the configured profile"
-            )
+            raise ValueError("Embedding response dimensions do not match the configured profile")
         vector: list[float] = []
         for value in raw_vector:
             if isinstance(value, bool) or not isinstance(value, int | float):
-                raise ValueError(
-                    "Embedding response contains a non-numeric vector value"
-                )
+                raise ValueError("Embedding response contains a non-numeric vector value")
             number = float(value)
             if not math.isfinite(number):
-                raise ValueError(
-                    "Embedding response contains a non-finite vector value"
-                )
+                raise ValueError("Embedding response contains a non-finite vector value")
             vector.append(number)
         return vector
 
@@ -305,11 +289,7 @@ class ContextRetriever:
                     "must": [
                         {
                             "key": "workspace_ids",
-                            "match": {
-                                "any": [
-                                    str(workspace_id) for workspace_id in workspace_ids
-                                ]
-                            },
+                            "match": {"any": [str(workspace_id) for workspace_id in workspace_ids]},
                         },
                         {
                             "key": "embedding_profile",
@@ -350,9 +330,7 @@ class ContextRetriever:
                 )
             for field in PAYLOAD_FIELDS:
                 if field not in point_payload:
-                    raise ValueError(
-                        f"Qdrant point is missing required {field} metadata"
-                    )
+                    raise ValueError(f"Qdrant point is missing required {field} metadata")
             chunk_id = UUID(str(point_payload["chunk_id"]))
             if chunk_id in seen_chunk_ids:
                 raise ValueError("Qdrant returned a duplicate chunk")
@@ -398,22 +376,15 @@ class ContextRetriever:
                 "content_hash": row["content_hash"],
                 "embedding_profile": self._settings.embedding_profile,
             }
-            if any(
-                point_payload.get(key) != value
-                for key, value in expected_metadata.items()
-            ):
-                raise RetrievalUnavailable(
-                    "Qdrant point metadata does not match PostgreSQL"
-                )
+            if any(point_payload.get(key) != value for key, value in expected_metadata.items()):
+                raise RetrievalUnavailable("Qdrant point metadata does not match PostgreSQL")
             if UUID(str(row["qdrant_point_id"])) != point_id:
                 raise RetrievalUnavailable(
                     "Qdrant point ID does not match its embedding ledger row"
                 )
             text_hash = hashlib.sha256(str(row["text"]).encode()).hexdigest()
             if text_hash != row["content_hash"]:
-                raise RetrievalUnavailable(
-                    "PostgreSQL chunk text does not match its content hash"
-                )
+                raise RetrievalUnavailable("PostgreSQL chunk text does not match its content hash")
             sources.append(
                 ContextSource(
                     workspace_id=UUID(str(row["workspace_id"])),
@@ -499,8 +470,7 @@ class ContextRetriever:
                     ChunkEmbedding.chunk_id == DocumentChunk.id,
                     ChunkEmbedding.origin_workspace_id == DocumentChunk.origin_workspace_id,
                     ChunkEmbedding.document_id == DocumentChunk.document_id,
-                    ChunkEmbedding.processing_run_id
-                    == DocumentChunk.processing_run_id,
+                    ChunkEmbedding.processing_run_id == DocumentChunk.processing_run_id,
                 ),
             )
             .join(
@@ -522,9 +492,6 @@ class ContextRetriever:
                 ChunkEmbedding.status == EMBEDDING_INDEXED,
                 ChunkEmbedding.content_hash == DocumentChunk.content_hash,
             )
-            # A chunk's own text first, its sub-sections after. The parent's prose is
-            # what answers "what does this article say"; the sub-sections only add the
-            # detail, so they should not displace it when the budget runs short.
             .order_by(
                 case((DocumentChunk.section_key.in_(anchors), 0), else_=1),
                 DocumentChunk.ordinal,
@@ -542,15 +509,8 @@ class ContextRetriever:
             if chunk_id in existing:
                 continue
             section_key = str(row[9])
-            # Attribute the row to the first anchor that claims it. Anchors are
-            # deduped but one section can nest inside another anchor, and the
-            # innermost match is the one that should be charged for the row.
             owner = next(
-                (
-                    key
-                    for key in anchors
-                    if section_descends_from(section_key, key)
-                ),
+                (key for key in anchors if section_descends_from(section_key, key)),
                 None,
             )
             if owner is None:
@@ -572,9 +532,6 @@ class ContextRetriever:
                     processing_run_id=row[3],
                     chunk_id=chunk_id,
                     ordinal=int(row[4]),
-                    # Completed rows were not matched on similarity, so they inherit
-                    # the relevance floor: attributed, not ranked. A low value keeps
-                    # them from outranking genuine vector matches downstream.
                     score=self._settings.min_relevance_score,
                     content_hash=str(row[7]),
                     filename=row[11],

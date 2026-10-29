@@ -36,14 +36,13 @@ from docling_core.types.doc.document import (
 
 HEADING_TYPES = (TitleItem, SectionHeaderItem)
 
-# Long enough that a match is meaningful, short enough to survive chunk-boundary
-# whitespace differences.
 PROBE_CHARS = 80
 MIN_VERIFIABLE_CHARS = 24
 
 
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -153,7 +152,7 @@ def collect_items(document: DoclingDocument, serializer: ChunkingDocSerializer) 
         visited.add(ref)
         try:
             text = serializer.serialize(item=node, visited=visited).text or ""
-        except Exception:  # a malformed item must not abort the audit
+        except Exception:
             text = ""
         items.append(
             Item(
@@ -175,9 +174,6 @@ def analyse(
     no_ocr: bool = False,
 ) -> Report:
     if settings.docling_artifacts_path is not None and not settings.docling_artifacts_path.is_dir():
-        # The configured path is usually the in-container location
-        # (/opt/docling-models), which does not exist on a workstation. Falling back
-        # to None makes Docling use its default per-user model cache instead.
         print(
             f"note: configured docling artifacts path "
             f"{settings.docling_artifacts_path} does not exist; using default model cache",
@@ -294,8 +290,7 @@ def render(report: Report, top: int) -> str:
         chars = sum(i.size for i in group)
         share = chars / report.total_chars * 100 if report.total_chars else 0.0
         lines.append(
-            f"\n  [{reason}]  {len(group)} item(s), {chars:,} chars, "
-            f"{share:.1f}% of document"
+            f"\n  [{reason}]  {len(group)} item(s), {chars:,} chars, {share:.1f}% of document"
         )
 
         per_layer: dict[str, list[Item]] = defaultdict(list)
@@ -312,9 +307,7 @@ def render(report: Report, top: int) -> str:
             for label, count in Counter(i.label for i in layer_items).most_common(6):
                 lines.append(f"        {label:<28} {count:>4}")
 
-    unreferenced = [
-        (i, r) for i, r in missing if r == "text-not-in-any-chunk" and not i.is_heading
-    ]
+    unreferenced = [(i, r) for i, r in missing if r == "text-not-in-any-chunk" and not i.is_heading]
     if unreferenced:
         lines.append("")
         lines.append("-" * 72)
@@ -346,9 +339,7 @@ def to_json(report: Report) -> str:
             "covered_chars": report.covered_chars,
             "coverage_pct": round(pct, 2),
             "headings_total": len(report.headings),
-            "headings_searchable": sum(
-                1 for v in report.searchable.values() if v is True
-            ),
+            "headings_searchable": sum(1 for v in report.searchable.values() if v is True),
             "headings_lost": [
                 {"label": h.label, "layer": h.layer, "text": h.probe()[:200]}
                 for h in report.headings

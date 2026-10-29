@@ -34,10 +34,6 @@ class WorkspaceResponse(BaseModel):
     can_download: bool = False
     can_search_context: bool = False
     can_manage_members: bool = False
-    # Deleting a document is restricted to owners and editors, and the
-    # decision is the membership role alone: load_workspace_access has no
-    # platform-admin bypass, so a client that also allowed isAdmin here
-    # would offer a button the API answers with 404.
     can_delete: bool = False
 
 
@@ -162,14 +158,9 @@ class DocumentResponse(BaseModel):
     size_bytes: int
     sha256: str
     status: str
-    # Nullable because a record that arrived from an external system has
-    # no human uploader. The dashboard renders it as "system".
     created_by_user_id: UUID | None
     created_at: datetime
     duplicate: bool = False
-    # Zero for anything that is not a CSV. Present so a CSV's size is visible
-    # in the document list instead of reporting a bare "Ready" with nothing
-    # behind it.
     row_count: int = 0
 
 
@@ -190,9 +181,6 @@ class ProcessingRunSummary(BaseModel):
     attempts: int
     chunk_count: int
     embedded_chunk_count: int
-    # A CSV is its rows rather than embedded chunks, so its progress is here
-    # and chunk_count stays zero by design. Exposed because otherwise a CSV
-    # reports progress as nothing at all, which reads as a stalled upload.
     row_count: int
     created_at: datetime
     started_at: datetime | None
@@ -224,8 +212,6 @@ class ApiKeyCreateRequest(BaseModel):
 class ApiKeySummary(BaseModel):
     id: UUID
     name: str
-    # Display-only fragment of the secret. Short enough to recognise a key,
-    # long enough that two keys never look alike in a list.
     key_prefix: str
     created_at: datetime
     last_used_at: datetime | None = None
@@ -237,7 +223,5 @@ class ApiKeyListResponse(BaseModel):
 
 
 class ApiKeyCreatedResponse(ApiKeySummary):
-    # The plaintext credential. Present only in the creation response; the
-    # stored form is a hash, so this object cannot be re-derived.
     key: str
     warning: str

@@ -18,9 +18,7 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parent.parent / "docker" / "postgres" / "init.sh"
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("sh") is None, reason="no POSIX shell available"
-)
+pytestmark = pytest.mark.skipif(shutil.which("sh") is None, reason="no POSIX shell available")
 
 
 def run_init(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -54,8 +52,6 @@ BASE: dict[str, str] = {
 
 
 def test_the_script_is_syntactically_valid_posix_shell() -> None:
-    # A syntax error here would surface only as a container that exits with a
-    # parse error, after compose has already reported the role as created.
     assert subprocess.run(["sh", "-n", str(SCRIPT)], check=False).returncode == 0
 
 
@@ -64,8 +60,6 @@ def test_a_missing_reader_password_stops_before_connecting() -> None:
     not be read as "no password, carry on"."""
     env = {key: value for key, value in BASE.items() if key != "RETRIV_SQL_READER_PASSWORD"}
     result = run_init(env)
-    # `${VAR:?}` exits 1, not the 2 the explicit guards use. Both are non-zero,
-    # which is the part that stops a build; only the variable name is asserted.
     assert result.returncode != 0
     assert "RETRIV_SQL_READER_PASSWORD" in result.stderr
 
@@ -133,7 +127,6 @@ def test_production_accepts_a_real_password() -> None:
             "RETRIV_SQL_READER_PASSWORD": "k3y-with-enough-entropy-here",
         }
     )
-    # Reaches psql and fails to connect, which is the point: the guard passed.
     assert "placeholder" not in result.stderr
 
 
@@ -142,8 +135,6 @@ def test_the_script_never_echoes_a_password() -> None:
     secret in the output would be a secret in a log file."""
     secret = "reader-password"
     source = SCRIPT.read_text()
-    # The only interpolations of the password are into psql --set arguments and
-    # %L, never into anything printed.
     for line in source.splitlines():
         if "reader_password" in line and not line.lstrip().startswith("#"):
             assert "echo" not in line and "printf" not in line, line

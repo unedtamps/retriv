@@ -79,9 +79,7 @@ class RowWiseTableSerializer(BaseTableSerializer):
 
         if item.self_ref not in doc_serializer.get_excluded_refs(**kwargs):
             local_kwargs = (
-                {**kwargs, "visited": set(shared_visited)}
-                if shared_visited is not None
-                else kwargs
+                {**kwargs, "visited": set(shared_visited)} if shared_visited is not None else kwargs
             )
             table_text = self._table_text(item, doc)
             if table_text:
@@ -89,9 +87,7 @@ class RowWiseTableSerializer(BaseTableSerializer):
                     shared_visited.update(local_kwargs["visited"])
                 parts.append(create_ser_result(text=table_text, span_source=item))
 
-        return create_ser_result(
-            text="\n\n".join(part.text for part in parts), span_source=parts
-        )
+        return create_ser_result(text="\n\n".join(part.text for part in parts), span_source=parts)
 
     def get_header_and_body_lines(
         self, *, table_text: str, **kwargs: Any
@@ -128,15 +124,9 @@ class RowWiseTableSerializer(BaseTableSerializer):
 
         width = frame.shape[1]
         columns = [str(column) for column in frame.columns]
-        # Docling names the columns 0..n-1 when it found no header row and
-        # names them after the header when it did, so the two are told apart by
-        # the names themselves. A table with no header keeps the positional
-        # labels it has today: guessing a header here would put labels on
-        # values.
         has_header = columns != [str(index) for index in range(width)]
 
         if width == 1:
-            # Nothing to pair a label with, so every row is its own line.
             values = [str(value).strip() for value in frame.iloc[:, 0]]
             single = [value for value in values if value]
             if not has_header:
@@ -223,8 +213,6 @@ class RowWiseSerializerProvider(ChunkingSerializerProvider):
         if self._pictures_marked:
             return RowWiseChunkingSerializer(
                 doc=doc,
-                picture_serializer=RefPictureSerializer(
-                    marked_refs=self._marked_refs
-                ),
+                picture_serializer=RefPictureSerializer(marked_refs=self._marked_refs),
             )
         return UnmarkedChunkingSerializer(doc=doc)

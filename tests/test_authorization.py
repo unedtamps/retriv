@@ -190,9 +190,7 @@ async def test_owner_can_search_only_nonmember_candidates(
     )
 
     assert response.status_code == 200
-    assert response.json()["items"] == [
-        {"id": str(entities.second_user.id), "username": "bob"}
-    ]
+    assert response.json()["items"] == [{"id": str(entities.second_user.id), "username": "bob"}]
 
     existing_member = await client.get(
         f"/v1/workspaces/{entities.finance.id}/member-candidates?search=ali",
@@ -296,9 +294,7 @@ async def test_password_reset_invalidates_existing_tokens(
     ).status_code == 200
 
 
-async def login_headers(
-    client: httpx.AsyncClient, username: str, password: str
-) -> dict[str, str]:
+async def login_headers(client: httpx.AsyncClient, username: str, password: str) -> dict[str, str]:
     response = await client.post(
         "/v1/auth/token",
         data={"username": username, "password": password},

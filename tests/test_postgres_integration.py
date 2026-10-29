@@ -64,9 +64,7 @@ from tests.test_worker import (
 
 POSTGRES_URL = os.getenv("TEST_POSTGRES_URL")
 
-pytestmark = pytest.mark.skipif(
-    POSTGRES_URL is None, reason="TEST_POSTGRES_URL is not configured"
-)
+pytestmark = pytest.mark.skipif(POSTGRES_URL is None, reason="TEST_POSTGRES_URL is not configured")
 
 
 def database_url() -> str:
@@ -93,9 +91,7 @@ async def clear_database(session: AsyncSession) -> None:
 async def seed_owner(
     session: AsyncSession, *, slug: str = "finance", username: str = "alice"
 ) -> tuple[UUID, dict[str, str]]:
-    user = User(
-        username=username, password_hash=hash_password("pw-12345678"), role="user"
-    )
+    user = User(username=username, password_hash=hash_password("pw-12345678"), role="user")
     workspace = Workspace(slug=slug, name=slug.title())
     session.add_all([user, workspace])
     await session.flush()
@@ -147,9 +143,7 @@ async def test_concurrent_identical_uploads_converge_in_postgresql() -> None:
             workspace_id, credentials = await seed_owner(session)
 
         transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             token = await client.post(
                 "/v1/auth/token",
                 data=credentials,
@@ -171,16 +165,14 @@ async def test_concurrent_identical_uploads_converge_in_postgresql() -> None:
         assert sorted(response.status_code for response in responses) == [200, 202], [
             response.text for response in responses
         ]
-        assert sorted(
-            response.json().get("duplicate", False) for response in responses
-        ) == [False, True]
+        assert sorted(response.json().get("duplicate", False) for response in responses) == [
+            False,
+            True,
+        ]
 
         async with factory() as session:
             assert await session.scalar(select(func.count()).select_from(Document)) == 1
-            assert (
-                await session.scalar(select(func.count()).select_from(ProcessingRun))
-                == 1
-            )
+            assert await session.scalar(select(func.count()).select_from(ProcessingRun)) == 1
     finally:
         application.dependency_overrides.clear()
         async with factory() as session:
@@ -212,9 +204,7 @@ async def test_chunk_and_embedding_rows_commit_in_foreign_key_order(
     try:
         async with factory() as session:
             await clear_database(session)
-            user = User(
-                username="chunking", password_hash=hash_password("pw-12345678")
-            )
+            user = User(username="chunking", password_hash=hash_password("pw-12345678"))
             workspace = Workspace(slug="chunking", name="Chunking")
             session.add_all([user, workspace])
             await session.flush()
@@ -264,31 +254,17 @@ async def test_chunk_and_embedding_rows_commit_in_foreign_key_order(
             run = await session.get(ProcessingRun, run_id)
             chunks = (
                 await session.scalars(
-                    select(DocumentChunk).where(
-                        DocumentChunk.processing_run_id == run_id
-                    )
+                    select(DocumentChunk).where(DocumentChunk.processing_run_id == run_id)
                 )
             ).all()
         assert persisted is True
         assert run is not None
         assert run.status == RUN_EMBEDDING
-        assert [chunk.ordinal for chunk in chunks] == sorted(
-            chunk.ordinal for chunk in chunks
-        )
+        assert [chunk.ordinal for chunk in chunks] == sorted(chunk.ordinal for chunk in chunks)
     finally:
         async with factory() as session:
             await clear_database(session)
         await engine.dispose()
-
-
-# -- Row Level Security ---------------------------------------------------
-#
-# Isolation of CSV rows cannot be shown on SQLite, which has no RLS and where
-# every connection is the owner. These run as a purpose-built reader role
-# because that is the only thing RLS constrains: the application role is a
-# superuser carrying BYPASSRLS and sails straight past the policy, which is
-# exactly why the SQL executor refuses such a connection rather than trusting
-# its DSN.
 
 
 def reader_url(url: str, role: str) -> str:
@@ -336,8 +312,6 @@ async def test_rls_scopes_csv_rows_to_the_reader_workspace() -> None:
                 bucket="raw",
                 object_key="k",
             )
-            # Flush the document before reading its id: the default is a
-            # Python-side uuid4, so it is not populated until insert time.
             session.add(document)
             await session.flush()
             session.add(
@@ -420,10 +394,6 @@ async def test_rls_scopes_csv_rows_to_the_reader_workspace() -> None:
                 await conn.execute(text("commit"))
                 return int(count or 0)
 
-        # An absent scope must hide everything rather than raise. That is why
-        # the policy reads current_setting with missing_ok: without it the
-        # expression throws, and because RLS applies the same expression to
-        # INSERT as a WITH CHECK, the worker's own row insert would fail.
         assert await visible_rows(None) == 0
         assert await visible_rows(scope_literal(first)) == 3
         assert await visible_rows(scope_literal(second)) == 2
@@ -478,8 +448,6 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
                 bucket="raw",
                 object_key="k",
             )
-            # Flush the document before reading its id: the default is a
-            # Python-side uuid4, so it is not populated until insert time.
             session.add(document)
             await session.flush()
             session.add(
@@ -498,8 +466,6 @@ async def test_the_reader_role_cannot_write_or_reach_other_tables() -> None:
             )
             session.add(run)
             await session.flush()
-            # Only a run the worker has activated carries this, and the
-            # catalogue joins through it.
             document.active_processing_run_id = run.id
             session.add(
                 DocumentRow(
@@ -657,8 +623,6 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
             )
             session.add(run)
             await session.flush()
-            # Only a run the worker has activated carries this, and the
-            # catalogue joins through it.
             document.active_processing_run_id = run.id
             session.add_all(
                 [
@@ -689,10 +653,6 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
         assert outcome.values == []
         assert len(rows) == 3
         assert [row.row_number for row in rows] == [1, 2, 3]
-        # Column names come from the row's own data, so the rendering is
-        # self-describing without joining the run's header. jsonb does not
-        # preserve key order, so the rendered order is jsonb's canonical one
-        # rather than the order the CSV header listed them in.
         assert rows[0].as_source("sales.csv").text == "id=1 | amount=1500 | status=OPEN"
 
         filtered = await query.run(
@@ -701,10 +661,6 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
         )
         assert [row.row_number for row in filtered.sources] == [1, 3]
 
-        # An aggregate carries the answer and nothing to cite. It used to be
-        # dropped for having no id, which left the model holding only the
-        # column names and a "no rows matched" -- it had computed the answer
-        # and then reported the data was absent.
         aggregated = await query.run(
             "select count(*) as n, sum((data->>'amount')::numeric) as total "
             f"from document_rows where document_id = '{document.id}'",
@@ -722,7 +678,6 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
         )
         assert grouped.sources == []
         assert {row["status"] for row in grouped.values} == {"CLOSED", "OPEN"}
-        # Still empty of values when there is genuinely nothing to compute.
         empty = await query.run(
             "select count(*) as n from document_rows "
             f"where document_id = '{document.id}' and data->>'status' = 'nope'",
@@ -733,8 +688,6 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
 
         catalogue = await query.queryable_files(workspace_ids=scope)
         assert [entry.filename for entry in catalogue.entries] == ["sales.csv"]
-        # jsonb does not preserve key order, so the columns arrive in jsonb's
-        # canonical order rather than the order the CSV header listed.
         assert sorted(catalogue.entries[0].columns) == ["amount", "id", "status"]
         assert catalogue.hidden == 0
     finally:
@@ -817,9 +770,6 @@ async def test_the_catalogue_is_scoped_and_the_model_cannot_name_processing_runs
                     csv_columns=columns,
                 )
                 session.add(run)
-                # run.id is a Python-side default, so it is only populated once
-                # flushed. Assigning it earlier writes null, and the catalogue
-                # joins through this column.
                 await session.flush()
                 document.active_processing_run_id = run.id
                 made.append(document)
@@ -830,24 +780,15 @@ async def test_the_catalogue_is_scoped_and_the_model_cannot_name_processing_runs
         query = RowQuery(reader, statement_timeout_ms=5_000, max_result_rows=200)
 
         catalogue = await query.queryable_files(workspace_ids=(mine,))
-        # Scoped: the other workspace's file is not merely hidden from the
-        # model, it was never received by the connection.
         assert [entry.filename for entry in catalogue.entries] == ["sales.csv"]
         assert catalogue.entries[0].columns == ["id", "status", "amount"]
         assert catalogue.entries[0].row_count == 1
         assert catalogue.filenames == {mine_document.id: "sales.csv"}
 
-        # A different scope sees its own file and nothing of the other's.
         other = await query.queryable_files(workspace_ids=(theirs,))
         assert [entry.filename for entry in other.entries] == ["theirs.csv"]
 
-        # Granted, so the wrapper can read it...
-        assert (
-            await query.queryable_files(workspace_ids=(mine,), pattern="sales")
-        ).entries
-        # ...but the model may not name it in a statement, even though the
-        # role could read it. The allowlist is what stops that, so the
-        # rejection has to come from validation rather than from a grant.
+        assert (await query.queryable_files(workspace_ids=(mine,), pattern="sales")).entries
         with pytest.raises(RowQueryError, match="may only read"):
             await query.run(
                 "select lease_token from processing_runs where document_id = :d",
@@ -928,9 +869,7 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
                     csv_columns=["a"],
                 )
                 session.add(run)
-                # run.id is a Python-side default, populated only on flush.
                 await session.flush()
-                # A run is not queryable until the worker has activated it.
                 document.active_processing_run_id = run.id
             await session.commit()
 
@@ -1007,9 +946,6 @@ async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
                     csv_columns=["a"],
                 )
                 session.add(run)
-                # run.id is a Python-side default, so it is only populated once
-                # flushed. Assigning it earlier writes null, and the catalogue
-                # joins through this column.
                 await session.flush()
                 document.active_processing_run_id = run.id
             await session.commit()
@@ -1024,20 +960,13 @@ async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
         ]
         assert first.hidden == 3
 
-        second = await query.queryable_files(
-            workspace_ids=(workspace,), offset=2, limit=2
-        )
+        second = await query.queryable_files(workspace_ids=(workspace,), offset=2, limit=2)
         assert [entry.filename for entry in second.entries] == [
             "file-02.csv",
             "file-03.csv",
         ]
-        # Hidden counts every file this page is not showing, not just those
-        # after it, so the model is never told a partial page is the whole
-        # set.
         assert second.hidden == 3
 
-        # A wildcard in the search term must not match every file, or the
-        # point of a lookup is lost.
         literal = await query.queryable_files(workspace_ids=(workspace,), pattern="file-0_")
         assert [entry.filename for entry in literal.entries] == []
         exact = await query.queryable_files(workspace_ids=(workspace,), pattern="file-03")
@@ -1119,9 +1048,6 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
             "environment": "test",
             "database_url": database_url(),
             "processing_temp_dir": Path("/tmp"),
-            # No clamd here, and a scanner failure is a 503 before anything
-            # is stored. Left on, every upload test fails for a reason that
-            # has nothing to do with what it is checking.
             "antivirus_enabled": False,
         }
     )
@@ -1135,9 +1061,6 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
     application.dependency_overrides[get_settings] = lambda: settings
     application.dependency_overrides[get_session] = override_session
     application.dependency_overrides[get_object_storage] = lambda: storage
-    # There is no clamd here. The scanner is a route dependency rather than a
-    # setting read at request time, so it has to be replaced outright or
-    # every upload fails as a 503 before anything is stored.
     application.dependency_overrides[get_malware_scanner] = lambda: CleanScanner()
 
     worker_settings = settings.model_copy(update={"processing_poll_interval_seconds": 0.0})
@@ -1157,9 +1080,7 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
             workspace_id, credentials = await seed_owner(session)
 
         transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             token = await client.post("/v1/auth/token", data=credentials)
             assert token.status_code == 200
             headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
@@ -1171,18 +1092,13 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
             assert response.status_code == 202, response.text
             body = response.json()
             assert body["detected_media_type"] == "text/csv"
-            # Queued rather than refused: the pipeline does read CSVs.
             assert body["status"] == "processing"
 
-        # The bytes reached object storage under the document's own key.
         document_id = UUID(body["id"])
         async with factory() as session:
             document = await session.get(Document, document_id)
         assert document is not None
-        assert (
-            storage.objects[(document.bucket, document.object_key)]
-            == csv_bytes()
-        )
+        assert storage.objects[(document.bucket, document.object_key)] == csv_bytes()
 
         assert await worker.run_once() is True
 
@@ -1192,14 +1108,11 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
             )
             rows = (
                 await session.scalars(
-                    select(DocumentRow).where(
-                        DocumentRow.document_id == document_id
-                    )
+                    select(DocumentRow).where(DocumentRow.document_id == document_id)
                 )
             ).all()
         assert run is not None
         assert run.status == "ready"
-        # csv_bytes carries a header and three data rows.
         assert run.row_count == 3
         assert run.chunk_count == 0
         assert sorted(run.csv_columns or []) == ["amount", "currency", "id", "status"]
@@ -1211,10 +1124,8 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
             "amount": "1500.00",
             "currency": "USD",
         }
-        # No vectors were produced for any of it.
         assert vector_store.points == {}
 
-        # And the catalogue the model will read names this file.
         catalogue_reader = create_async_engine(database_url())
         catalogue = RowQuery(
             catalogue_reader,
@@ -1248,8 +1159,6 @@ async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
         update={
             "environment": "test",
             "database_url": database_url(),
-            # No clamd in this environment, and a scanner that cannot be
-            # reached is a 503 before anything is stored.
             "antivirus_enabled": False,
         }
     )
@@ -1270,9 +1179,7 @@ async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
             workspace_id, credentials = await seed_owner(session)
 
         transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             token = await client.post("/v1/auth/token", data=credentials)
             assert token.status_code == 200
             response = await client.post(
@@ -1282,14 +1189,12 @@ async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
                     "file": (
                         "budget.xlsx",
                         xlsx_bytes(),
-                        "application/vnd.openxmlformats-officedocument."
-                        "spreadsheetml.sheet",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
                 },
             )
             assert response.status_code == 415
             assert response.json()["code"] == "unsupported_file_type"
-            # Refused at the door, so nothing was stored.
             assert storage.objects == {}
     finally:
         async with factory() as session:
@@ -1324,9 +1229,7 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
     try:
         async with factory() as session:
             await clear_database(session)
-            workspace, _ = await seed_owner(
-                session, slug="indexprobe", username="indexprobe-user"
-            )
+            workspace, _ = await seed_owner(session, slug="indexprobe", username="indexprobe-user")
             target = Document(
                 origin_workspace_id=workspace,
                 original_filename="target.csv",
@@ -1367,8 +1270,6 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
                     )
                 )
 
-            # The rest of the table: "read the whole table" and "read one
-            # file" have to look different for the plan to mean anything.
             for index in range(5):
                 other = Document(
                     origin_workspace_id=workspace,
@@ -1411,9 +1312,6 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
             await session.commit()
 
         async with engine.begin() as conn:
-            # Statistics first: without them the planner has no basis for
-            # choosing an index over a scan and would reach the right answer
-            # for the wrong reason.
             await conn.execute(text("ANALYZE document_rows"))
             plan = await conn.execute(
                 text(

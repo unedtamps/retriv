@@ -113,9 +113,7 @@ class DocumentNavigator:
                     )
                 )
                 if document is None:
-                    raise DocumentNotFound(
-                        "No readable document matches that id in this scope."
-                    )
+                    raise DocumentNotFound("No readable document matches that id in this scope.")
                 if document.deleted_at is not None:
                     raise DocumentNotFound(
                         "That document is being deleted and can no longer be read."
@@ -139,9 +137,7 @@ class DocumentNavigator:
                 )
                 rows = (
                     await session.execute(
-                        self._window_query(
-                            run_id, start_ordinal, limit, workspace_ids
-                        )
+                        self._window_query(run_id, start_ordinal, limit, workspace_ids)
                     )
                 ).all()
         except (DocumentNotFound, DocumentNotNavigable):
@@ -227,13 +223,7 @@ class DocumentNavigator:
             token_count = int(row[6])
             chunk_text = str(row[5])
             if hashlib.sha256(chunk_text.encode()).hexdigest() != row[7]:
-                raise DocumentNotFound(
-                    "A stored chunk's text does not match its content hash."
-                )
-            # Always admit the first row, even alone over budget. Trimming it
-            # would return nothing for a caller who asked to start here, and
-            # every retry from the same start_ordinal would trim it again --
-            # a window that can never advance.
+                raise DocumentNotFound("A stored chunk's text does not match its content hash.")
             if sources and spent + token_count > budget:
                 break
             spent += token_count
@@ -244,8 +234,6 @@ class DocumentNavigator:
                     processing_run_id=row[3],
                     chunk_id=row[0],
                     ordinal=int(row[4]),
-                    # Positioned, not ranked: nothing here was compared for
-                    # similarity, so there is no distance to report.
                     score=1.0,
                     content_hash=str(row[7]),
                     filename=row[12],
@@ -261,7 +249,6 @@ class DocumentNavigator:
         next_ordinal: int | None = None
         if sources:
             candidate = sources[-1].ordinal + 1
-            # Only offer a continuation that would actually return something.
             if candidate < total:
                 next_ordinal = candidate
         return NavigationWindow(sources=sources, total=total, next_ordinal=next_ordinal)

@@ -21,9 +21,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 
 PDF_MEDIA_TYPE = "application/pdf"
-DOCX_MEDIA_TYPE = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 CSV_MEDIA_TYPE = "text/csv"
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".csv"}
 OFFICE_CFB_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -134,9 +132,7 @@ def sanitize_filename(filename: str | None) -> str:
     normalized = unicodedata.normalize("NFC", filename).replace("\\", "/")
     basename = normalized.rsplit("/", maxsplit=1)[-1]
     cleaned = "".join(
-        character
-        for character in basename
-        if unicodedata.category(character) not in {"Cc", "Cf"}
+        character for character in basename if unicodedata.category(character) not in {"Cc", "Cf"}
     )
     cleaned = cleaned.strip(" .")
     if not cleaned or len(cleaned.encode("utf-8")) > 255:
@@ -172,9 +168,7 @@ def validate_csv(path: Path, settings: Settings) -> ValidationResult:
     """
     raw = path.read_bytes()
     if b"\x00" in raw:
-        raise invalid_document_error(
-            "The CSV contains NUL bytes and is not a text file."
-        )
+        raise invalid_document_error("The CSV contains NUL bytes and is not a text file.")
 
     decoded: str | None = None
     for encoding in CSV_ENCODINGS:
@@ -184,16 +178,12 @@ def validate_csv(path: Path, settings: Settings) -> ValidationResult:
             continue
         break
     if decoded is None:
-        raise invalid_document_error(
-            "The CSV must be UTF-8 encoded text."
-        )
+        raise invalid_document_error("The CSV must be UTF-8 encoded text.")
 
     previous_limit = csv.field_size_limit()
     csv.field_size_limit(settings.max_csv_field_bytes)
     try:
-        reader = csv.reader(
-            io.StringIO(decoded, newline=""), delimiter=sniff_delimiter(decoded)
-        )
+        reader = csv.reader(io.StringIO(decoded, newline=""), delimiter=sniff_delimiter(decoded))
         try:
             header = next(reader)
         except StopIteration:
@@ -209,14 +199,8 @@ def validate_csv(path: Path, settings: Settings) -> ValidationResult:
                 status_code=422,
                 code="too_many_columns",
                 title="CSV column limit exceeded",
-                detail=(
-                    f"A CSV cannot contain more than "
-                    f"{settings.max_csv_columns} columns."
-                ),
+                detail=(f"A CSV cannot contain more than {settings.max_csv_columns} columns."),
             )
-        # Duplicate names would collapse into one JSONB key, losing rows'
-        # values without any error at insert time. Suffix them instead so the
-        # loss is visible in the stored data rather than silent.
         names = uniquify_columns(header)
 
         rows = 0
@@ -261,17 +245,12 @@ def sniff_delimiter(text: str, *, sample_lines: int = 20) -> str:
     sample = "\n".join(text.splitlines()[:sample_lines])
     for delimiter in CSV_DELIMITERS:
         try:
-            rows = [
-                row
-                for row in csv.reader(io.StringIO(sample, newline=""), delimiter=delimiter)
-            ]
+            rows = [row for row in csv.reader(io.StringIO(sample, newline=""), delimiter=delimiter)]
         except csv.Error:
             continue
         widths = {len(row) for row in rows if row}
         if len(widths) == 1 and next(iter(widths), 0) > 1:
             return delimiter
-    # A single-column file has no delimiter to find. Commas are what a
-    # reader will assume, so the parser must assume the same.
     return ","
 
 
@@ -348,9 +327,7 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
         with zipfile.ZipFile(path) as archive:
             entries = archive.infolist()
             if len(entries) > settings.max_archive_entries:
-                raise unsafe_archive_error(
-                    "The Office package contains too many entries."
-                )
+                raise unsafe_archive_error("The Office package contains too many entries.")
 
             names: set[str] = set()
             total_compressed = 0
@@ -358,37 +335,24 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
             for entry in entries:
                 validate_archive_entry(entry, settings)
                 if entry.filename in names:
-                    raise unsafe_archive_error(
-                        "The Office package contains duplicate entries."
-                    )
+                    raise unsafe_archive_error("The Office package contains duplicate entries.")
                 names.add(entry.filename)
                 total_compressed += entry.compress_size
                 total_uncompressed += entry.file_size
 
             if total_uncompressed > settings.max_archive_uncompressed_bytes:
-                raise unsafe_archive_error(
-                    "The uncompressed Office package is too large."
-                )
+                raise unsafe_archive_error("The uncompressed Office package is too large.")
             denominator = max(total_compressed, 1)
-            if (
-                total_uncompressed / denominator
-                > settings.max_archive_compression_ratio
-            ):
-                raise unsafe_archive_error(
-                    "The Office package compression ratio is unsafe."
-                )
+            if total_uncompressed / denominator > settings.max_archive_compression_ratio:
+                raise unsafe_archive_error("The Office package compression ratio is unsafe.")
 
             required_entries = {"[Content_Types].xml", "_rels/.rels", main_part}
             if not required_entries.issubset(names):
-                raise invalid_document_error(
-                    "The Office package is missing required content."
-                )
+                raise invalid_document_error("The Office package is missing required content.")
 
             content_types_info = archive.getinfo("[Content_Types].xml")
             if content_types_info.file_size > 1024 * 1024:
-                raise unsafe_archive_error(
-                    "The Office content type manifest is too large."
-                )
+                raise unsafe_archive_error("The Office content type manifest is too large.")
             main_info = archive.getinfo(main_part)
             relationships_info = archive.getinfo("_rels/.rels")
             if (
@@ -402,9 +366,7 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
     except AppError:
         raise
     except (zipfile.BadZipFile, KeyError, OSError) as exc:
-        raise invalid_document_error(
-            "The Office document is corrupt or invalid."
-        ) from exc
+        raise invalid_document_error("The Office document is corrupt or invalid.") from exc
 
     root = parse_office_xml(content_types_xml, "content type manifest")
     parse_office_xml(main_xml, "main document part")
@@ -437,9 +399,7 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
             detail="Macro-enabled Office documents are not accepted.",
         )
     if overrides.get(f"/{main_part}") != main_content_type:
-        raise invalid_document_error(
-            "The Office document type does not match its extension."
-        )
+        raise invalid_document_error("The Office document type does not match its extension.")
 
     return ValidationResult(media_type=media_type)
 
@@ -474,9 +434,7 @@ def preflight_zip(path: Path, settings: Settings) -> None:
         or directory_size == 0xFFFFFFFF
         or directory_offset == 0xFFFFFFFF
     ):
-        raise unsafe_archive_error(
-            "Multi-disk and ZIP64 Office packages are not accepted."
-        )
+        raise unsafe_archive_error("Multi-disk and ZIP64 Office packages are not accepted.")
     if total_entries > settings.max_archive_entries:
         raise unsafe_archive_error("The Office package contains too many entries.")
     if directory_size > settings.max_archive_central_directory_bytes:
@@ -499,9 +457,7 @@ def validate_archive_entry(entry: zipfile.ZipInfo, settings: Settings) -> None:
     ):
         raise unsafe_archive_error("The Office package contains an unsafe entry.")
     if entry.file_size > 0 and entry.compress_size == 0:
-        raise unsafe_archive_error(
-            "The Office package contains an invalid compressed entry."
-        )
+        raise unsafe_archive_error("The Office package contains an invalid compressed entry.")
     if entry.file_size > settings.max_archive_entry_bytes:
         raise unsafe_archive_error("The Office package contains an oversized entry.")
     if (
@@ -509,9 +465,7 @@ def validate_archive_entry(entry: zipfile.ZipInfo, settings: Settings) -> None:
         and entry.file_size / max(entry.compress_size, 1)
         > settings.max_archive_entry_compression_ratio
     ):
-        raise unsafe_archive_error(
-            "The Office package contains an unsafe compressed entry."
-        )
+        raise unsafe_archive_error("The Office package contains an unsafe compressed entry.")
 
 
 def parse_office_xml(content: bytes, description: str) -> Element:

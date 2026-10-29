@@ -68,10 +68,6 @@ class McpEndpointMiddleware:
             await _send_problem(scope, receive, send, exc)
             return
 
-        # The MCP application is dispatched to directly rather than mounted:
-        # a Mount at "/mcp" makes the router answer "/mcp" with a redirect to
-        # "/mcp/", and an MCP client that does not follow redirects would see
-        # a 307 instead of a session.
         if path != self._path:
             scope["path"] = self._path
         await self.mcp_app(scope, receive, send)
@@ -87,9 +83,7 @@ def _authorization(scope: Scope) -> str | None:
     return None
 
 
-async def _send_problem(
-    scope: Scope, receive: Receive, send: Send, error: AppError
-) -> None:
+async def _send_problem(scope: Scope, receive: Receive, send: Send, error: AppError) -> None:
     payload = {
         "type": f"/problems/{error.code}",
         "title": error.title,

@@ -33,9 +33,7 @@ async def list_api_keys(
         .where(ApiKey.user_id == current_user.id)
         .order_by(ApiKey.revoked_at.is_(None).desc(), ApiKey.created_at.desc())
     )
-    return ApiKeyListResponse(
-        items=[api_key_summary(record) for record in result.all()]
-    )
+    return ApiKeyListResponse(items=[api_key_summary(record) for record in result.all()])
 
 
 @router.post("", response_model=ApiKeyCreatedResponse, status_code=201)
@@ -69,9 +67,7 @@ async def create_api_key(
             ),
         )
 
-    minted = await mint_api_key(
-        session, user_id=current_user.id, name=payload.name
-    )
+    minted = await mint_api_key(session, user_id=current_user.id, name=payload.name)
     await session.commit()
     response.headers["Cache-Control"] = "no-store"
     return ApiKeyCreatedResponse(
@@ -81,8 +77,7 @@ async def create_api_key(
         key=minted.plaintext,
         created_at=minted.record.created_at,
         warning=(
-            "This is the only time the key is shown. Store it now; "
-            "it cannot be recovered later."
+            "This is the only time the key is shown. Store it now; it cannot be recovered later."
         ),
     )
 
@@ -94,12 +89,8 @@ async def revoke_api_key_route(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Response:
     """Revoke one of the caller's own keys. Idempotent per active key."""
-    revoked = await revoke_api_key(
-        session, key_id=key_id, user_id=current_user.id
-    )
+    revoked = await revoke_api_key(session, key_id=key_id, user_id=current_user.id)
     if not revoked:
-        # 404 for both "not yours" and "already revoked": the caller learns
-        # nothing about keys they do not own.
         raise AppError(
             status_code=404,
             code="api_key_not_found",

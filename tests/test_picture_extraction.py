@@ -99,9 +99,6 @@ def test_a_picture_dropped_for_its_size_keeps_its_caption_but_gets_no_marker() -
     assert "Figure 2: Company logo." in text
 
 
-# --- pictures cropped from the source PDF --------------------------------
-
-
 def a_pdf_with_a_marked_region(
     tmp_path: Path,
 ) -> Path:

@@ -32,9 +32,6 @@ SAFE_ENVIRONMENT_KEYS = (
     "TMPDIR",
     "TORCH_HOME",
     "XDG_CACHE_HOME",
-    # Not trusted content, but the channel for one: an operator measuring an
-    # alternative allocator can preload it into the sandbox from the worker's
-    # own environment without a code change.
     "LD_PRELOAD",
 )
 
@@ -144,11 +141,6 @@ class SandboxedDoclingExtractor:
                     "NUMEXPR_NUM_THREADS": "4",
                     "OMP_NUM_THREADS": "4",
                     "OPENBLAS_NUM_THREADS": "4",
-                    # glibc sizes a malloc arena per thread and reserves the
-                    # address space for it up front. Capped, the parser's
-                    # address space stays closer to the memory it actually
-                    # touches, which is what the RLIMIT_AS ceiling is checked
-                    # against.
                     "MALLOC_ARENA_MAX": "2",
                 }
             )
@@ -197,13 +189,6 @@ class SandboxedDoclingExtractor:
                     return_code,
                     detail[:3000],
                 )
-                # A child killed by SIGKILL is the cgroup's OOM killer, and one
-                # that reports an allocator failure hit the address-space limit.
-                # Both mean "this document needs more room", not "this document
-                # is malformed", and the limit is worth naming: it is the number
-                # the operator has to change. The tail is checked as well as the
-                # error file because the failing stage is often a library that
-                # dies before Docling can turn it into a per-page error.
                 if return_code == -signal.SIGKILL or looks_like_allocation_failure(
                     f"{detail}\n{stderr_detail}"
                 ):
@@ -213,9 +198,6 @@ class SandboxedDoclingExtractor:
                     )
                 raise ExtractionError(f"{detail} (exit status {return_code})")
 
-            # The sandbox logs its progress and partial-conversion warnings to
-            # stderr. Keep them visible in the worker's stdout even when the
-            # process exits successfully.
             sandbox_log = self._read_tail(stderr_path, 4000)
             if sandbox_log:
                 log = (
@@ -257,8 +239,6 @@ class SandboxedDoclingExtractor:
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise ExtractionError("Sandbox returned an invalid extraction result") from exc
             except ExtractionError:
-                # A picture that was too large to read is not an invalid
-                # result: it is a limit that was reached, and it says so.
                 raise
             if len(chunks) > self._max_chunks:
                 raise ExtractionError("Sandbox returned too many chunks")
@@ -349,8 +329,6 @@ class SandboxedDoclingExtractor:
             or not name
         ):
             raise TypeError
-        # The name comes from the sandbox, so it is not trusted to stay
-        # inside the output directory.
         path = (output_dir / name).resolve()
         if not path.is_relative_to(output_dir.resolve()):
             raise ValueError("Sandbox returned an image outside its output directory")

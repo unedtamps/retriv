@@ -21,9 +21,7 @@ MAX_SCOPE_WORKSPACES = 1000
 
 async def searchable_workspace_ids(session: AsyncSession, user_id: UUID) -> list[UUID]:
     roles = [
-        role
-        for role, permissions in ROLE_PERMISSIONS.items()
-        if "search_context" in permissions
+        role for role, permissions in ROLE_PERMISSIONS.items() if "search_context" in permissions
     ]
     result = await session.scalars(
         select(WorkspaceMembership.workspace_id)

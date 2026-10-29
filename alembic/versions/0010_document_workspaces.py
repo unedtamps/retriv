@@ -90,9 +90,6 @@ def upgrade() -> None:
         unique=False,
     )
 
-    # One link per existing document. A deployment that already has
-    # cross-workspace duplicates must be reset before the global unique
-    # constraint below can be applied.
     op.execute(
         """
         INSERT INTO document_workspaces
@@ -103,9 +100,7 @@ def upgrade() -> None:
         """
     )
 
-    op.drop_constraint(
-        "uq_documents_workspace_sha256", "documents", type_="unique"
-    )
+    op.drop_constraint("uq_documents_workspace_sha256", "documents", type_="unique")
     op.create_unique_constraint("uq_documents_sha256", "documents", ["sha256"])
 
     op.drop_constraint("processing_run_kind", "processing_runs", type_="check")
@@ -115,9 +110,6 @@ def upgrade() -> None:
         "job_kind IN ('extract', 'delete', 'access')",
     )
 
-    # Link table is readable by the restricted row-query role, but only for
-    # links in the session's scope. The policies on the tables below ask this
-    # table whether the document is in scope.
     op.execute("ALTER TABLE document_workspaces ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE document_workspaces FORCE ROW LEVEL SECURITY")
     op.execute(

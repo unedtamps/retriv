@@ -98,25 +98,19 @@ async def find_documents(
     if pattern:
         needle = pattern.casefold()
         statement = statement.where(
-            DocumentWorkspace.filename.ilike(
-                f"%{_escape_like(pattern)}%", escape="\\"
-            )
+            DocumentWorkspace.filename.ilike(f"%{_escape_like(pattern)}%", escape="\\")
         )
         rank = case(
             (func.lower(DocumentWorkspace.filename) == needle, 0),
             (
-                DocumentWorkspace.filename.ilike(
-                    f"{_escape_like(needle)}%", escape="\\"
-                ),
+                DocumentWorkspace.filename.ilike(f"{_escape_like(needle)}%", escape="\\"),
                 1,
             ),
             else_=2,
         )
         statement = statement.order_by(rank, DocumentWorkspace.filename, Document.id)
     else:
-        statement = statement.order_by(
-            DocumentWorkspace.created_at.desc(), Document.id
-        )
+        statement = statement.order_by(DocumentWorkspace.created_at.desc(), Document.id)
 
     result = await session.execute(statement.limit(limit))
 
@@ -157,10 +151,7 @@ def format_documents(
     """
     if not summaries:
         if pattern:
-            return (
-                f"No document whose name contains {pattern!r} is in scope for "
-                "this API key.\n\n"
-            )
+            return f"No document whose name contains {pattern!r} is in scope for this API key.\n\n"
         return "No documents are in scope for this API key.\n\n"
 
     header = f"Documents matching {pattern!r}:" if pattern else "Documents:"
@@ -179,9 +170,7 @@ def format_documents(
         lines.append("  " + "  ".join(details))
 
     if total > len(summaries):
-        lines.append(
-            f"  ... and {total - len(summaries)} more. Raise limit to see them."
-        )
+        lines.append(f"  ... and {total - len(summaries)} more. Raise limit to see them.")
     elif total == 0:
         lines.append("  none yet")
 

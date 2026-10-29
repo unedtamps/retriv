@@ -142,10 +142,6 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
         connect_args={"check_same_thread": False},
     )
 
-    # SQLite ignores foreign keys unless asked, so ON DELETE CASCADE is a
-    # no-op by default. Without this the delete tests would pass while
-    # proving nothing about the cascade the schema relies on to take the
-    # chunks and the embedding ledger with the document.
     @event.listens_for(engine.sync_engine, "connect")
     def _enable_foreign_keys(dbapi_connection: object, _record: object) -> None:
         cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
@@ -162,9 +158,6 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
 async def db_session_factory(
     db_engine: AsyncEngine,
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    # One engine behind both fixtures: a second create_async_engine over
-    # "sqlite+aiosqlite://" is a second, empty database, not a second
-    # connection to this one.
     async with db_engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(db_engine, expire_on_commit=False)

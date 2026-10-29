@@ -69,9 +69,7 @@ async def upload_document(
         response.status_code = status.HTTP_200_OK
     else:
         response.status_code = status.HTTP_202_ACCEPTED
-    return document_response(
-        result.document, result.link, result.run, duplicate=result.duplicate
-    )
+    return document_response(result.document, result.link, result.run, duplicate=result.duplicate)
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -82,13 +80,6 @@ async def list_documents(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> DocumentListResponse:
-    # deleted_at is filtered here but not on the single-document route.
-    # Deletion is asynchronous: the row is kept until the worker removes
-    # the vectors, so listing it would show a document that cannot be
-    # downloaded and is already unsearchable, and a refresh straight
-    # after a delete would put it back. The single-document route still
-    # answers 200 with status "deleting" so a client holding the id can
-    # tell what happened.
     condition = and_(
         DocumentWorkspace.workspace_id == workspace.id,
         DocumentWorkspace.deleted_at.is_(None),
@@ -100,9 +91,6 @@ async def list_documents(
         .join(DocumentWorkspace, DocumentWorkspace.document_id == Document.id)
         .where(condition)
     )
-    # The active run is joined rather than fetched per row: the list view
-    # needs a status for every document, and a query per document would
-    # be one round trip each.
     result = await session.execute(
         select(Document, DocumentWorkspace, ProcessingRun)
         .join(DocumentWorkspace, DocumentWorkspace.document_id == Document.id)
@@ -113,10 +101,7 @@ async def list_documents(
         .limit(limit)
     )
     return DocumentListResponse(
-        items=[
-            document_response(document, link, run)
-            for document, link, run in result.all()
-        ],
+        items=[document_response(document, link, run) for document, link, run in result.all()],
         total=total or 0,
         offset=offset,
         limit=limit,
@@ -147,9 +132,7 @@ async def download_document(
         )
     try:
         stream = await to_thread.run_sync(
-            partial(
-                storage.open_object, bucket=document.bucket, key=document.object_key
-            )
+            partial(storage.open_object, bucket=document.bucket, key=document.object_key)
         )
     except ObjectNotFoundError as exc:
         raise AppError(
@@ -159,9 +142,7 @@ async def download_document(
             detail="Document metadata exists but its stored object is unavailable.",
         ) from exc
     except StorageError as exc:
-        raise storage_unavailable_error(
-            "The document could not be downloaded."
-        ) from exc
+        raise storage_unavailable_error("The document could not be downloaded.") from exc
 
     return StreamingResponse(
         iter_object(stream),

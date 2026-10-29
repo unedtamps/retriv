@@ -32,9 +32,6 @@ export function WorkspaceDrawer({
   onClose,
 }: WorkspaceDrawerProps) {
   const canManage = isAdmin || workspace.can_manage_members
-  // Membership role only. The API resolves document permissions through
-  // the caller's membership with no platform-admin bypass, so adding
-  // isAdmin here would render a button that answers 404.
   const canDelete = workspace.can_delete
 
   return (

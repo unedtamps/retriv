@@ -54,9 +54,6 @@ export function WorkspaceDocuments({
     setDeleting(true)
     try {
       await api.deleteDocument(token, workspace.id, deleteTarget.id)
-      // Dropped locally rather than left for a refresh: the API answers 204
-      // as soon as the delete is accepted, and the list no longer reports a
-      // document that is being deleted, so it will not come back.
       documents.setData((current) =>
         current === null
           ? current
@@ -120,8 +117,7 @@ export function WorkspaceDocuments({
                   </p>
                   <p className="mt-0.5 font-mono text-meta text-ink-faint">
                     {documentLabel(document.status)}
-                    {/* A CSV is rows, not chunks. Without this it reads as
-                        a bare "Ready" with nothing to show for it. */}
+                    
                     {document.row_count > 0 ? ` · ${document.row_count} rows` : ''} ·{' '}
                     {new Date(document.created_at).toLocaleString()}
                   </p>

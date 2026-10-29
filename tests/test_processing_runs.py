@@ -102,7 +102,6 @@ async def test_processing_routes_aggregate_only_the_callers_workspaces(
     recent = await client.get("/v1/processing-runs/recent", headers=auth_headers)
 
     assert active.status_code == recent.status_code == 200
-    # finance is the only workspace with a non-terminal run
     assert active.json()["item"]["workspace_id"] == str(entities.finance.id)
     assert active.json()["item"]["filename"] == "finance.pdf"
     assert recent.json()["total"] == 2
@@ -122,9 +121,7 @@ async def test_a_viewer_sees_only_their_own_workspace(
     entities: SeededEntities,
 ) -> None:
     """Bob is a viewer of legal only, so finance runs are not his to see."""
-    await seed_run(
-        db_session_factory, workspace_id=entities.legal.id, filename="legal.pdf"
-    )
+    await seed_run(db_session_factory, workspace_id=entities.legal.id, filename="legal.pdf")
     await seed_run(
         db_session_factory,
         workspace_id=entities.finance.id,
@@ -136,9 +133,7 @@ async def test_a_viewer_sees_only_their_own_workspace(
 
     assert recent.status_code == 200
     assert recent.json()["total"] == 1
-    assert [item["workspace_id"] for item in recent.json()["items"]] == [
-        str(entities.legal.id)
-    ]
+    assert [item["workspace_id"] for item in recent.json()["items"]] == [str(entities.legal.id)]
 
 
 async def test_a_run_outside_the_callers_scope_is_never_returned(
@@ -148,9 +143,7 @@ async def test_a_run_outside_the_callers_scope_is_never_returned(
 ) -> None:
     """The filter is in the query, so there is no window where a
     cross-workspace row is fetched and only then rejected."""
-    await seed_run(
-        db_session_factory, workspace_id=entities.finance.id, filename="finance.pdf"
-    )
+    await seed_run(db_session_factory, workspace_id=entities.finance.id, filename="finance.pdf")
 
     headers = await viewer_headers(client)
     active = await client.get("/v1/processing-runs/active", headers=headers)
@@ -168,9 +161,7 @@ async def test_a_user_with_no_workspaces_sees_nothing(
 ) -> None:
     async with db_session_factory() as session:
         result = await session.execute(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.user_id == entities.user.id
-            )
+            select(WorkspaceMembership).where(WorkspaceMembership.user_id == entities.user.id)
         )
         for row in result.scalars().all():
             await session.delete(row)
@@ -183,9 +174,7 @@ async def test_a_user_with_no_workspaces_sees_nothing(
     assert response.status_code == 200
     headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
 
-    await seed_run(
-        db_session_factory, workspace_id=entities.finance.id, filename="finance.pdf"
-    )
+    await seed_run(db_session_factory, workspace_id=entities.finance.id, filename="finance.pdf")
     active = await client.get("/v1/processing-runs/active", headers=headers)
     recent = await client.get("/v1/processing-runs/recent", headers=headers)
 

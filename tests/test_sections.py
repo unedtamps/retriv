@@ -43,15 +43,13 @@ def test_the_prefix_separates_children_from_cousins() -> None:
     """The trailing comma is what makes a prefix match exact rather than textual."""
     assert descendant_prefix(encode_section_key(["Pasal 16"])) == '["Pasal 16",'
     assert descendant_prefix(encode_section_key(["Pasal 160"])) == '["Pasal 160",'
-    # A chunk with no headings encodes as the empty array; nothing nests under it.
     assert descendant_prefix(encode_section_key([])) == "[,"
 
 
 def escape_literal(value: str) -> str:
     """Independent restatement of the escaping, so the test does not trust the code."""
     return "".join(
-        f"{LIKE_ESCAPE}{character}" if character in "\\%_" else character
-        for character in value
+        f"{LIKE_ESCAPE}{character}" if character in "\\%_" else character for character in value
     )
 
 

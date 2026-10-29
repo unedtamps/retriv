@@ -57,11 +57,6 @@ async def test_upload_supported_documents(
     assert body["workspace_id"] == str(entities.finance.id)
     assert body["original_filename"] == filename
     assert body["detected_media_type"] == media_type
-    # Derived from the enqueued run, not stored on the document. A
-    # spreadsheet is accepted and stored but the extraction pipeline
-    # cannot read it, so the run is already terminal when the response is
-    # built. Previously the document reported "ready" and the failure only
-    # surfaced in the processing feed; the two could disagree.
     expected = "processing" if media_type in EXPECTED_INDEXABLE else "unsupported_format"
     assert body["status"] == expected
     assert body["duplicate"] is False
@@ -85,7 +80,6 @@ async def test_upload_duplicate_returns_existing_document(
     assert second.json()["original_filename"] == "first.pdf"
     assert second.json()["duplicate"] is True
     assert len(object_storage.objects) == 1
-    # A duplicate is the same document, so it must not queue a second run.
     async with db_session_factory() as session:
         runs = (await session.scalars(select(ProcessingRun))).all()
     assert len(runs) == 1
@@ -102,9 +96,7 @@ async def test_upload_enqueues_the_pipeline_in_the_same_transaction(
     There is no outbox and no webhook: a document that exists is a
     document the worker will pick up.
     """
-    response = await upload(
-        client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes()
-    )
+    response = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
 
     assert response.status_code == 202
     document_id = UUID(response.json()["id"])
@@ -138,7 +130,6 @@ async def test_the_same_file_in_two_workspaces_is_one_document_with_two_links(
     assert legal.status_code == 200
     assert finance.json()["id"] == legal.json()["id"]
     assert legal.json()["duplicate"] is True
-    # The second workspace is a link, not a second object or pipeline.
     assert len(object_storage.objects) == 1
     async with db_session_factory() as session:
         links = (await session.scalars(select(DocumentWorkspace))).all()
@@ -264,9 +255,7 @@ async def test_download_rejects_a_revoked_api_key(
     created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
     async with db_session_factory() as session:
         key = await mint_api_key(session, user_id=entities.user.id, name="agent")
-        await revoke_api_key(
-            session, key_id=key.record.id, user_id=entities.user.id
-        )
+        await revoke_api_key(session, key_id=key.record.id, user_id=entities.user.id)
         await session.commit()
 
     response = await client.get(
@@ -345,7 +334,6 @@ async def test_delete_marks_the_document_and_queues_the_cleanup(
     deleted = await client.delete(url, headers=auth_headers)
 
     assert deleted.status_code == 204
-    # The raw object is gone right away.
     assert object_storage.objects == {}
 
     async with db_session_factory() as session:
@@ -358,15 +346,10 @@ async def test_delete_marks_the_document_and_queues_the_cleanup(
     assert run is not None
     assert run.document_id == document_id
     assert run.status == RUN_QUEUED
-    # The metadata route still resolves it, and reports it as deleting.
     fetched = await client.get(url, headers=auth_headers)
     assert fetched.status_code == 200
     assert fetched.json()["status"] == "deleting"
 
-    # The row still holds the (workspace_id, sha256) key until the worker
-    # removes it, so identical bytes are refused while the cleanup is in
-    # flight. Deleting the row here instead would orphan the vectors: the
-    # Qdrant point IDs live in the rows that cascade away with it.
     reuploaded = await upload(
         client, auth_headers, entities.finance.id, "report-again.pdf", content
     )
@@ -380,9 +363,7 @@ async def test_repeated_delete_does_not_queue_a_second_cleanup_run(
     entities: SeededEntities,
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    created = await upload(
-        client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes()
-    )
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
     url = f"/v1/workspaces/{entities.finance.id}/documents/{created.json()['id']}"
 
     first = await client.delete(url, headers=auth_headers)
@@ -391,9 +372,7 @@ async def test_repeated_delete_does_not_queue_a_second_cleanup_run(
     assert first.status_code == second.status_code == 204
     async with db_session_factory() as session:
         runs = (
-            await session.scalars(
-                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
-            )
+            await session.scalars(select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE))
         ).all()
     assert len(runs) == 1, "a second delete must not queue a second cleanup"
 
@@ -571,19 +550,13 @@ async def test_failed_delete_can_be_retried_from_deleting_state(
     failed = await client.delete(url, headers=auth_headers)
     metadata = await client.get(url, headers=auth_headers)
 
-    # The object could not be removed, so the request fails, but the
-    # document is already marked and its cleanup is already queued. The
-    # state is consistent: the API does not pretend the delete did not
-    # start.
     assert failed.status_code == 503
     assert metadata.status_code == 200
     assert metadata.json()["status"] == "deleting"
     assert len(object_storage.objects) == 1
     async with db_session_factory() as session:
         delete_runs = (
-            await session.scalars(
-                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
-            )
+            await session.scalars(select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE))
         ).all()
     assert len(delete_runs) == 1
 
@@ -592,9 +565,7 @@ async def test_failed_delete_can_be_retried_from_deleting_state(
     assert retried.status_code == 204
     async with db_session_factory() as session:
         retried_runs = (
-            await session.scalars(
-                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
-            )
+            await session.scalars(select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE))
         ).all()
     assert len(retried_runs) == 1, "the retry must reuse the queued run"
 
@@ -644,21 +615,13 @@ async def test_chunked_upload_limit_returns_413(
     assert object_storage.objects == {}
 
 
-# --- listing ------------------------------------------------------------
-#
-# GET /v1/documents had no coverage at all, so the list the dashboard
-# renders was unverified. These pin the parts the delete flow depends on.
-
-
 async def test_document_list_reports_derived_status_and_paginates(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     entities: SeededEntities,
 ) -> None:
     for name, text in (("first.pdf", "First"), ("second.pdf", "Second")):
-        created = await upload(
-            client, auth_headers, entities.finance.id, name, pdf_bytes(text)
-        )
+        created = await upload(client, auth_headers, entities.finance.id, name, pdf_bytes(text))
         assert created.status_code == 202
 
     listed = await client.get(
@@ -673,8 +636,6 @@ async def test_document_list_reports_derived_status_and_paginates(
         "first.pdf",
         "second.pdf",
     }
-    # Status is derived from the queued run, not stored on the row, so a
-    # freshly accepted upload reports as still processing.
     assert {item["status"] for item in body["items"]} == {"processing"}
 
     page = await client.get(
@@ -699,9 +660,7 @@ async def test_document_list_excludes_a_document_being_deleted(
     undownloadable and already unsearchable -- and stays there for as
     long as the worker is not running to remove it.
     """
-    created = await upload(
-        client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes()
-    )
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
     document_id = created.json()["id"]
     url = f"/v1/workspaces/{entities.finance.id}/documents/{document_id}"
 
@@ -712,19 +671,16 @@ async def test_document_list_excludes_a_document_being_deleted(
 
     assert (await client.delete(url, headers=auth_headers)).status_code == 204
 
-    # The row is still there for the worker to act on...
     async with db_session_factory() as session:
         stored = await session.get(Document, UUID(document_id))
     assert stored is not None and stored.deleted_at is not None
 
-    # ...but the list must not report it as part of the workspace.
     after = await client.get(
         f"/v1/workspaces/{entities.finance.id}/documents", headers=auth_headers
     )
     assert document_id not in {item["id"] for item in after.json()["items"]}
     assert after.json()["total"] == 0
 
-    # The single-document route still explains what happened.
     fetched = await client.get(url, headers=auth_headers)
     assert fetched.status_code == 200
     assert fetched.json()["status"] == "deleting"
@@ -737,9 +693,7 @@ async def test_document_list_is_scoped_to_one_workspace(
 ) -> None:
     await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
 
-    other = await client.get(
-        f"/v1/workspaces/{entities.legal.id}/documents", headers=auth_headers
-    )
+    other = await client.get(f"/v1/workspaces/{entities.legal.id}/documents", headers=auth_headers)
 
     assert other.status_code == 200
     assert other.json()["total"] == 0
@@ -759,16 +713,12 @@ async def test_viewer_can_list_documents_but_cannot_delete_one(
         "/v1/auth/token",
         data={"username": "alice", "password": "correct-horse-battery-staple"},
     )
-    owner_headers = {
-        "Authorization": f"Bearer {owner_login.json()['access_token']}"
-    }
+    owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
     viewer_login = await client.post(
         "/v1/auth/token",
         data={"username": "bob", "password": "another-correct-password"},
     )
-    viewer_headers = {
-        "Authorization": f"Bearer {viewer_login.json()['access_token']}"
-    }
+    viewer_headers = {"Authorization": f"Bearer {viewer_login.json()['access_token']}"}
 
     created = await upload(
         client, owner_headers, entities.legal.id, "legal.pdf", pdf_bytes("Legal")
@@ -802,9 +752,6 @@ async def upload(
     )
 
 
-# What the extraction pipeline can actually read, so a run starts queued
-# rather than terminal. CSV is included: it is read as rows, not indexed as
-# chunks, but the worker does parse it.
 EXPECTED_INDEXABLE = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -820,12 +767,8 @@ async def test_deleting_one_link_keeps_the_document_for_the_other_workspace(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     content = pdf_bytes()
-    finance = await upload(
-        client, auth_headers, entities.finance.id, "report.pdf", content
-    )
-    await upload(
-        client, auth_headers, entities.legal.id, "laporan.pdf", content
-    )
+    finance = await upload(client, auth_headers, entities.finance.id, "report.pdf", content)
+    await upload(client, auth_headers, entities.legal.id, "laporan.pdf", content)
     document_id = UUID(finance.json()["id"])
 
     deleted = await client.delete(
@@ -834,7 +777,6 @@ async def test_deleting_one_link_keeps_the_document_for_the_other_workspace(
     )
 
     assert deleted.status_code == 204
-    # The object belongs to the canonical document, not to either link.
     assert len(object_storage.objects) == 1
     async with db_session_factory() as session:
         document = await session.get(Document, document_id)
@@ -851,9 +793,7 @@ async def test_deleting_one_link_keeps_the_document_for_the_other_workspace(
             )
         )
         delete_runs = (
-            await session.scalars(
-                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
-            )
+            await session.scalars(select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE))
         ).all()
     assert document is not None and document.deleted_at is None
     assert finance_link is not None and finance_link.deleted_at is not None
@@ -877,12 +817,8 @@ async def test_deleting_the_last_link_queues_cleanup_and_removes_the_object(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     content = pdf_bytes()
-    finance = await upload(
-        client, auth_headers, entities.finance.id, "report.pdf", content
-    )
-    await upload(
-        client, auth_headers, entities.legal.id, "laporan.pdf", content
-    )
+    finance = await upload(client, auth_headers, entities.finance.id, "report.pdf", content)
+    await upload(client, auth_headers, entities.legal.id, "laporan.pdf", content)
     document_id = UUID(finance.json()["id"])
 
     first = await client.delete(
@@ -899,9 +835,7 @@ async def test_deleting_the_last_link_queues_cleanup_and_removes_the_object(
     async with db_session_factory() as session:
         document = await session.get(Document, document_id)
         delete_runs = (
-            await session.scalars(
-                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
-            )
+            await session.scalars(select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE))
         ).all()
     assert document is not None and document.deleted_at is not None
     assert len(delete_runs) == 1
@@ -915,9 +849,7 @@ async def test_reuploading_to_a_workspace_reactivates_its_deleted_link(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     content = pdf_bytes()
-    first = await upload(
-        client, auth_headers, entities.finance.id, "report.pdf", content
-    )
+    first = await upload(client, auth_headers, entities.finance.id, "report.pdf", content)
     await upload(client, auth_headers, entities.legal.id, "laporan.pdf", content)
     document_id = UUID(first.json()["id"])
 
@@ -925,9 +857,7 @@ async def test_reuploading_to_a_workspace_reactivates_its_deleted_link(
         f"/v1/workspaces/{entities.finance.id}/documents/{document_id}",
         headers=auth_headers,
     )
-    again = await upload(
-        client, auth_headers, entities.finance.id, "report-again.pdf", content
-    )
+    again = await upload(client, auth_headers, entities.finance.id, "report-again.pdf", content)
 
     assert again.status_code == 200
     assert again.json()["duplicate"] is True

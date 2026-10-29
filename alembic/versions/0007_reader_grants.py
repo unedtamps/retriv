@@ -37,10 +37,6 @@ depends_on: str | Sequence[str] | None = None
 
 READER_ROLE = "retriv_reader"
 
-# document_rows and documents: the tables a query may name. processing_runs is
-# not in the model's allowlist, but the wrapper reads it to learn a file's
-# column names, and a granted table the model cannot spell is narrower than one
-# it could.
 GRANTED_TABLES = ("document_rows", "documents", "processing_runs")
 
 
@@ -53,23 +49,19 @@ def upgrade() -> None:
                 RETURN;
             END IF;
             GRANT USAGE ON SCHEMA public TO {READER_ROLE};
-            GRANT SELECT ON {', '.join(GRANTED_TABLES)} TO {READER_ROLE};
+            GRANT SELECT ON {", ".join(GRANTED_TABLES)} TO {READER_ROLE};
         END $$
         """  # noqa: S608 - interpolates READER_ROLE and GRANTED_TABLES only, never input
     )
 
 
 def downgrade() -> None:
-    # REVOKE rather than DROP: the role and its access to everything else
-    # belong to the deployment, not to this revision. Revoking only what this
-    # revision grants keeps a downgrade from becoming a way to remove access
-    # this revision never provided.
     op.execute(
         f"""
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{READER_ROLE}') THEN
-                REVOKE SELECT ON {', '.join(GRANTED_TABLES)} FROM {READER_ROLE};
+                REVOKE SELECT ON {", ".join(GRANTED_TABLES)} FROM {READER_ROLE};
             END IF;
         END $$
         """  # noqa: S608 - interpolates READER_ROLE and GRANTED_TABLES only, never input

@@ -57,19 +57,22 @@ The interface is described once, in `src/index.css`, and everything else is Tail
 over those tokens.
 
 **Tokens** (`@theme` in `src/index.css`): three surfaces (`paper`, `surface`, `sunken`), two
-lines (`line`, `line-strong`), three inks (`ink`, `ink-muted`, `ink-faint`), the lime brand
-accent in two tones (`accent` for primary fills, `accent-ink` for text and focus rings), five
-functional accents (`blue`, `teal`, `amber`, `coral`, `violet`) with soft variants, and the
-semantic status colours (`success`, `danger`, `warn`). The type scale is two steps:
-`text-eyebrow` for the small mono labels and `text-meta` for counts and timestamps.
+lines (`line`, `line-strong`), three inks (`ink`, `ink-muted`, `ink-faint`), the deep steel
+navy brand accent in two tones (`accent` for primary fills, `accent-ink` for accent text and
+focus rings on light surfaces — fills under text use `text-white`), five functional accents
+(`blue`, `teal`, `amber`, `coral`, `violet`) with soft variants, and the semantic status
+colours (`success`, `danger`, `warn`). The type scale is two steps: `text-eyebrow` for the
+small mono labels and `text-meta` for counts and timestamps.
 
 **Rules**
 
-- Lime is reserved for the primary action. Functional colours identify state, not decoration.
+- The navy accent is reserved for the primary action and the active state. Functional colours
+  identify state, not decoration.
 - A colour used in a component comes from a token. Workspace and member avatars use a
   deterministic accent from `src/lib/visuals.ts`; avatars are initials, never uploaded images.
 - Status is always communicated with a label as well as colour.
-- The dark surface is the sign-in page. The dashboard is paper and white cards.
+- The dark surface is the sign-in page. The dashboard is a white canvas with bordered white
+  cards and grey inset surfaces.
 
 **Layout**
 

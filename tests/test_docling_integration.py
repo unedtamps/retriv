@@ -67,9 +67,7 @@ def test_extracts_native_pdf_with_page_provenance(
 
 
 @pytest.mark.integration
-def test_extracts_scanned_pdf_with_ocr(
-    tmp_path: Path, docling_extractor: DoclingExtractor
-) -> None:
+def test_extracts_scanned_pdf_with_ocr(tmp_path: Path, docling_extractor: DoclingExtractor) -> None:
     image = Image.new("RGB", (1600, 1000), "white")
     ImageDraw.Draw(image).multiline_text(
         (80, 100),
@@ -94,9 +92,7 @@ def test_extracts_scanned_pdf_with_ocr(
 
 
 @pytest.mark.integration
-def test_extracts_docx_hierarchy(
-    tmp_path: Path, docling_extractor: DoclingExtractor
-) -> None:
+def test_extracts_docx_hierarchy(tmp_path: Path, docling_extractor: DoclingExtractor) -> None:
     path = tmp_path / "report.docx"
     document = Document()
     document.add_heading("Annual Report", level=1)
@@ -108,10 +104,7 @@ def test_extracts_docx_hierarchy(
     assert len(result.chunks) == 1
     assert "Operating costs remained stable" in result.chunks[0].text
     assert result.chunks[0].section_path == ["Annual Report"]
-    # The stored key is what section completion queries, so it must be derived from
-    # the path rather than left for the caller to reconstruct.
     assert result.chunks[0].section_key == encode_section_key(["Annual Report"])
-    # This chunk carries body text, so the parser's own labels rule out heading-only.
     assert result.chunks[0].is_heading_only is False
 
 
@@ -196,7 +189,6 @@ def test_a_long_table_is_split_on_rows_and_repeats_its_header(
         rows = [line for line in lines if " = " in line]
         assert rows, "a part of a table holds at least one row"
         for row in rows:
-            # Every row is whole: a cut cell would leave a half-written number.
             match = re.fullmatch(
                 r"Baris (\d+), 2025 = nilai (\d+)\. Baris \1, 2024 = nilai (\d+)", row
             )
@@ -206,18 +198,12 @@ def test_a_long_table_is_split_on_rows_and_repeats_its_header(
     assert seen_rows == sorted(seen_rows), "the rows stay in reading order"
     assert seen_rows == list(range(1, 61)), "every row is present exactly once"
 
-    # The table keeps its place: the prose before it comes first and the prose
-    # after it comes last, with the table's parts in between.
-    order = [
-        "before" if "Paragraf sebelum tabel." in chunk.text else ""
-        for chunk in result.chunks
-    ]
+    order = ["before" if "Paragraf sebelum tabel." in chunk.text else "" for chunk in result.chunks]
     assert "before" in order
     before = order.index("before")
-    assert all(
-        "Posisi | 2025 | 2024" not in chunk.text
-        for chunk in result.chunks[:before]
-    ), "the table does not precede the prose that introduces it"
+    assert all("Posisi | 2025 | 2024" not in chunk.text for chunk in result.chunks[:before]), (
+        "the table does not precede the prose that introduces it"
+    )
 
 
 @pytest.mark.integration
@@ -409,9 +395,6 @@ def simple_pdf(text: str) -> bytes:
     return text_layer_pdf([text])
 
 
-# --- pictures ------------------------------------------------------------
-
-
 @pytest.fixture(scope="module")
 def picture_extractor() -> DoclingExtractor:
     return DoclingExtractor(
@@ -493,13 +476,8 @@ def test_a_pdf_with_a_figure_yields_the_picture_and_marks_its_chunk(
     marked = [chunk for chunk in result.chunks if picture_refs(chunk.text)]
     assert len(marked) == 1
     assert picture_refs(marked[0].text) == [image.ref]
-    # the picture sits on the page the figure is on
     assert marked[0].page_numbers == [1]
 
-    # The artifact keeps what the parser made of the file, without the
-    # picture's bytes: the picture is described and then dropped, and a
-    # base64 PNG in the middle of the artifact says nothing the description
-    # does not.
     assert b"base64" not in result.document_json
 
 
@@ -542,7 +520,6 @@ def test_a_figure_below_the_pixel_floor_is_not_collected(tmp_path: Path) -> None
         tokenizer_name="cl100k_base",
         picture_images_enabled=True,
         image_render_scale=2.0,
-        # A floor no picture of this size can clear.
         image_min_pixels=100_000_000,
         max_images=10,
     )

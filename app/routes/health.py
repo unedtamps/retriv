@@ -39,9 +39,7 @@ async def readiness(
     """
     try:
         await session.execute(text("SELECT 1"))
-        await to_thread.run_sync(
-            partial(storage.check_health, bucket=settings.s3_raw_bucket)
-        )
+        await to_thread.run_sync(partial(storage.check_health, bucket=settings.s3_raw_bucket))
         await to_thread.run_sync(scanner.check_health)
         await check_qdrant(settings)
     except (SQLAlchemyError, StorageError, ScannerUnavailableError, OSError) as exc:

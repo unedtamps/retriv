@@ -32,20 +32,13 @@ import json
 
 SECTION_KEY_SEPARATOR = ","
 
-# LIKE's own metacharacters. A heading such as "Ayat (1)_a" is ordinary text in
-# a document, but to LIKE the underscore is a single-character wildcard, so an
-# unescaped key would match "Ayat (1)Xa" too. Backslash is listed first because
-# it is the escape character itself and doubling it has to happen before the
-# other two are touched.
 LIKE_ESCAPE = "\\"
 _LIKE_METACHARACTERS = ("\\", "%", "_")
 
 
 def encode_section_key(section_path: list[str]) -> str:
     """Render a section path as the canonical text key stored on the chunk."""
-    return json.dumps(
-        section_path, separators=(SECTION_KEY_SEPARATOR, ":"), ensure_ascii=False
-    )
+    return json.dumps(section_path, separators=(SECTION_KEY_SEPARATOR, ":"), ensure_ascii=False)
 
 
 def descendant_prefix(ancestor_key: str) -> str:
@@ -70,9 +63,7 @@ def subtree_pattern(ancestor_key: str) -> str:
     """
     literal = descendant_prefix(ancestor_key)
     escaped = "".join(
-        f"{LIKE_ESCAPE}{character}"
-        if character in _LIKE_METACHARACTERS
-        else character
+        f"{LIKE_ESCAPE}{character}" if character in _LIKE_METACHARACTERS else character
         for character in literal
     )
     return f"{escaped}%"
@@ -88,6 +79,4 @@ def section_descends_from(child_key: str, ancestor_key: str) -> bool:
     """
     if not ancestor_key:
         return False
-    return child_key == ancestor_key or child_key.startswith(
-        descendant_prefix(ancestor_key)
-    )
+    return child_key == ancestor_key or child_key.startswith(descendant_prefix(ancestor_key))

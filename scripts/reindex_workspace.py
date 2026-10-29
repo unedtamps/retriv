@@ -65,9 +65,7 @@ async def wait_for_delete(client: httpx.AsyncClient, document_id: str) -> None:
     raise TimeoutError(f"timed out waiting for the delete of {document_id}")
 
 
-async def wait_for_ready(
-    client: httpx.AsyncClient, workspace_id: str, document_id: str
-) -> dict:
+async def wait_for_ready(client: httpx.AsyncClient, workspace_id: str, document_id: str) -> dict:
     """Wait until the document reports itself ready."""
     deadline = time.monotonic() + 7200
     while time.monotonic() < deadline:
@@ -89,9 +87,7 @@ async def reindex(client: httpx.AsyncClient, workspace_id: str, path: Path) -> N
     matches = [d for d in listing if d["original_filename"] == path.name]
     for document in matches:
         print(f"  {path.name}: deleting {document['id']} ({document['status']})")
-        response = await client.delete(
-            f"/v1/workspaces/{workspace_id}/documents/{document['id']}"
-        )
+        response = await client.delete(f"/v1/workspaces/{workspace_id}/documents/{document['id']}")
         response.raise_for_status()
         await wait_for_delete(client, document["id"])
         print(f"  {path.name}: deleted, the row and its run are gone")

@@ -118,10 +118,6 @@ async def enqueue_delete(
         document.deleted_at = datetime.now(UTC)
     document.active_processing_run_id = None
 
-    # Cancel any extraction still in flight; there is nothing left to index.
-    # Scoped to JOB_EXTRACT on purpose: a delete run already queued for this
-    # document is the one doing the work, and cancelling it would leave the
-    # vectors orphaned.
     await session.execute(
         update(ProcessingRun)
         .where(
@@ -178,11 +174,7 @@ def derived_document_status(document: Document, run: ProcessingRun | None) -> st
     return "processing"
 
 
-async def load_active_run(
-    session: AsyncSession, document: Document
-) -> ProcessingRun | None:
+async def load_active_run(session: AsyncSession, document: Document) -> ProcessingRun | None:
     if document.active_processing_run_id is None:
         return None
     return await session.get(ProcessingRun, document.active_processing_run_id)
-
-

@@ -166,9 +166,7 @@ async def test_enqueue_delete_marks_and_queues_exactly_once(
     assert second is None, "a queued cleanup must not be duplicated"
     async with db_session_factory() as session:
         runs = (
-            await session.scalars(
-                select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE)
-            )
+            await session.scalars(select(ProcessingRun).where(ProcessingRun.job_kind == JOB_DELETE))
         ).all()
     assert len(runs) == 1
 

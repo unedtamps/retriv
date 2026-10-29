@@ -42,8 +42,6 @@ PENDING = "pending"
 
 
 def make_settings() -> Settings:
-    # The embedding profile has to match the one the seed writes into the
-    # ledger, or every row is correctly filtered out as a superseded profile.
     return Settings(
         environment="test",
         database_url="sqlite+aiosqlite://",
@@ -113,17 +111,12 @@ async def seed(
         )
         session.add(run)
         await session.flush()
-        # Assigned once the run exists rather than passed in, so the two ids
-        # cannot disagree.
         document.id = document_id
         document.active_processing_run_id = run.id
 
         for ordinal in range(count):
             text = f"Provision {ordinal} of the article."
             digest = hashlib.sha256(text.encode()).hexdigest()
-            # Corrupting the stored text after hashing is the case the
-            # recompute guard exists for: the ledger still agrees with the
-            # stored hash, so only recomputing the text catches it.
             if corrupt_text_at == ordinal:
                 text = f"Provision {ordinal}, edited in place."
             path = [f"Article {ordinal // 3}:"]
@@ -181,9 +174,7 @@ class Env:
         return await self.navigator.read_window(**options)
 
 
-async def seeded_navigator(
-    settings: Settings, **seed_kwargs: Any
-) -> Env:
+async def seeded_navigator(settings: Settings, **seed_kwargs: Any) -> Env:
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         poolclass=StaticPool,
@@ -254,9 +245,7 @@ async def test_a_document_outside_the_scope_is_not_readable() -> None:
 
 
 async def test_a_deleted_document_is_not_readable() -> None:
-    env = await seeded_navigator(
-        make_settings(), deleted_at=datetime(2026, 1, 1, tzinfo=UTC)
-    )
+    env = await seeded_navigator(make_settings(), deleted_at=datetime(2026, 1, 1, tzinfo=UTC))
 
     with pytest.raises(DocumentNotFound):
         await env.read()
@@ -264,9 +253,7 @@ async def test_a_deleted_document_is_not_readable() -> None:
 
 async def test_a_csv_is_refused_with_the_tool_that_can_read_it() -> None:
     """CSV rows are not chunks, so the failure has to name query_rows."""
-    env = await seeded_navigator(
-        make_settings(), media_type="text/csv", filename="ledger.csv"
-    )
+    env = await seeded_navigator(make_settings(), media_type="text/csv", filename="ledger.csv")
 
     with pytest.raises(DocumentNotNavigable, match="query_rows"):
         await env.read()
@@ -291,9 +278,7 @@ async def test_a_chunk_whose_text_was_edited_is_refused() -> None:
 
 async def test_a_stale_embedding_hash_filters_the_chunk_out() -> None:
     """A ledger that disagrees with the chunk is not an error, it is just not current."""
-    env = await seeded_navigator(
-        make_settings(), count=4, mismatched_embedding_hash_at=1
-    )
+    env = await seeded_navigator(make_settings(), count=4, mismatched_embedding_hash_at=1)
 
     window = await env.read()
 

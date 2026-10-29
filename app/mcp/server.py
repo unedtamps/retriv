@@ -183,9 +183,7 @@ async def _principal(
         return await principal_from_headers(headers, session)
 
 
-def build_mcp_server(
-    settings: Settings, box: McpRuntimeBox
-) -> tuple[MCPServer, Starlette]:
+def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer, Starlette]:
     """Build the MCP server and its ASGI application.
 
     The application is returned alongside the server because
@@ -197,11 +195,6 @@ def build_mcp_server(
         instructions=_instructions(row_queries=bool(settings.sql_database_url)),
     )
     transport_security = TransportSecuritySettings(
-        # Disabled deliberately. Every request to /mcp must carry an API key,
-        # which a page on another origin cannot obtain and cannot cause a
-        # browser to send: the credential lives in a header, not a cookie, so
-        # there is no ambient credential for a rebinding attack to ride on.
-        # The SDK still requires Content-Type application/json on POSTs.
         enable_dns_rebinding_protection=False,
     )
 
@@ -236,8 +229,6 @@ def build_mcp_server(
             return "No relevant sources were found."
         indices = source_indices(_by_chunk(sources))
         body = format_context(sources, indices)
-        # Only rendered when a heading was actually returned, so it stays a
-        # signal rather than something a reader learns to skip.
         hint = navigation_hint(sources, indices)
         return f"{body}\n\n{hint}" if hint else body
 
@@ -356,15 +347,9 @@ def build_mcp_server(
         if not scope:
             return "No searchable workspace is in scope for this API key."
         async with runtime.session_factory() as session:
-            summaries, total = await search_documents(
-                session, scope, pattern=pattern, limit=limit
-            )
+            summaries, total = await search_documents(session, scope, pattern=pattern, limit=limit)
         return format_documents(summaries, total=total, pattern=pattern)
 
-    # The reader DSN decides whether this tool exists at all. A
-    # deployment without one has no safe way to run model-written SQL,
-    # and a tool that always answers 'not enabled' is a tool the model
-    # will keep trying.
     if settings.sql_database_url:
 
         @mcp.tool()
@@ -405,8 +390,6 @@ def build_mcp_server(
             try:
                 outcome = await rows.run(sql, workspace_ids=scope)
             except RowQueryError as exc:
-                # The statement is the caller's own text, so it is not echoed
-                # back; the reason is what they need.
                 prefix = await _rejection_prefix(runtime, scope)
                 raise ToolError(f"{prefix}The query was rejected: {exc}") from exc
 
@@ -420,8 +403,6 @@ def build_mcp_server(
                     result.as_source(filenames.get(result.document_id))
                     for result in outcome.sources
                 ]
-                # RowQuery already refused a statement whose rows span
-                # documents, so what is left is to render them.
                 body = format_context(sources, source_indices(_by_chunk(sources)))
                 return f"{body}{computed}"
             if computed:
@@ -486,14 +467,8 @@ def build_mcp_server(
             if row is None:
                 raise ToolError("No such document in that workspace.")
             document, document_link = row
-            if (
-                document.deleted_at is not None
-                or document_link.deleted_at is not None
-            ):
-                raise ToolError(
-                    "That document is being deleted and can no longer be "
-                    "downloaded."
-                )
+            if document.deleted_at is not None or document_link.deleted_at is not None:
+                raise ToolError("That document is being deleted and can no longer be downloaded.")
 
         ttl = runtime.settings.mcp_download_link_ttl_seconds
         try:
@@ -526,11 +501,6 @@ def build_mcp_server(
     app = mcp.streamable_http_app(
         streamable_http_path="/mcp",
         transport_security=transport_security,
-        # No tool uploads anything any more, so a request body is a JSON-RPC
-        # message and nothing else. The cap is here to bound what a caller can
-        # make the process read, not to admit a payload: 1 MiB is far above
-        # any tools/call this server can use and far below anything a flood
-        # would want.
         max_request_body_size=1024 * 1024,
     )
     return mcp, app

@@ -34,9 +34,7 @@ class McpPrincipal:
     workspace_ids: list[UUID]
 
 
-async def user_from_authorization(
-    authorization: str | None, session: AsyncSession
-) -> User:
+async def user_from_authorization(authorization: str | None, session: AsyncSession) -> User:
     key = bearer_api_key(authorization)
     user = await authenticate_api_key(session, key)
     if user is None:
@@ -47,9 +45,7 @@ async def user_from_authorization(
 async def principal_from_headers(
     headers: Mapping[str, str] | None, session: AsyncSession
 ) -> McpPrincipal:
-    user = await user_from_authorization(
-        headers.get("authorization") if headers else None, session
-    )
+    user = await user_from_authorization(headers.get("authorization") if headers else None, session)
     workspace_ids = await searchable_workspace_ids(session, user.id)
     return McpPrincipal(user=user, workspace_ids=workspace_ids)
 

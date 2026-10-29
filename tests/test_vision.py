@@ -53,9 +53,7 @@ def a_chunk(text: str) -> ExtractedChunk:
     )
 
 
-def a_provider(
-    handler: Any, **overrides: Any
-) -> OpenAICompatibleVisionProvider:
+def a_provider(handler: Any, **overrides: Any) -> OpenAICompatibleVisionProvider:
     options: dict[str, Any] = {
         "base_url": "http://vision.test/v1/chat/completions",
         "api_key": "test-key",
@@ -135,9 +133,6 @@ async def test_an_answer_from_another_model_is_refused() -> None:
     finally:
         await provider.aclose()
 
-    # A different model answered, so the answer is not about this picture.
-    # It is refused outright rather than retried: the endpoint is routing
-    # requests somewhere else, and no amount of waiting fixes that.
     assert error.value.retryable is False
     assert calls == 1
 
@@ -258,6 +253,7 @@ async def test_a_model_that_never_finishes_is_reported() -> None:
     simply lower than what this picture takes, and only the operator can
     raise it.
     """
+
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=an_answer_that_ran_out_of_budget())
 
@@ -306,8 +302,6 @@ def test_a_marker_is_replaced_by_the_description() -> None:
     text = merged[0].text
     assert "[Image description: A bar chart of net revenue by segment.]" in text
     assert picture_refs(text) == []
-    # The description lands on the line the picture was on, between the
-    # sentence that introduces it and the sentence that follows it.
     lines = text.splitlines()
     assert lines[1] == "The chart follows."
     assert lines[2].startswith("[Image description:")
@@ -336,8 +330,6 @@ def test_a_chunk_of_nothing_but_a_picture_stays_readable() -> None:
         model="vendor/vision-model",
     )
 
-    # An empty chunk is a permanent processing error, so the marker becomes
-    # a word rather than nothing.
     assert merged[0].text.strip() == "[Image]"
 
 
@@ -351,9 +343,7 @@ def test_the_token_count_is_recounted_after_a_merge() -> None:
     )
 
     assert merged[0].token_count > chunk.token_count
-    assert merged[0].provenance["images"] == [
-        {"ref": "#/pictures/0", "described": True}
-    ]
+    assert merged[0].provenance["images"] == [{"ref": "#/pictures/0", "described": True}]
     assert merged[0].provenance["image_model"] == "vendor/vision-model"
 
 
@@ -377,8 +367,6 @@ def test_a_bigger_budget_is_given_more_time_on_the_wire() -> None:
         max_tokens=1024,
         timeout_seconds=10,
     )
-    # A budget at or below the starting one gets the starting timeout, and a
-    # bigger one gets proportionally more.
     assert provider._timeout_for(1024) == 10
     assert provider._timeout_for(256) == 10
     assert provider._timeout_for(2048) == 20

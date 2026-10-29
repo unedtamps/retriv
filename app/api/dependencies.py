@@ -221,9 +221,7 @@ WorkspaceContext = Annotated[Workspace, Depends(get_workspace)]
 UploadWorkspaceContext = Annotated[Workspace, Depends(get_upload_workspace)]
 DownloadWorkspaceContext = Annotated[Workspace, Depends(get_download_workspace)]
 MutationWorkspaceContext = Annotated[Workspace, Depends(get_mutation_workspace)]
-MemberManagementWorkspaceContext = Annotated[
-    Workspace, Depends(get_member_management_workspace)
-]
+MemberManagementWorkspaceContext = Annotated[Workspace, Depends(get_member_management_workspace)]
 PlatformAdmin = Annotated[User, Depends(get_admin_user)]
 StorageDependency = Annotated[ObjectStorage, Depends(get_object_storage)]
 ScannerDependency = Annotated[MalwareScanner, Depends(get_malware_scanner)]
@@ -286,7 +284,5 @@ async def get_mutable_document(
     return document
 
 
-DownloadableDocumentContext = Annotated[
-    ScopedDocument, Depends(get_downloadable_document)
-]
+DownloadableDocumentContext = Annotated[ScopedDocument, Depends(get_downloadable_document)]
 MutableDocumentContext = Annotated[ScopedDocument, Depends(get_mutable_document)]

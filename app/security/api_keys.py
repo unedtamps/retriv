@@ -27,12 +27,8 @@ KEY_SCHEME = "rk"
 KEY_ENTROPY_BYTES = 32
 PREFIX_LENGTH = 11
 HASH_ALGORITHM = "sha256"
-# Throttle last_used_at writes: one per minute per key is plenty for scope
-# derivation and keeps a busy MCP client from turning every tool call into
-# an UPDATE.
 LAST_USED_GRANULARITY_SECONDS = 60
 
-# Characters that read poorly when copied from a terminal.
 _ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -50,10 +46,7 @@ def key_prefix_of(key: str) -> str:
 
 
 def looks_like_api_key(value: str) -> bool:
-    return (
-        value.startswith(f"{KEY_SCHEME}_")
-        and len(value) == len(KEY_SCHEME) + 1 + 43
-    )
+    return value.startswith(f"{KEY_SCHEME}_") and len(value) == len(KEY_SCHEME) + 1 + 43
 
 
 @dataclass(frozen=True)
@@ -62,17 +55,13 @@ class MintedApiKey:
     plaintext: str
 
 
-async def mint_api_key(
-    session: AsyncSession, *, user_id: UUID, name: str
-) -> MintedApiKey:
+async def mint_api_key(session: AsyncSession, *, user_id: UUID, name: str) -> MintedApiKey:
     plaintext = generate_api_key()
     record = ApiKey(
         user_id=user_id,
         name=name,
         key_prefix=key_prefix_of(plaintext),
         key_hash=hash_api_key(plaintext),
-        # Set client-side too: the creation response returns it, and a
-        # server default is only fetched back on backends that RETURN it.
         created_at=datetime.now(UTC),
     )
     session.add(record)
@@ -80,9 +69,7 @@ async def mint_api_key(
     return MintedApiKey(record=record, plaintext=plaintext)
 
 
-async def revoke_api_key(
-    session: AsyncSession, *, key_id: UUID, user_id: UUID
-) -> bool:
+async def revoke_api_key(session: AsyncSession, *, key_id: UUID, user_id: UUID) -> bool:
     result = await session.execute(
         update(ApiKey)
         .where(
@@ -104,9 +91,7 @@ async def authenticate_api_key(session: AsyncSession, key: str) -> User | None:
     """
     if not looks_like_api_key(key):
         return None
-    record = await session.scalar(
-        select(ApiKey).where(ApiKey.key_hash == hash_api_key(key))
-    )
+    record = await session.scalar(select(ApiKey).where(ApiKey.key_hash == hash_api_key(key)))
     if record is None or record.revoked_at is not None:
         return None
     user = await session.get(User, record.user_id)
@@ -119,17 +104,10 @@ async def authenticate_api_key(session: AsyncSession, key: str) -> User | None:
 async def touch_api_key(session: AsyncSession, record: ApiKey) -> None:
     now = datetime.now(UTC)
     last_used = record.last_used_at
-    # SQLite returns naive datetimes even for a timezone-aware column.
     if last_used is not None and last_used.tzinfo is None:
         last_used = last_used.replace(tzinfo=UTC)
-    if (
-        last_used is None
-        or (now - last_used).total_seconds() >= LAST_USED_GRANULARITY_SECONDS
-    ):
+    if last_used is None or (now - last_used).total_seconds() >= LAST_USED_GRANULARITY_SECONDS:
         record.last_used_at = now
-        # Committed, not just flushed: no request path commits on the way
-        # out of authentication, so a flush here would be rolled back when
-        # the session closes and last_used_at would never persist.
         await session.commit()
 
 
