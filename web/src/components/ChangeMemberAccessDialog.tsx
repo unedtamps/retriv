@@ -7,7 +7,6 @@ import { RoleTiles } from './ui/RoleTiles'
 interface ChangeMemberAccessDialogProps {
   open: boolean
   workspace: Workspace
-  token: string
   member: WorkspaceMember
   isAdmin: boolean
   onUnauthorized: () => void
@@ -25,7 +24,6 @@ interface ChangeMemberAccessDialogProps {
 export function ChangeMemberAccessDialog({
   open,
   workspace,
-  token,
   member,
   isAdmin,
   onUnauthorized,
@@ -44,7 +42,7 @@ export function ChangeMemberAccessDialog({
     setSaving(true)
     setError(null)
     try {
-      const updated = await api.setMemberRole(token, workspace.id, member.user_id, role, isAdmin)
+      const updated = await api.setMemberRole(workspace.id, member.user_id, role, isAdmin)
       setSaving(false)
       onSaved(updated)
     } catch (caught) {

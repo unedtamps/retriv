@@ -4,14 +4,12 @@ import { UploadForm } from './UploadForm'
 import { Panel, PanelHeader } from './ui/Panel'
 
 interface UploadContextProps {
-  token: string
   workspaces: Workspace[]
   selectedWorkspaceId?: string | null
   onUnauthorized: () => void
 }
 
 export function UploadContext({
-  token,
   workspaces,
   selectedWorkspaceId,
   onUnauthorized,
@@ -56,7 +54,6 @@ export function UploadContext({
             <PanelHeader eyebrow="New document" title="Select its destination and file" />
             <div className="px-5 py-6">
               <UploadForm
-                token={token}
                 workspaces={workspaces}
                 initialWorkspaceId={followsSidebar ? selectedWorkspaceId : undefined}
                 onUnauthorized={onUnauthorized}

@@ -6,7 +6,6 @@ import { WorkspaceMembers } from './WorkspaceMembers'
 
 interface WorkspaceMembersPageProps {
   workspace: Workspace
-  token: string
   isAdmin: boolean
   onChanged: () => Promise<void>
   onUnauthorized: () => void
@@ -15,7 +14,6 @@ interface WorkspaceMembersPageProps {
 
 export function WorkspaceMembersPage({
   workspace,
-  token,
   isAdmin,
   onChanged,
   onUnauthorized,
@@ -49,7 +47,6 @@ export function WorkspaceMembersPage({
         {canManage ? (
           <WorkspaceMembers
             workspace={workspace}
-            token={token}
             isAdmin={isAdmin}
             onChanged={onChanged}
             onUnauthorized={onUnauthorized}

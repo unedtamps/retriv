@@ -47,6 +47,16 @@ export function UserSearchRoster({
     return () => window.clearTimeout(timer)
   }, [searching])
 
+  // The entrance animation belongs to the first list that appears. Replaying
+  // it on every keystroke is what made typing feel like the whole dialog was
+  // re-rendering, so it runs once and then the rows simply swap.
+  const [entering, setEntering] = useState(true)
+  useEffect(() => {
+    if (!entering || candidates.length === 0) return
+    const timer = window.setTimeout(() => setEntering(false), 400)
+    return () => window.clearTimeout(timer)
+  }, [entering, candidates.length])
+
   const meta =
     candidates.length === total
       ? `${candidates.length} ${candidates.length === 1 ? 'user' : 'users'}`
@@ -67,18 +77,18 @@ export function UserSearchRoster({
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-card border border-line">
+      <div className="h-56 overflow-hidden rounded-card border border-line">
         {candidates.length === 0 && !searching ? (
           <p className="px-3.5 py-4 text-sm leading-6 text-ink-faint">{emptyMessage}</p>
         ) : (
-          <ul className="max-h-64 divide-y divide-line overflow-y-auto">
+          <ul className="h-full divide-y divide-line overflow-y-auto">
             {candidates.map((user, index) => {
               const selected = user.id === selectedId
               return (
                 <li
                   key={user.id}
-                  className="roster-enter"
-                  style={{ animationDelay: `${Math.min(index, 8) * 24}ms` }}
+                  className={entering ? 'roster-enter' : undefined}
+                  style={entering ? { animationDelay: `${Math.min(index, 8) * 24}ms` } : undefined}
                 >
                   <button
                     type="button"

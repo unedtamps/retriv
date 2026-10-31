@@ -6,7 +6,6 @@ import { Dialog, DialogActions } from './Dialog'
 
 interface CreateUserDialogProps {
   open: boolean
-  token: string
   onCreated: (credential: OneTimeCredential) => void
   onUnauthorized: () => void
   onClose: () => void
@@ -20,7 +19,6 @@ interface CreateUserDialogProps {
  */
 export function CreateUserDialog({
   open,
-  token,
   onCreated,
   onUnauthorized,
   onClose,
@@ -35,7 +33,7 @@ export function CreateUserDialog({
     setStatus('submitting')
     setError(null)
     try {
-      const created = await api.createUser(token, username, role)
+      const created = await api.createUser(username, role)
       setUsername('')
       setRole('user')
       setStatus('idle')

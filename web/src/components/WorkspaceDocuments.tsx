@@ -8,7 +8,6 @@ import { useApiResource } from '../hooks/useApiResource'
 
 interface WorkspaceDocumentsProps {
   workspace: Workspace
-  token: string
   canDelete: boolean
   onChanged: () => Promise<void>
   onUnauthorized: () => void
@@ -33,7 +32,6 @@ const DOCUMENT_STATUS_LABELS: Record<string, string> = {
  */
 export function WorkspaceDocuments({
   workspace,
-  token,
   canDelete,
   onChanged,
   onUnauthorized,
@@ -44,8 +42,8 @@ export function WorkspaceDocuments({
 
   const documents = useApiResource(
     (signal) =>
-      api.listDocuments(token, workspace.id, { limit: 100, signal }),
-    [token, workspace.id],
+      api.listDocuments(workspace.id, { limit: 100, signal }),
+    [workspace.id],
     { onUnauthorized },
   )
 
@@ -53,7 +51,7 @@ export function WorkspaceDocuments({
     if (deleteTarget === null) return
     setDeleting(true)
     try {
-      await api.deleteDocument(token, workspace.id, deleteTarget.id)
+      await api.deleteDocument(workspace.id, deleteTarget.id)
       documents.setData((current) =>
         current === null
           ? current

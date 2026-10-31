@@ -6,7 +6,6 @@ import { Avatar } from './ui/Avatar'
 
 interface WorkspaceAccessSummaryProps {
   workspace: Workspace
-  token: string
   isAdmin: boolean
   onManageMembers: () => void
   onUnauthorized: () => void
@@ -14,7 +13,6 @@ interface WorkspaceAccessSummaryProps {
 
 export function WorkspaceAccessSummary({
   workspace,
-  token,
   isAdmin,
   onManageMembers,
   onUnauthorized,
@@ -23,9 +21,9 @@ export function WorkspaceAccessSummary({
   const members = useApiResource(
     async (signal) => {
       if (!canManage) return { items: [] }
-      return api.listMembers(token, workspace.id, isAdmin, signal)
+      return api.listMembers(workspace.id, isAdmin, signal)
     },
-    [token, workspace.id, isAdmin, canManage],
+    [workspace.id, isAdmin, canManage],
     { onUnauthorized },
   )
   const items = members.data?.items ?? []

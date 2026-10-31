@@ -7,7 +7,6 @@ import { WorkspaceMembers } from './WorkspaceMembers'
 
 interface WorkspaceDrawerProps {
   workspace: Workspace
-  token: string
   isAdmin: boolean
   onChanged: () => Promise<void>
   onUnauthorized: () => void
@@ -24,7 +23,6 @@ interface WorkspaceDrawerProps {
  */
 export function WorkspaceDrawer({
   workspace,
-  token,
   isAdmin,
   onChanged,
   onUnauthorized,
@@ -53,7 +51,6 @@ export function WorkspaceDrawer({
 
         <WorkspaceDocuments
           workspace={workspace}
-          token={token}
           canDelete={canDelete}
           onChanged={onChanged}
           onUnauthorized={onUnauthorized}
@@ -63,7 +60,6 @@ export function WorkspaceDrawer({
         {canManage ? (
           <WorkspaceMembers
             workspace={workspace}
-            token={token}
             isAdmin={isAdmin}
             onChanged={onChanged}
             onUnauthorized={onUnauthorized}

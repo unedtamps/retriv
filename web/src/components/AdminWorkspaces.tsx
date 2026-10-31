@@ -8,7 +8,6 @@ import { Avatar } from './ui/Avatar'
 import { WorkspaceMembersDialog } from './WorkspaceMembersDialog'
 
 interface AdminWorkspacesProps {
-  token: string
   onUnauthorized: () => void
   onNotice: (message: string, tone?: 'success' | 'error') => void
 }
@@ -19,10 +18,10 @@ interface AdminWorkspacesProps {
  * two buttons. The register itself is read-only — membership changes run
  * through the dialogs, never through the block.
  */
-export function AdminWorkspacesPage({ token, onUnauthorized, onNotice }: AdminWorkspacesProps) {
+export function AdminWorkspacesPage({ onUnauthorized, onNotice }: AdminWorkspacesProps) {
   const resource = useApiResource(
-    (signal) => api.listAdminWorkspaces(token, { signal }),
-    [token],
+    (signal) => api.listAdminWorkspaces({ signal }),
+    [],
     { onUnauthorized },
   )
   const workspaces = resource.data?.items ?? []
@@ -63,7 +62,6 @@ export function AdminWorkspacesPage({ token, onUnauthorized, onNotice }: AdminWo
             <AdminWorkspaceBlock
               key={workspace.id}
               workspace={workspace}
-              token={token}
               onUnauthorized={onUnauthorized}
               onNotice={onNotice}
               onChanged={resource.reload}
@@ -77,7 +75,6 @@ export function AdminWorkspacesPage({ token, onUnauthorized, onNotice }: AdminWo
 
 interface AdminWorkspaceBlockProps {
   workspace: AdminWorkspace
-  token: string
   onUnauthorized: () => void
   onNotice: (message: string, tone?: 'success' | 'error') => void
   onChanged: () => void
@@ -85,7 +82,6 @@ interface AdminWorkspaceBlockProps {
 
 function AdminWorkspaceBlock({
   workspace,
-  token,
   onUnauthorized,
   onNotice,
   onChanged,
@@ -143,7 +139,6 @@ function AdminWorkspaceBlock({
         <AddWorkspaceMemberDialog
           open
           workspace={workspace}
-          token={token}
           onUnauthorized={onUnauthorized}
           onAdded={handleAdded}
           onClose={() => setAddOpen(false)}

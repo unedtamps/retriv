@@ -12,7 +12,9 @@ interface WorkspaceAccessProps {
  * What the caller may do in this workspace, and why.
  *
  * Presentational on purpose: the answer is already on the workspace record,
- * and the panel only has to say it.
+ * and the panel only has to say it. One line carries the role and its four
+ * capabilities, because four boxes of the same green check said the same
+ * thing at four times the height.
  */
 export function WorkspaceAccess({
   workspace,
@@ -20,76 +22,42 @@ export function WorkspaceAccess({
   canManage,
   canDelete,
 }: WorkspaceAccessProps) {
+  const role = isAdmin
+    ? 'Platform administrator'
+    : (workspace.membership_role ?? 'Catalog only')
+  const capabilities: Array<{ icon: typeof FileUp; label: string; enabled: boolean }> = [
+    { icon: FileUp, label: 'Upload', enabled: workspace.can_upload },
+    { icon: Sparkles, label: 'Context', enabled: workspace.can_search_context },
+    { icon: Users, label: 'Members', enabled: canManage },
+    { icon: Trash2, label: 'Delete', enabled: canDelete },
+  ]
+
   return (
-    <>
-      <div className="grid grid-cols-2 border-b border-line sm:grid-cols-4">
-        <Capability
-          icon={<FileUp aria-hidden="true" size={16} />}
-          label="Upload"
-          enabled={workspace.can_upload}
-        />
-        <Capability
-          icon={<Sparkles aria-hidden="true" size={16} />}
-          label="Context"
-          enabled={workspace.can_search_context}
-        />
-        <Capability
-          icon={<Users aria-hidden="true" size={16} />}
-          label="Members"
-          enabled={canManage}
-        />
-        <Capability
-          icon={<Trash2 aria-hidden="true" size={16} />}
-          label="Delete"
-          enabled={canDelete}
-        />
+    <section className="border-b border-line px-5 py-4 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <p className="eyebrow shrink-0">Your access</p>
+        <span className="badge shrink-0">{role}</span>
+        <span className="hidden h-4 w-px bg-line sm:block" aria-hidden="true" />
+        <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {capabilities.map(({ icon: Icon, label, enabled }) => (
+            <li
+              key={label}
+              className={`flex items-center gap-1.5 text-xs ${
+                enabled ? 'text-ink' : 'text-ink-faint'
+              }`}
+              title={enabled ? `${label}: allowed` : `${label}: not allowed`}
+            >
+              <Icon aria-hidden="true" size={13} className={enabled ? 'text-accent-ink' : ''} />
+              {label}
+              {enabled ? (
+                <CheckCircle2 aria-hidden="true" size={11} className="text-accent-ink" />
+              ) : (
+                <CircleSlash2 aria-hidden="true" size={11} />
+              )}
+            </li>
+          ))}
+        </ul>
       </div>
-
-      <section className="border-b border-line px-6 py-6 sm:px-7">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow">Your access</p>
-            <h3 className="mt-1 text-base font-semibold text-ink">
-              {isAdmin
-                ? 'Platform administrator'
-                : (workspace.membership_role ?? 'Catalog only')}
-            </h3>
-          </div>
-          {workspace.membership_role === null ? null : (
-            <span className="badge">{workspace.membership_role}</span>
-          )}
-        </div>
-        <p className="mt-2 text-sm leading-6 text-ink-muted">
-          {isAdmin
-            ? 'Administration permits membership changes, but does not grant document or context access without a workspace membership.'
-            : workspace.membership_role === null
-              ? 'You can discover this workspace, but its documents and context remain inaccessible.'
-              : 'Capabilities are derived from your current workspace membership and update immediately when the policy changes.'}
-        </p>
-      </section>
-    </>
-  )
-}
-
-interface CapabilityProps {
-  icon: React.ReactNode
-  label: string
-  enabled: boolean
-}
-
-function Capability({ icon, label, enabled }: CapabilityProps) {
-  return (
-    <div className="border-r border-line px-5 py-5 last:border-r-0">
-      <div className={enabled ? 'text-accent-ink' : 'text-ink-faint'}>{icon}</div>
-      <p className="mt-2 text-xs font-medium text-ink">{label}</p>
-      <p className="mt-1 flex items-center gap-1 text-meta text-ink-muted">
-        {enabled ? (
-          <CheckCircle2 aria-hidden="true" size={11} />
-        ) : (
-          <CircleSlash2 aria-hidden="true" size={11} />
-        )}
-        {enabled ? 'Allowed' : 'Not allowed'}
-      </p>
-    </div>
+    </section>
   )
 }

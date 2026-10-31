@@ -7,7 +7,6 @@ import { UserSearchRoster } from './ui/UserSearchRoster'
 
 interface CreateWorkspaceDialogProps {
   open: boolean
-  token: string
   onCreated: (workspace: Workspace) => void
   onUnauthorized: () => void
   onClose: () => void
@@ -15,7 +14,6 @@ interface CreateWorkspaceDialogProps {
 
 export function CreateWorkspaceDialog({
   open,
-  token,
   onCreated,
   onUnauthorized,
   onClose,
@@ -41,7 +39,7 @@ export function CreateWorkspaceDialog({
   useEffect(() => {
     const controller = new AbortController()
     api
-      .listAdminUsers(token, { search: debouncedSearch, signal: controller.signal })
+      .listAdminUsers({ search: debouncedSearch, signal: controller.signal })
       .then((result) => {
         setUsers(result.items.filter((user) => user.is_active && user.role !== 'admin'))
         setTotal(result.total)
@@ -54,7 +52,7 @@ export function CreateWorkspaceDialog({
         else setError(getErrorMessage(caught))
       })
     return () => controller.abort()
-  }, [debouncedSearch, token, onUnauthorized])
+  }, [debouncedSearch, onUnauthorized])
 
   const searching = loadedQuery !== debouncedSearch
 
@@ -63,7 +61,7 @@ export function CreateWorkspaceDialog({
     setStatus('submitting')
     setError(null)
     try {
-      const workspace = await api.createWorkspace(token, {
+      const workspace = await api.createWorkspace({
         name,
         slug,
         description: description.trim() === '' ? null : description,

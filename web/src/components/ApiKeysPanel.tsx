@@ -8,7 +8,6 @@ import { Panel, PanelHeader } from './ui/Panel'
 import { useApiResource } from '../hooks/useApiResource'
 
 interface ApiKeysPanelProps {
-  token: string
   onUnauthorized: () => void
   onNotice: (message: string, tone?: 'success' | 'error') => void
 }
@@ -19,7 +18,7 @@ interface ApiKeysPanelProps {
  * afterwards: it exists in component state only while the dialog is open, so
  * a re-render cannot resurrect it from a stored list.
  */
-export function ApiKeysPanel({ token, onUnauthorized, onNotice }: ApiKeysPanelProps) {
+export function ApiKeysPanel({ onUnauthorized, onNotice }: ApiKeysPanelProps) {
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -28,8 +27,8 @@ export function ApiKeysPanel({ token, onUnauthorized, onNotice }: ApiKeysPanelPr
   const [revoking, setRevoking] = useState(false)
 
   const keys = useApiResource(
-    (signal) => api.listApiKeys(token, signal),
-    [token],
+    (signal) => api.listApiKeys(signal),
+    [],
     { onUnauthorized },
   )
 
@@ -39,7 +38,7 @@ export function ApiKeysPanel({ token, onUnauthorized, onNotice }: ApiKeysPanelPr
     if (name === '') return
     setCreating(true)
     try {
-      const created = await api.createApiKey(token, name)
+      const created = await api.createApiKey(name)
       setCreateOpen(false)
       setNewName('')
       setRevealed(created)
@@ -56,7 +55,7 @@ export function ApiKeysPanel({ token, onUnauthorized, onNotice }: ApiKeysPanelPr
     if (revokeTarget === null) return
     setRevoking(true)
     try {
-      await api.revokeApiKey(token, revokeTarget.id)
+      await api.revokeApiKey(revokeTarget.id)
       setRevokeTarget(null)
       keys.reload()
       onNotice(`API key "${revokeTarget.name}" revoked. It cannot be used from now on.`)

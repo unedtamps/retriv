@@ -12,7 +12,6 @@ import { formatBytes } from '../lib/visuals'
 import type { DocumentUpload, Workspace } from '../types'
 
 interface UploadFormProps {
-  token: string
   workspaces: Workspace[]
   initialWorkspaceId?: string
   lockWorkspace?: boolean
@@ -28,7 +27,6 @@ interface UploadConfirmation {
 const supportedFile = /\.(pdf|docx|csv)$/i
 
 export function UploadForm({
-  token,
   workspaces,
   initialWorkspaceId,
   lockWorkspace = false,
@@ -106,7 +104,7 @@ export function UploadForm({
     const controller = new AbortController()
     uploadController.current = controller
     try {
-      const document = await api.uploadDocument(token, selectedWorkspace.id, file, controller.signal)
+      const document = await api.uploadDocument(selectedWorkspace.id, file, controller.signal)
       setConfirmation({ document, workspaceName: selectedWorkspace.name })
       setFile(null)
       if (fileInput.current) fileInput.current.value = ''
@@ -264,7 +262,7 @@ export function UploadForm({
           </p>
         )}
 
-        <div className="flex flex-wrap items-center gap-3 border-t border-line pt-5">
+        <div className="sticky bottom-0 -mx-5 flex flex-wrap items-center gap-3 border-t border-line bg-surface px-5 pt-4 pb-4 sm:-mx-6 sm:px-6">
           <button
             type="submit"
             className="btn btn-primary min-w-40"

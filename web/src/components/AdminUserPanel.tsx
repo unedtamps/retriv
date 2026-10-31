@@ -12,7 +12,6 @@ import { SearchField } from './ui/SearchField'
 import { useApiResource } from '../hooks/useApiResource'
 
 interface AdminUserPanelProps {
-  token: string
   currentUserId?: string
   onCredential: (credential: OneTimeCredential) => void
   onUnauthorized: () => void
@@ -20,7 +19,6 @@ interface AdminUserPanelProps {
 }
 
 export function AdminUserPanel({
-  token,
   currentUserId,
   onCredential,
   onUnauthorized,
@@ -40,8 +38,8 @@ export function AdminUserPanel({
   const menuRef = useRef<HTMLDivElement>(null)
 
   const directory = useApiResource(
-    (signal) => api.listAdminUsers(token, { search: appliedSearch, signal }),
-    [token, appliedSearch],
+    (signal) => api.listAdminUsers({ search: appliedSearch, signal }),
+    [appliedSearch],
     { onUnauthorized },
   )
 
@@ -54,7 +52,7 @@ export function AdminUserPanel({
     if (resetTarget === null) return
     setResetting(true)
     try {
-      const result = await api.resetPassword(token, resetTarget.id)
+      const result = await api.resetPassword(resetTarget.id)
       onCredential({
         username: resetTarget.username,
         password: result.initial_password,
@@ -74,7 +72,7 @@ export function AdminUserPanel({
     if (deleteTarget === null) return
     setDeleting(true)
     try {
-      await api.deleteAdminUser(token, deleteTarget.id)
+      await api.deleteAdminUser(deleteTarget.id)
       setUsers((current) => current.filter((user) => user.id !== deleteTarget.id))
       onNotice(`Deleted ${deleteTarget.username}.`)
       setDeleteTarget(null)
@@ -120,7 +118,7 @@ export function AdminUserPanel({
   async function loadMore() {
     setLoadingMore(true)
     try {
-      const result = await api.listAdminUsers(token, {
+      const result = await api.listAdminUsers({
         search: appliedSearch,
         offset: users.length,
       })
@@ -272,7 +270,6 @@ export function AdminUserPanel({
 
       <CreateUserDialog
         open={createOpen}
-        token={token}
         onClose={() => setCreateOpen(false)}
         onUnauthorized={onUnauthorized}
         onCreated={(credential) => {

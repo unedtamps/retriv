@@ -9,7 +9,6 @@ import { UserSearchRoster } from './ui/UserSearchRoster'
 interface AddWorkspaceMemberDialogProps {
   open: boolean
   workspace: AdminWorkspace
-  token: string
   onUnauthorized: () => void
   onAdded: (member: WorkspaceMember) => void
   onClose: () => void
@@ -29,7 +28,6 @@ const ROLE_CHOICES: WorkspaceRole[] = ['owner', 'editor', 'viewer']
 export function AddWorkspaceMemberDialog({
   open,
   workspace,
-  token,
   onUnauthorized,
   onAdded,
   onClose,
@@ -52,7 +50,7 @@ export function AddWorkspaceMemberDialog({
   useEffect(() => {
     const controller = new AbortController()
     api
-      .listAdminUsers(token, { search: debouncedSearch, signal: controller.signal })
+      .listAdminUsers({ search: debouncedSearch, signal: controller.signal })
       .then((result) => {
         setUsers(result.items.filter((user) => user.is_active))
         setTotal(result.total)
@@ -65,7 +63,7 @@ export function AddWorkspaceMemberDialog({
         else setError(getErrorMessage(caught))
       })
     return () => controller.abort()
-  }, [debouncedSearch, token, onUnauthorized])
+  }, [debouncedSearch, onUnauthorized])
 
   const existingIds = useMemo(
     () => new Set(workspace.members.map((member) => member.user_id)),
@@ -82,7 +80,7 @@ export function AddWorkspaceMemberDialog({
     setSubmitting(true)
     setError(null)
     try {
-      const member = await api.setMemberRole(token, workspace.id, selectedUserId, role, true)
+      const member = await api.setMemberRole(workspace.id, selectedUserId, role, true)
       setSubmitting(false)
       onAdded(member)
     } catch (caught) {
