@@ -7,6 +7,7 @@ import type {
   CreatedUser,
   CurrentUser,
   DocumentList,
+  DocumentSearchResponse,
   DocumentUpload,
   GeneratedPassword,
   MemberCandidateList,
@@ -18,9 +19,19 @@ import type {
   WorkspaceMemberList,
   WorkspaceRole,
 } from './types'
+import { clearSession, readSession, writeSession } from './session'
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() ?? ''
 const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '')
+
+/**
+ * How early to renew, as a fraction of the access token's lifetime.
+ *
+ * Renewing at 80% means a token that lives an hour is replaced with twelve
+ * minutes to spare, so a request made just before the deadline still uses a
+ * token that is valid on arrival.
+ */
+const REFRESH_AT_FRACTION = 0.8
 
 export class ApiError extends Error {
   readonly status: number
@@ -37,8 +48,9 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions extends Omit<RequestInit, 'headers'> {
-  token?: string
   headers?: Record<string, string>
+  /** Send no Authorization header at all, for the endpoints that mint tokens. */
+  anonymous?: boolean
 }
 
 interface PageOptions {
@@ -51,18 +63,198 @@ interface UserPageOptions extends PageOptions {
   search?: string
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers = new Headers(options.headers)
-  headers.set('Accept', 'application/json')
-  if (options.token !== undefined) {
-    headers.set('Authorization', `Bearer ${options.token}`)
-  }
+/**
+ * The two tokens, held for the whole app.
+ *
+ * They live here rather than in React state because every request needs them
+ * and a refresh can happen in the middle of any of them. Threading the token
+ * through props meant a component could keep a copy that a refresh had already
+ * replaced; with one holder there is nothing to go stale.
+ */
+let accessToken: string | null = null
+let refreshToken: string | null = null
+let sessionLostHandler: (() => void) | null = null
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let refreshInFlight: Promise<boolean> | null = null
+let accessExpiresAt = 0
+let accessLifetimeMs = 0
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
+/** Load whatever session the tab already holds. Call once, before rendering. */
+export function restoreSession(): boolean {
+  const session = readSession()
+  if (session === null) return false
+  accessToken = session.accessToken
+  refreshToken = session.refreshToken
+  return true
+}
+
+/** Whether the app currently holds a credential. */
+export function hasSession(): boolean {
+  return accessToken !== null
+}
+
+/**
+ * Register what happens when the session cannot be renewed.
+ *
+ * The app passes a function that returns to the sign-in screen; without one,
+ * a dead session simply clears itself and the next request fails as it did
+ * before refresh tokens existed.
+ */
+export function setSessionLostHandler(handler: (() => void) | null): void {
+  sessionLostHandler = handler
+}
+
+/**
+ * Store a freshly minted pair and schedule its renewal.
+ *
+ * A session with no refresh token (a seeded test session, or a server that
+ * predates this feature) is still usable -- it just ends at the first 401.
+ */
+export function applyTokens(access: string, refresh: string | null, expiresIn?: number): void {
+  accessToken = access
+  refreshToken = refresh
+  // The server's own count, not a decoded claim: the browser may not share the
+  // server's clock, and this only has to be good enough to renew early.
+  accessLifetimeMs = expiresIn === undefined ? 0 : expiresIn * 1_000
+  accessExpiresAt = accessLifetimeMs === 0 ? 0 : Date.now() + accessLifetimeMs
+  if (refresh === null) clearSession()
+  writeSession({ accessToken: access, refreshToken: refresh })
+  scheduleRefresh(expiresIn)
+}
+
+/** Drop every credential, cancel the renewal, and forget the tab's copy. */
+export function clearTokens(): void {
+  accessToken = null
+  refreshToken = null
+  accessExpiresAt = 0
+  accessLifetimeMs = 0
+  cancelRefresh()
+  clearSession()
+}
+
+function scheduleRefresh(expiresIn: number | undefined): void {
+  cancelRefresh()
+  if (refreshToken === null || expiresIn === undefined || expiresIn <= 0) return
+  const delayMs = Math.max(1_000, Math.floor(expiresIn * REFRESH_AT_FRACTION * 1_000))
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null
+    void refreshSession()
+  }, delayMs)
+}
+
+/**
+ * Renew before a request is sent, if the token is already close to expiring.
+ *
+ * The timer covers the normal case, but a background tab has its timers
+ * throttled and a sleeping machine stops them entirely, so the timer alone
+ * would let a stale token reach the server. Checking on the way out of every
+ * request costs a comparison and makes the timer an optimisation rather than
+ * the mechanism.
+ */
+async function ensureFreshToken(): Promise<void> {
+  if (refreshToken === null || accessExpiresAt === 0 || accessLifetimeMs === 0) return
+  const remainingMs = accessExpiresAt - Date.now()
+  if (remainingMs > accessLifetimeMs * (1 - REFRESH_AT_FRACTION)) return
+  await refreshSession()
+}
+
+function cancelRefresh(): void {
+  if (refreshTimer !== null) {
+    clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+/**
+ * Exchange the refresh token for a new pair, at most once at a time.
+ *
+ * Several requests can be refused within the same second -- a page that loads
+ * three resources, say. They must all wait on one exchange, because the server
+ * rotates: the second caller would present a token the first already spent,
+ * and that looks exactly like a stolen token being replayed.
+ *
+ * Resolves whether the session is now usable. A failure clears the session,
+ * once, and tells the app.
+ */
+function refreshSession(): Promise<boolean> {
+  if (refreshInFlight !== null) return refreshInFlight
+
+  if (refreshToken === null) return Promise.resolve(false)
+
+  const presented = refreshToken
+  refreshInFlight = fetch(`${API_BASE_URL}/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ refresh_token: presented }),
     cache: 'no-store',
   })
+    .then(async (response) => {
+      if (!response.ok) throw new ApiError(response.status, await readProblem(response))
+      const body = (await response.json()) as SessionToken
+      applyTokens(body.access_token, body.refresh_token ?? null, body.expires_in)
+      return true
+    })
+    .catch(() => {
+      clearTokens()
+      sessionLostHandler?.()
+      return false
+    })
+    .finally(() => {
+      refreshInFlight = null
+    })
+
+  return refreshInFlight
+}
+
+async function readProblem(response: Response): Promise<ProblemDetail | null> {
+  const isJson = response.headers.get('content-type')?.includes('json') ?? false
+  if (!isJson) return null
+  try {
+    return (await response.json()) as ProblemDetail
+  } catch {
+    return null
+  }
+}
+
+/**
+ * One request, with renewal and a single retry.
+ *
+ * The retry is safe for every verb the app uses, including the multipart
+ * upload: the body is a `FormData` built once and handed to fetch again, not a
+ * stream that has already been consumed.
+ */
+async function send(path: string, options: RequestOptions): Promise<Response> {
+  const { anonymous = false, headers: extraHeaders, ...rest } = options
+  const build = (token: string | null) => {
+    const headers = new Headers(extraHeaders)
+    headers.set('Accept', 'application/json')
+    if (!anonymous && token !== null) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+    return { ...rest, headers, cache: 'no-store' as const }
+  }
+
+  if (!anonymous) await ensureFreshToken()
+  const presented = accessToken
+  let response = await fetch(`${API_BASE_URL}${path}`, build(presented))
+  if (response.status !== 401 || anonymous) return response
+
+  // Another request may have renewed the session while this one was in
+  // flight. Its token is already replaced, so presenting the old one again
+  // would either waste a rotation or -- worse -- look like a replayed token
+  // and end the whole session. Retry with what is current; refresh only when
+  // nothing has moved.
+  if (accessToken !== null && accessToken !== presented) {
+    return fetch(`${API_BASE_URL}${path}`, build(accessToken))
+  }
+
+  const renewed = await refreshSession()
+  if (!renewed) return response
+  return fetch(`${API_BASE_URL}${path}`, build(accessToken))
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const response = await send(path, options)
 
   if (response.status === 204) return undefined as T
 
@@ -94,58 +286,71 @@ function ownerMemberPath(workspaceId: string, userId?: string): string {
 export const api = {
   async login(username: string, password: string): Promise<SessionToken> {
     const form = new URLSearchParams({ username, password })
-    return request<SessionToken>('/v1/auth/token', {
+    const session = await request<SessionToken>('/v1/auth/token', {
       method: 'POST',
       body: form,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      anonymous: true,
     })
+    applyTokens(session.access_token, session.refresh_token ?? null, session.expires_in)
+    return session
   },
 
-  me(token: string, signal?: AbortSignal): Promise<CurrentUser> {
-    return request<CurrentUser>('/v1/auth/me', { token, signal })
+  /**
+   * End the session on the server, then forget it here.
+   *
+   * Best-effort on purpose: a network failure must not keep a user signed in
+   * on their own screen. The local credential is dropped either way.
+   */
+  async logout(): Promise<void> {
+    const presented = refreshToken
+    clearTokens()
+    if (presented === null) return
+    try {
+      await fetch(`${API_BASE_URL}/v1/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ refresh_token: presented }),
+        cache: 'no-store',
+      })
+    } catch {
+      return
+    }
   },
 
-  listWorkspaces(token: string, options: PageOptions = {}): Promise<WorkspaceList> {
+  me(signal?: AbortSignal): Promise<CurrentUser> {
+    return request<CurrentUser>('/v1/auth/me', { signal })
+  },
+
+  listWorkspaces(options: PageOptions = {}): Promise<WorkspaceList> {
     const params = new URLSearchParams({
       offset: String(options.offset ?? 0),
       limit: String(options.limit ?? 100),
     })
-    return request<WorkspaceList>(`/v1/workspaces?${params}`, {
-      token,
-      signal: options.signal,
-    })
+    return request<WorkspaceList>(`/v1/workspaces?${params}`, { signal: options.signal })
   },
 
-  listAdminWorkspaces(token: string, options: PageOptions = {}): Promise<AdminWorkspaceList> {
+  listAdminWorkspaces(options: PageOptions = {}): Promise<AdminWorkspaceList> {
     const params = new URLSearchParams({
       offset: String(options.offset ?? 0),
       limit: String(options.limit ?? 100),
     })
     return request<AdminWorkspaceList>(`/v1/admin/workspaces?${params}`, {
-      token,
       signal: options.signal,
     })
   },
 
-  uploadDocument(
-    token: string,
-    workspaceId: string,
-    file: File,
-    signal?: AbortSignal,
-  ): Promise<DocumentUpload> {
+  uploadDocument(workspaceId: string, file: File, signal?: AbortSignal): Promise<DocumentUpload> {
     const form = new FormData()
     form.append('file', file)
-    return request<DocumentUpload>(
-      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents`,
-      { token, method: 'POST', body: form, signal },
-    )
+    return request<DocumentUpload>(`/v1/workspaces/${encodeURIComponent(workspaceId)}/documents`, {
+      method: 'POST',
+      body: form,
+      signal,
+    })
   },
 
-  listDocuments(
-    token: string,
-    workspaceId: string,
-    options: PageOptions = {},
-  ): Promise<DocumentList> {
+  listDocuments(workspaceId: string, options: PageOptions = {}): Promise<DocumentList> {
     const { offset, limit, signal } = options
     const query = new URLSearchParams()
     if (offset !== undefined) query.set('offset', String(offset))
@@ -153,7 +358,7 @@ export const api = {
     const search = query.toString()
     return request<DocumentList>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents${search === '' ? '' : `?${search}`}`,
-      { token, signal },
+      { signal },
     )
   },
 
@@ -162,89 +367,114 @@ export const api = {
    * vectors and the row afterwards. Documents already being deleted are
    * excluded from listDocuments, so a removed row does not come back.
    */
-  deleteDocument(token: string, workspaceId: string, documentId: string): Promise<void> {
+  deleteDocument(workspaceId: string, documentId: string): Promise<void> {
     return request<void>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
-      { token, method: 'DELETE' },
+      { method: 'DELETE' },
     )
   },
 
-  listProcessingActivity(token: string, signal?: AbortSignal): Promise<ProcessingActivity> {
-    return request<ProcessingActivity>('/v1/processing-runs', { token, signal })
+  /**
+   * Queue a fresh extraction with the current pipeline. Owner-only: the API
+   * answers 403 for an editor and 409 while another run is in flight, and the
+   * 202 body carries the document in its new processing state.
+   */
+  reindexDocument(workspaceId: string, documentId: string): Promise<DocumentUpload> {
+    return request<DocumentUpload>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/reindex`,
+      { method: 'POST' },
+    )
   },
 
-  listAdminUsers(token: string, options: UserPageOptions = {}): Promise<AdminUserList> {
+  /**
+   * The original file as a Blob, for inline preview.
+   *
+   * This bypasses `request`: that helper always asks for JSON and throws away
+   * a body it cannot parse, while this response is the document itself. The
+   * Authorization header is what makes it work from an <iframe> at all -- a
+   * browser-driven frame cannot carry one.
+   */
+  async fetchDocumentBlob(
+    workspaceId: string,
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<Blob> {
+    const path = `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/download?disposition=inline`
+    const response = await send(path, { headers: { Accept: '*/*' }, signal })
+    if (!response.ok) throw new ApiError(response.status, await readProblem(response))
+    return response.blob()
+  },
+
+  listProcessingActivity(signal?: AbortSignal): Promise<ProcessingActivity> {
+    return request<ProcessingActivity>('/v1/processing-runs', { signal })
+  },
+
+  searchDocuments(options: {
+    query: string
+    limit?: number
+    signal?: AbortSignal
+  }): Promise<DocumentSearchResponse> {
+    const params = new URLSearchParams({ q: options.query })
+    if (options.limit !== undefined) params.set('limit', String(options.limit))
+    return request<DocumentSearchResponse>(`/v1/documents/search?${params}`, {
+      signal: options.signal,
+    })
+  },
+
+  listAdminUsers(options: UserPageOptions = {}): Promise<AdminUserList> {
     const params = new URLSearchParams({
       offset: String(options.offset ?? 0),
       limit: String(options.limit ?? 100),
     })
     const search = options.search?.trim() ?? ''
     if (search !== '') params.set('search', search)
-    return request<AdminUserList>(`/v1/admin/users?${params}`, { token, signal: options.signal })
+    return request<AdminUserList>(`/v1/admin/users?${params}`, { signal: options.signal })
   },
 
-  createUser(token: string, username: string, role: 'admin' | 'user'): Promise<CreatedUser> {
+  createUser(username: string, role: 'admin' | 'user'): Promise<CreatedUser> {
     return request<CreatedUser>('/v1/admin/users', {
-      token,
       method: 'POST',
       ...jsonOptions({ username, role }),
     })
   },
 
-  resetPassword(token: string, userId: string): Promise<GeneratedPassword> {
+  resetPassword(userId: string): Promise<GeneratedPassword> {
     return request<GeneratedPassword>(
       `/v1/admin/users/${encodeURIComponent(userId)}/password`,
-      { token, method: 'POST' },
+      { method: 'POST' },
     )
   },
 
-  deleteAdminUser(token: string, userId: string): Promise<void> {
-    return request<void>(`/v1/admin/users/${encodeURIComponent(userId)}`, {
-      token,
-      method: 'DELETE',
-    })
+  deleteAdminUser(userId: string): Promise<void> {
+    return request<void>(`/v1/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' })
   },
 
-  createWorkspace(
-    token: string,
-    payload: {
-      slug: string
-      name: string
-      description: string | null
-      owner_user_id: string
-    },
-  ): Promise<Workspace> {
+  createWorkspace(payload: {
+    slug: string
+    name: string
+    description: string | null
+    owner_user_id: string
+  }): Promise<Workspace> {
     return request<Workspace>('/v1/admin/workspaces', {
-      token,
       method: 'POST',
       ...jsonOptions(payload),
     })
   },
 
-  listMembers(
-    token: string,
-    workspaceId: string,
-    asAdmin: boolean,
-    signal?: AbortSignal,
-  ): Promise<WorkspaceMemberList> {
+  listMembers(workspaceId: string, asAdmin: boolean, signal?: AbortSignal) {
     const path = asAdmin ? adminMemberPath(workspaceId) : ownerMemberPath(workspaceId)
-    return request<WorkspaceMemberList>(path, { token, signal })
+    return request<WorkspaceMemberList>(path, { signal })
   },
 
-  searchMemberCandidates(
-    token: string,
-    workspaceId: string,
-    search: string,
-  ): Promise<MemberCandidateList> {
+  searchMemberCandidates(workspaceId: string, search: string): Promise<MemberCandidateList> {
     const params = new URLSearchParams({ search, limit: '20' })
     return request<MemberCandidateList>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/member-candidates?${params}`,
-      { token },
+      {},
     )
   },
 
   setMemberRole(
-    token: string,
     workspaceId: string,
     userId: string,
     role: WorkspaceRole,
@@ -254,41 +484,31 @@ export const api = {
       ? adminMemberPath(workspaceId, userId)
       : ownerMemberPath(workspaceId, userId)
     return request<WorkspaceMember>(path, {
-      token,
       method: 'PUT',
       ...jsonOptions({ role }),
     })
   },
 
-  removeMember(
-    token: string,
-    workspaceId: string,
-    userId: string,
-    asAdmin: boolean,
-  ): Promise<void> {
+  removeMember(workspaceId: string, userId: string, asAdmin: boolean): Promise<void> {
     const path = asAdmin
       ? adminMemberPath(workspaceId, userId)
       : ownerMemberPath(workspaceId, userId)
-    return request<void>(path, { token, method: 'DELETE' })
+    return request<void>(path, { method: 'DELETE' })
   },
 
-  listApiKeys(token: string, signal?: AbortSignal): Promise<ApiKeyList> {
-    return request<ApiKeyList>('/v1/api-keys', { token, signal })
+  listApiKeys(signal?: AbortSignal): Promise<ApiKeyList> {
+    return request<ApiKeyList>('/v1/api-keys', { signal })
   },
 
-  createApiKey(token: string, name: string): Promise<CreatedApiKey> {
+  createApiKey(name: string): Promise<CreatedApiKey> {
     return request<CreatedApiKey>('/v1/api-keys', {
-      token,
       method: 'POST',
       ...jsonOptions({ name }),
     })
   },
 
-  revokeApiKey(token: string, keyId: string): Promise<void> {
-    return request<void>(`/v1/api-keys/${encodeURIComponent(keyId)}`, {
-      token,
-      method: 'DELETE',
-    })
+  revokeApiKey(keyId: string): Promise<void> {
+    return request<void>(`/v1/api-keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' })
   },
 }
 

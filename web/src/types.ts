@@ -13,6 +13,9 @@ export interface SessionToken {
   access_token: string
   token_type: 'bearer'
   expires_in: number
+  /** Present on every real response; absent only in older mocks. */
+  refresh_token?: string
+  refresh_expires_in?: number
 }
 
 export interface CurrentUser {
@@ -31,6 +34,7 @@ export interface Workspace {
   membership_role: WorkspaceRole | null
   member_count: number
   can_upload: boolean
+  can_download: boolean
   can_search_context: boolean
   can_manage_members: boolean
   /**
@@ -107,6 +111,23 @@ export interface ProcessingRun {
 
 export interface ProcessingActivity {
   items: ProcessingRun[]
+  total: number
+}
+
+export interface DocumentSearchHit {
+  document_id: string
+  workspace_id: string
+  workspace_name: string
+  filename: string
+  media_type: string
+  size_bytes: number
+  status: string
+  row_count: number
+  created_at: string
+}
+
+export interface DocumentSearchResponse {
+  items: DocumentSearchHit[]
   total: number
 }
 
