@@ -46,6 +46,9 @@ extraction = [
 dev = [
     "aiosqlite>=0.21,<1",
     "mypy>=1.17,<2",
+    # Building .pptx fixtures only: the worker converts decks with LibreOffice,
+    # so nothing at runtime imports this.
+    "python-pptx>=1.0,<2",
     "pytest>=8.4,<9",
     "pytest-asyncio>=1.1,<2",
     "ruff>=0.12,<1",

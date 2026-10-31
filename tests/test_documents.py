@@ -1,4 +1,6 @@
+import hashlib
 from collections.abc import AsyncIterator
+from pathlib import Path
 from uuid import UUID
 
 import httpx
@@ -15,6 +17,7 @@ from app.db.models import (
     DocumentWorkspace,
     ProcessingRun,
 )
+from app.documents.validation import StagedUpload
 from app.infrastructure.scanner import MalwareDetectedError, ScannerUnavailableError
 from app.security.api_keys import mint_api_key, revoke_api_key
 from tests.conftest import CleanScanner, InMemoryObjectStorage, SeededEntities
@@ -25,6 +28,7 @@ from tests.document_samples import (
     macro_default_docx_bytes,
     malformed_docx_bytes,
     pdf_bytes,
+    pptx_bytes,
 )
 
 
@@ -38,6 +42,11 @@ from tests.document_samples import (
             docx_bytes(),
         ),
         ("sales.csv", "text/csv", csv_bytes()),
+        (
+            "deck.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            pptx_bytes(),
+        ),
     ],
 )
 async def test_upload_supported_documents(
@@ -910,6 +919,7 @@ async def upload(
 EXPECTED_INDEXABLE = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "text/csv",
 }
 
@@ -1027,3 +1037,99 @@ async def test_reuploading_to_a_workspace_reactivates_its_deleted_link(
     assert link is not None
     assert link.deleted_at is None
     assert link.filename == "report-again.pdf"
+
+
+def test_a_deck_is_validated_like_the_other_office_packages(tmp_path: Path) -> None:
+    """The OOXML checks apply to a deck by naming its own main part."""
+    from app.core.config import get_settings
+    from app.documents.validation import PPTX_MEDIA_TYPE, validate_document
+
+    path = tmp_path / "deck.pptx"
+    path.write_bytes(pptx_bytes())
+    staged = StagedUpload(
+        path=path,
+        original_filename="deck.pptx",
+        extension=".pptx",
+        size_bytes=path.stat().st_size,
+        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+
+    result = validate_document(staged, get_settings())
+
+    assert result.media_type == PPTX_MEDIA_TYPE
+
+
+def test_a_renamed_zip_without_presentation_parts_is_refused(tmp_path: Path) -> None:
+    """An .pptx extension on something that is not a deck must not pass."""
+    from app.core.config import get_settings
+    from app.core.errors import AppError
+    from app.documents.validation import validate_document
+
+    path = tmp_path / "fake.pptx"
+    path.write_bytes(docx_bytes())  # a real OOXML package, wrong kind
+    staged = StagedUpload(
+        path=path,
+        original_filename="fake.pptx",
+        extension=".pptx",
+        size_bytes=path.stat().st_size,
+        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+
+    with pytest.raises(AppError) as caught:
+        validate_document(staged, get_settings())
+    assert caught.value.status_code == 422
+
+
+def test_a_deck_over_the_slide_cap_is_refused_before_conversion(tmp_path: Path) -> None:
+    """The deck is measured by its own slide table, not by rendering it first.
+
+    Converting first and refusing after would spend a minute of LibreOffice on
+    a file that was never going to be accepted.
+    """
+    from app.core.config import get_settings
+    from app.core.errors import AppError
+    from app.documents.validation import validate_document
+
+    settings = get_settings().model_copy(update={"max_pdf_pages": 2})
+    path = tmp_path / "long-deck.pptx"
+    path.write_bytes(pptx_bytes(slides=3))
+    staged = StagedUpload(
+        path=path,
+        original_filename="long-deck.pptx",
+        extension=".pptx",
+        size_bytes=path.stat().st_size,
+        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+
+    with pytest.raises(AppError) as caught:
+        validate_document(staged, settings)
+
+    assert caught.value.code == "too_many_pages"
+    assert "3 slides" not in str(caught.value.detail)
+    assert "Presentations cannot contain more than 2 slides." in caught.value.detail
+
+
+def test_a_deck_at_the_slide_cap_is_accepted(tmp_path: Path) -> None:
+    from app.core.config import get_settings
+    from app.documents.validation import validate_document
+
+    settings = get_settings().model_copy(update={"max_pdf_pages": 3})
+    path = tmp_path / "deck-at-cap.pptx"
+    path.write_bytes(pptx_bytes(slides=3))
+    staged = StagedUpload(
+        path=path,
+        original_filename="deck-at-cap.pptx",
+        extension=".pptx",
+        size_bytes=path.stat().st_size,
+        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+
+    result = validate_document(staged, settings)
+
+    assert result.media_type.endswith("presentation")
+
+
+def test_the_page_cap_default_is_a_thousand() -> None:
+    from app.core.config import Settings
+
+    assert Settings.model_fields["max_pdf_pages"].default == 1_000

@@ -63,7 +63,17 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     mcp_download_link_ttl_seconds: int = Field(default=300, ge=30, le=3600)
-    max_pdf_pages: int = Field(default=500, gt=0)
+    max_pdf_pages: int = Field(default=1_000, gt=0)
+    """Pages one document may carry, and slides one deck may carry.
+
+    Measured on the corpus: 410 pages cost ~4.3 minutes, ~750 MiB resident and
+    ~1,390 chunks, so a thousand pages is about ten minutes of one worker's
+    CPU. The hard ceiling is elsewhere -- ``processing_timeout_seconds`` is
+    reached around 2,500 pages -- which is why this cap bounds a document's
+    cost well below what the machine could technically chew through. It reads
+    as a page count rather than a byte count because pages are what drive
+    time, memory, vision calls and embedding spend at once.
+    """
     max_archive_entries: int = Field(default=10_000, gt=0)
     max_archive_central_directory_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     max_archive_uncompressed_bytes: int = Field(default=300 * 1024 * 1024, gt=0)

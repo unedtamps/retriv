@@ -22,8 +22,11 @@ from app.core.errors import AppError
 
 PDF_MEDIA_TYPE = "application/pdf"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+)
 CSV_MEDIA_TYPE = "text/csv"
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".csv"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".csv"}
 OFFICE_CFB_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 CSV_ENCODINGS = ("utf-8-sig", "utf-8")
 CSV_DELIMITERS = (",", ";", "\t", "|")
@@ -110,7 +113,7 @@ def supported_extension(filename: str) -> str:
             status_code=415,
             code="unsupported_file_type",
             title="Unsupported file type",
-            detail="Only PDF, DOCX, and CSV files are accepted.",
+            detail="Only PDF, DOCX, PPTX, and CSV files are accepted.",
         )
     return extension
 
@@ -271,6 +274,37 @@ def uniquify_columns(names: list[str]) -> list[str]:
     return resolved
 
 
+def count_slides(presentation_xml: bytes) -> int:
+    """How many slides the deck declares.
+
+    ``<p:sldIdLst>`` is the deck's own table of contents: one ``<p:sldId>``
+    entry per slide, in display order. Counting entries needs no XML parser
+    and cannot be fooled by the slide parts themselves, which a deck may carry
+    without showing.
+
+    The count is taken here, at validation, rather than from the PDF the deck
+    later becomes: refusing after rendering would spend a minute of LibreOffice
+    on a file that was never going to be accepted.
+    """
+    return presentation_xml.count(b"<p:sldId ")
+
+
+def too_many_pages_error(
+    max_pages: int, *, unit: str = "pages", kind: str = "PDF documents"
+) -> AppError:
+    """The refusal for a document that carries too many pages or slides.
+
+    A deck is measured in slides and a PDF in pages, but one slide becomes one
+    page, so the same ceiling applies -- only the wording differs.
+    """
+    return AppError(
+        status_code=422,
+        code="too_many_pages",
+        title="Page limit exceeded",
+        detail=f"{kind} cannot contain more than {max_pages} {unit}.",
+    )
+
+
 def validate_pdf(path: Path, max_pages: int) -> ValidationResult:
     with path.open("rb") as source:
         if b"%PDF-" not in source.read(1024):
@@ -320,6 +354,11 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
             DOCX_MEDIA_TYPE,
         ),
+        ".pptx": (
+            "ppt/presentation.xml",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
+            PPTX_MEDIA_TYPE,
+        ),
     }
     main_part, main_content_type, media_type = expected[extension]
 
@@ -349,6 +388,13 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
             required_entries = {"[Content_Types].xml", "_rels/.rels", main_part}
             if not required_entries.issubset(names):
                 raise invalid_document_error("The Office package is missing required content.")
+
+            if extension == ".pptx":
+                slide_count = count_slides(archive.read(archive.getinfo(main_part)))
+                if slide_count > settings.max_pdf_pages:
+                    raise too_many_pages_error(
+                        settings.max_pdf_pages, unit="slides", kind="Presentations"
+                    )
 
             content_types_info = archive.getinfo("[Content_Types].xml")
             if content_types_info.file_size > 1024 * 1024:

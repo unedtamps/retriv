@@ -113,7 +113,7 @@ two distinct leases at once -- `FOR UPDATE SKIP LOCKED` keeps them apart, so
   matching membership.
 - Identical bytes are one canonical document no matter which workspace uploads them. A
   second workspace gets a link, not a second object, chunk set, or vector set.
-- Uploads default to 50 MiB and 500 pages; encrypted and macro-enabled documents are
+- Uploads default to 50 MiB, 1,000 pages (or 1,000 slides for a deck); encrypted and macro-enabled documents are
   rejected, and ClamAV scans before anything is stored.
 - `PDF` and `DOCX` are chunked and embedded. `CSV` is stored as rows and queried with
   SQL; it is never embedded. `XLSX` is not accepted at all, because nothing could read

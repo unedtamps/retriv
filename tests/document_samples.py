@@ -400,3 +400,42 @@ def scanned_pdf_bytes() -> bytes:
     page = document.new_page(width=612, height=792)
     page.insert_image(page.rect, pixmap=pixmap)
     return document.tobytes()
+
+def pptx_bytes(slides: int = 3) -> bytes:
+    """A deck with a title, bullets, a table and a native chart."""
+    from pptx import Presentation
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE
+    from pptx.util import Inches
+
+    presentation = Presentation()
+    title = presentation.slides.add_slide(presentation.slide_layouts[0])
+    title.shapes.title.text = "Laporan Kuartal Empat"
+    title.placeholders[1].text = "Disusun oleh Tim Keuangan"
+
+    if slides >= 2:
+        body = presentation.slides.add_slide(presentation.slide_layouts[1])
+        body.shapes.title.text = "Ringkasan Pendapatan"
+        frame = body.placeholders[1].text_frame
+        for line in ("Pendapatan naik dua belas persen", "Margin kotor empat puluh persen"):
+            paragraph = frame.add_paragraph()
+            paragraph.text = line
+        table = body.shapes.add_table(2, 2, Inches(1), Inches(5), Inches(6), Inches(1)).table
+        table.cell(0, 0).text = "Tahun"
+        table.cell(0, 1).text = "Nilai"
+        table.cell(1, 0).text = "2025"
+        table.cell(1, 1).text = "1200"
+
+    if slides >= 3:
+        chart_slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+        chart_slide.shapes.title.text = "Tren Kuartalan"
+        data = CategoryChartData()
+        data.categories = ["Q1", "Q2", "Q3", "Q4"]
+        data.add_series("Pendapatan", (100, 140, 180, 220))
+        chart_slide.shapes.add_chart(
+            XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1), Inches(1.5), Inches(8), Inches(5), data
+        )
+
+    buffer = BytesIO()
+    presentation.save(buffer)
+    return buffer.getvalue()

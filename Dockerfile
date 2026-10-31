@@ -43,10 +43,17 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # --- Worker: the extraction extra and the OCR models, baked at build ---
 FROM base AS worker
 
+# LibreOffice Impress renders a .pptx into the PDF the pipeline reads: a
+# slide's charts and SmartArt are stored as recipes rather than pictures, so a
+# parser reading the XML would lose the figure the slide exists to show. It is
+# deliberately absent from the API image, which carries no office suite.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \
+        libreoffice-impress \
+        fonts-dejavu-core \
+        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 RUN uv sync --frozen --no-dev --extra extraction --no-install-project \

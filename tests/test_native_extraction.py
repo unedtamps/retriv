@@ -30,6 +30,7 @@ from tests.document_samples import (
     borderless_table_pdf_bytes,
     image_pdf_bytes,
     landmark_pdf_bytes,
+    pptx_bytes,
     scanned_pdf_bytes,
     table_pdf_bytes,
     two_column_pdf_bytes,
@@ -994,3 +995,33 @@ def test_an_oversized_pdf_crop_is_shrunk_not_dropped(tmp_path: Path) -> None:
 
     assert result.images, "a capped crop must still produce a picture"
     assert all(len(image.data) <= 2_000 for image in result.images)
+
+
+@pytest.mark.integration
+def test_a_deck_is_rendered_to_pdf_and_its_text_stays_text(tmp_path: Path) -> None:
+    """A slide deck reaches the pipeline as a PDF, and its words stay words.
+
+    Rendering is what turns a native chart from a recipe into a picture the
+    PDF path can find and describe; the text layer survives the conversion,
+    so a deck is still searchable rather than one image per slide.
+    """
+    import shutil as _shutil
+
+    from app.documents.conversion import convert_to_pdf
+
+    if _shutil.which("soffice") is None and _shutil.which("libreoffice") is None:
+        pytest.skip("LibreOffice is not installed here; the worker image has it")
+
+    source = write_sample(tmp_path, pptx_bytes(), "deck.pptx")
+
+    rendered = convert_to_pdf(source)
+
+    import pymupdf
+
+    with pymupdf.open(rendered) as pdf:
+        assert pdf.page_count == 3, "one page per slide"
+        text = "\n".join(page.get_text() for page in pdf)
+    assert "Laporan Kuartal Empat" in text
+    assert "Pendapatan naik dua belas persen" in text
+    assert "Tren Kuartalan" in text, "a native chart's labels are still text"
+    assert "Q1" in text

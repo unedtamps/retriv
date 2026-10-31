@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import struct
 import tempfile
 from collections.abc import Iterator
@@ -53,11 +54,13 @@ from app.db.models import (
     DocumentWorkspace,
     ProcessingRun,
 )
+from app.documents import conversion
 from app.documents.validation import (
     CSV_ENCODINGS,
     CSV_MEDIA_TYPE,
     DOCX_MEDIA_TYPE,
     PDF_MEDIA_TYPE,
+    PPTX_MEDIA_TYPE,
     sniff_delimiter,
     uniquify_columns,
 )
@@ -97,6 +100,7 @@ _tracer = get_tracer(__name__)
 _SOURCE_SUFFIX = {
     PDF_MEDIA_TYPE: ".pdf",
     DOCX_MEDIA_TYPE: ".docx",
+    PPTX_MEDIA_TYPE: ".pptx",
 }
 
 _ROW_INSERT_BATCH = 1_000
@@ -711,6 +715,7 @@ class ProcessingWorker:
         )
         os.close(descriptor)
         temporary_path = Path(temporary_name)
+        extraction_path = temporary_path
         artifact_key: str | None = None
         manifest_key: str | None = None
         chunks_persisted = False
@@ -735,12 +740,28 @@ class ProcessingWorker:
                     )
 
                 await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
+                extraction_media_type = document.detected_media_type
+                if document.detected_media_type == PPTX_MEDIA_TYPE:
+                    try:
+                        extraction_path = await to_thread.run_sync(
+                            partial(conversion.convert_to_pdf, temporary_path)
+                        )
+                    except conversion.ConversionUnavailableError as exc:
+                        raise PermanentProcessingError(
+                            "This worker cannot convert presentations: no LibreOffice "
+                            "is installed in the image"
+                        ) from exc
+                    except conversion.ConversionError as exc:
+                        raise PermanentProcessingError(
+                            f"The presentation could not be converted to PDF: {exc}"
+                        ) from exc
+                    extraction_media_type = PDF_MEDIA_TYPE
                 try:
                     extraction = await self._extract_with_heartbeat(
                         claimed_run.id,
                         lease_token,
-                        temporary_path,
-                        media_type=document.detected_media_type,
+                        extraction_path,
+                        media_type=extraction_media_type,
                     )
                 except ExtractionResourceError as exc:
                     raise PermanentProcessingError(
@@ -827,6 +848,10 @@ class ProcessingWorker:
             raise
         finally:
             await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
+            if extraction_path != temporary_path:
+                await to_thread.run_sync(
+                    partial(shutil.rmtree, extraction_path.parent, ignore_errors=True)
+                )
         if chunks_persisted:
             await self._process_embeddings(claimed_run, lease_token)
 
