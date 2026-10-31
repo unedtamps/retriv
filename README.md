@@ -17,6 +17,38 @@ workspaces stay one object with one pipeline, one chunk set, and one vector set.
 For the detailed internals — data model, pipeline stages, retrieval rules, MCP
 tools, RLS and storage layout — read [`app/README.md`](app/README.md).
 
+## Demo
+
+[![Retriv demo: two formats in, two shapes out](docs/media/retriv-promo-poster.jpg)](docs/media/retriv-promo.mp4)
+
+**▶ Click the frame to play** — 47 seconds, 1920×1080, no audio.
+
+An administrator creates a workspace and hands it to an owner, the owner drops
+in a financial report, the pipeline forks — PDF, DOCX and PPTX become embedded
+chunks, CSV becomes SQL rows — and an agent connected over MCP asks a question
+and answers it with a citation.
+
+Rendered with Remotion. The video is a motion recreation of the dashboard, not a
+screen recording.
+
+<details>
+<summary>Why the demo is a link and not an inline player</summary>
+
+GitHub does not render video players in `README.md`. It sanitises `<video>`
+tags out entirely, and pointing one at a file committed in the repository fails
+as well — only MP4s uploaded through the GitHub *editor* get a `user-attachments`
+URL, and GitHub rewrites only those to a signed `private-user-images` host that
+its Content-Security-Policy allows.
+
+If an inline player is wanted, the file has to be uploaded rather than
+committed: drag `docs/media/retriv-promo.mp4` into a GitHub comment box, then
+paste the resulting `https://github.com/user-attachments/assets/…` URL on its own
+line here. That renders as a native player. Keep the bare URL on a line by
+itself, with blank lines around it — wrapping it in link or image syntax disables
+the embed.
+
+</details>
+
 ## Architecture
 
 There is one API process, one worker process, one database, and the external
