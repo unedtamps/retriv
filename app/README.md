@@ -38,7 +38,7 @@ the request path.
 | `app/processing/` | processing-run queue, worker loop and pipeline stages |
 | `app/retrieval/` | scoped vector search, section completion, navigation, SQL rows |
 | `app/routes/` | `/v1` HTTP routes |
-| `app/security/` | JWT auth, API keys, workspace permissions, bootstrap admin |
+| `app/security/` | JWT auth, refresh tokens, API keys, workspace permissions, bootstrap admin |
 | `app/vision/` | multimodal client for describing document pictures |
 
 ## Request surfaces
@@ -81,13 +81,30 @@ from the caller's own memberships, rather than a token that had to be signed and
 verified.
 
 The worker stays a separate process for a concrete reason: the extraction stack needs
-about 1.7 GB, a 16 GiB parser memory cap, and a sandboxed subprocess per document. Keeping
+about 0.7-1.0 GB resident per document, a 4 GiB address-space cap on the parser
+(`RETRIV_PARSER_MEMORY_LIMIT_BYTES`), and a sandboxed subprocess per document. Keeping
 that in its own container is what keeps the API image around 250 MB and keeps a hostile
 PDF away from the request path.
 
+That subprocess is CPU-hungry rather than memory-hungry: one parse of a 410-page filing
+already saturates four cores (CPU-seconds run about 3.9x wall-clock, from BLAS and ONNX
+threading). Measured with `scripts/benchmark_extraction.py`, throughput is 1.6-2.0
+pages/s per parser and stays flat at two and three parallel parsers on a 4-cpu
+container -- so concurrent parsers trade memory for latency, not for throughput.
+
+Throughput comes from scaling the worker service instead, because each container
+brings its own CPU share: three worker containers with one PDF each finished 956
+pages in 225 seconds (4.25 pages/s, 2.57x the serial rate) at roughly 1.1 GB per
+container. Two containers claiming from the same queue was verified live and held
+two distinct leases at once -- `FOR UPDATE SKIP LOCKED` keeps them apart, so
+`docker compose up -d --scale worker=N` is a valid way to add capacity.
+
 ## Scope
 
-- JWT access tokens valid for 60 minutes.
+- JWT access tokens valid for 60 minutes, renewed by a rotating refresh token valid for
+  `RETRIV_REFRESH_TOKEN_DAYS` (30 by default). Every use mints a replacement and revokes the
+  presented token; presenting a revoked token revokes the whole chain, because a token that was
+  already spent can only reappear if a copy of it leaked. Only the SHA-256 hash is stored.
 - The first admin is created from `RETRIV_BOOTSTRAP_ADMIN_*` on startup; later users by a
   platform admin.
 - `admin` is a platform role for the dashboard and grants no workspace data access.
@@ -163,17 +180,20 @@ buckets must exist before the stack starts; the application never creates them.
 | AWS S3 | leave empty | the bucket's region | `auto` or `virtual` | an IAM user access key/secret |
 | Other S3-compatible | provider endpoint | provider region | provider-dependent | access key/secret |
 
-For R2, create the buckets in the dashboard or with Wrangler, then create two Account API
-tokens:
+For R2, create the buckets in the dashboard or with Wrangler, then create one Account API
+token with `Object Read & Write` on **both** buckets:
 
-- **API token** — `Object Read & Write`, applied only to the raw bucket.
-- **Worker token** — `Object Read & Write`, applied to the raw and artifact buckets. R2
-  scopes permissions per bucket and cannot express prefix-level policies, so the worker
-  token is deliberately the practical choice: it can write both buckets.
+- The same key pair serves the API (which writes raw documents) and the worker (which
+  reads them and writes extracted artifacts). R2 tokens are bucket-scoped and cannot
+  express prefix-level policies, so one read-write token over both buckets is the
+  practical arrangement.
+- The buckets are still separate — `raw-documents` holds the uploads untouched,
+  `context-documents` holds per-run artifacts — so a deleted or rebuilt artifact never
+  touches the source file.
 
-`RETRIV_S3_ACCESS_KEY` is the API identity and `RETRIV_S3_ARTIFACT_ACCESS_KEY` is the
-worker identity. Both buckets use the same endpoint, so there is no separate
-container-only endpoint setting.
+`RETRIV_S3_ACCESS_KEY` and `RETRIV_S3_SECRET_KEY` are the one identity both processes
+use. Both buckets share the same endpoint, so there is no separate container-only
+endpoint setting.
 
 ## Data
 

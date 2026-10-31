@@ -105,6 +105,10 @@ decided by `useIsDesktop` rather than by CSS.
 - The API remains authoritative for every permission check; hiding a frontend control is not an
   authorization boundary.
 
-The bearer token is held in `sessionStorage`, sent only in the `Authorization` header, and removed
-on sign-out or a `401` response. API responses and requests use `no-store` caching. Generated user
-passwords are shown once and are not persisted by the frontend.
+Both tokens are held in `sessionStorage` and sent only in the `Authorization` header. The access
+token is short-lived; the refresh token renews it, rotated on every use, so an open tab stays signed
+in without a login prompt. `api.ts` owns both: it renews ahead of expiry and, if a request is still
+refused, exchanges the refresh token once and retries. `onSessionLost` returns the user to sign-in
+when renewal fails. Signing out revokes the refresh token on the server before clearing the tab, and
+an unrefreshable `401` clears it too. API responses and requests use `no-store` caching. Generated
+user passwords are shown once and are not persisted by the frontend.
