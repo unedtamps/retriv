@@ -66,14 +66,14 @@ async def test_cors_preflight_allows_configured_dashboard_origin(
     response = await client.options(
         "/v1/workspaces",
         headers={
-            "Origin": "http://127.0.0.1:5173",
+            "Origin": "http://127.0.0.1:9500",
             "Access-Control-Request-Method": "GET",
             "Access-Control-Request-Headers": "Authorization",
         },
     )
 
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:9500"
 
 
 async def test_cors_preflight_rejects_unconfigured_origin(

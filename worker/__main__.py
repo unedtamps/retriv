@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.db.session import engine, session_factory
 from app.embeddings.openai_compatible import OpenAICompatibleEmbeddingProvider
 from app.embeddings.qdrant import QdrantVectorStore
-from app.extraction.sandbox import SandboxedDoclingExtractor
+from app.extraction.sandbox import SandboxedExtractor
 from app.infrastructure.storage import get_artifact_storage
 from app.observability.tracing import configure_tracing, shutdown_tracing
 from app.processing.worker import ProcessingWorker
@@ -53,11 +53,11 @@ async def run_worker() -> None:
     worker = ProcessingWorker(
         session_factory,
         get_artifact_storage(),
-        SandboxedDoclingExtractor(
-            ocr_languages=settings.ocr_languages,
+        SandboxedExtractor(
             chunk_max_tokens=settings.chunk_max_tokens,
             tokenizer_name=settings.chunk_tokenizer,
-            artifacts_path=settings.docling_artifacts_path,
+            scan_text_threshold=settings.native_scan_text_threshold,
+            scan_page_describe=settings.vlm_scan_page_describe,
             timeout_seconds=settings.processing_timeout_seconds,
             memory_limit_bytes=settings.parser_memory_limit_bytes,
             max_processes=settings.parser_max_processes,

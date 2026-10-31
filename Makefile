@@ -3,10 +3,10 @@ SHELL := /bin/bash
 
 ENV_FILE ?= .env
 HOST ?= 127.0.0.1
-PORT ?= 8000
+PORT ?= 9000
 WEB_DIR ?= web
 WEB_HOST ?= 127.0.0.1
-WEB_PORT ?= 5173
+WEB_PORT ?= 9500
 WAIT_TIMEOUT ?= 300
 
 UV_RUN := uv run --env-file $(ENV_FILE) --
@@ -67,8 +67,8 @@ worker: check-env
 	$(COMPOSE) up -d --build worker
 
 # The same worker from the image already built. Compose builds it only when
-# the image is missing, so a restart costs seconds instead of a Docling and
-# PyTorch rebuild.
+# the image is missing, so a restart costs seconds instead of an ONNX
+# runtime and OCR model rebuild.
 run-worker: check-env
 	$(COMPOSE) up -d worker
 

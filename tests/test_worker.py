@@ -549,17 +549,17 @@ async def test_extraction_running_out_of_memory_names_the_limit_to_raise(
 ) -> None:
     """A parser that ran out of room must not be reported as a lossy parse.
 
-    Docling returns ``partial_success`` with one error per unread page when the
-    sandbox's address-space limit is reached, so without the distinction the
-    operator sees "extraction kept only 0% of the text" and looks for a parser
-    bug. The message has to name the setting that fixes it, and the run must not
-    spend two more parser runs retrying a deterministic failure.
+    The sandbox reports a memory ceiling as a non-zero exit carrying an allocator
+    message, so without the distinction the operator sees "extraction kept only
+    0% of the text" and looks for a parser bug. The message has to name the
+    setting that fixes it, and the run must not spend two more parser runs
+    retrying a deterministic failure.
     """
     storage = FakeStorage()
     _, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     extractor = FakeExtractor(
         error=ExtractionResourceError(
-            "Docling ran out of memory after 182 pages: page 3: "
+            "The parser ran out of memory after 182 pages: page 3: "
             "DefaultCPUAllocator: can't allocate memory"
         )
     )

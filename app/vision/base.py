@@ -34,6 +34,18 @@ actually see: if something is illegible, say that it is illegible rather than \
 guessing what it says.
 """
 
+SCAN_PAGE_PROMPT = """\
+This image is one full page of a scanned document. The page's text is read \
+by OCR elsewhere, so do not transcribe it.
+
+Look for charts, diagrams, maps, figures or illustrations. If the page holds \
+any, describe each one so someone searching the document can find it: what \
+it depicts, its parts, and any values, axes or labels you can read. If the \
+page holds no figure, reply exactly: none.
+
+Answer in plain prose, at most three sentences per figure.
+"""
+
 
 def build_context(section_path: list[str], caption: str) -> str:
     """Tell the model where the picture sits, so it can describe it in context.

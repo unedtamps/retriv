@@ -55,6 +55,9 @@ class ExtractedImage:
     caption: str = ""
     width: int = 0
     height: int = 0
+    describe_hint: str = "picture"
+    """Which prompt the vision stage uses: ``picture`` for a lifted figure,
+    ``scan_page`` for a full scanned page that may hold figures."""
 
 
 @dataclass(frozen=True)

@@ -15,7 +15,7 @@ than from the source.
 import re
 from dataclasses import replace
 
-from app.extraction.base import ExtractedChunk
+from app.extraction.base import ExtractedChunk, ExtractedImage
 
 PICTURE_MARKER_PATTERN = re.compile(r"\[\[PICTURE:([^\[\]]+)\]\]")
 """Matches the marker the parser leaves behind for a picture."""
@@ -56,10 +56,20 @@ def count_tokens(text: str, tokenizer_name: str) -> int:
     return len(tiktoken.get_encoding(tokenizer_name).encode(text))
 
 
+NO_FIGURE_REPLY = "none"
+"""The reply a vision model gives for a scanned page with no figure on it."""
+
+
+def is_no_figure_reply(description: str) -> bool:
+    """Whether a scanned-page reply says the page holds nothing to describe."""
+    return description.strip().rstrip(".!").lower() == NO_FIGURE_REPLY
+
+
 def merge_descriptions(
     chunks: list[ExtractedChunk],
     descriptions: dict[str, str],
     *,
+    images: list[ExtractedImage],
     tokenizer_name: str,
     model: str,
 ) -> list[ExtractedChunk]:
@@ -68,12 +78,18 @@ def merge_descriptions(
     ``descriptions`` maps a picture's handle to its description. A picture
     with no entry was never described -- the document had more pictures than
     the stage was allowed to describe -- and its marker becomes
-    ``[Image]`` rather than a line of leftover syntax.
+    ``[Image]`` rather than a line of leftover syntax. A lifted figure keeps
+    that fallback; a scanned page offered for judgement does not: most scan
+    pages hold no figure at all, and a page of plain text should not grow an
+    ``[Image]`` line just because it was asked. A chunk that held nothing
+    but such a marker is dropped rather than left empty, because an empty
+    chunk is a permanent processing error.
 
     The token count is recounted for the chunks that changed, because the
     count bounds how much of a document one read may return, and a stale
     count would let a read run past its budget.
     """
+    hints = {image.ref: image.describe_hint for image in images}
     merged: list[ExtractedChunk] = []
     for chunk in chunks:
         refs = picture_refs(chunk.text)
@@ -82,29 +98,37 @@ def merge_descriptions(
             continue
         text = chunk.text
         for ref in refs:
+            hint = hints.get(ref, "picture")
             description = descriptions.get(ref, "").strip()
-            replacement = (
-                f"{DESCRIPTION_PREFIX}{description}{DESCRIPTION_SUFFIX}"
-                if description
-                else UNDESCRIBED_PICTURE
-            )
+            if hint == "scan_page" and is_no_figure_reply(description):
+                replacement = ""
+            elif description:
+                replacement = f"{DESCRIPTION_PREFIX}{description}{DESCRIPTION_SUFFIX}"
+            else:
+                replacement = UNDESCRIBED_PICTURE
             text = text.replace(picture_marker(ref), replacement, 1)
-        provenance = dict(chunk.provenance)
-        provenance["images"] = [
-            {
-                "ref": ref,
-                "described": bool(descriptions.get(ref, "").strip()),
-            }
-            for ref in refs
-        ]
-        if model:
-            provenance["image_model"] = model
-        merged.append(
-            replace(
-                chunk,
-                text=text,
-                token_count=count_tokens(text, tokenizer_name),
-                provenance=provenance,
+        if not text.strip():
+            continue
+        described_refs = [ref for ref in refs if descriptions.get(ref, "").strip()]
+        if described_refs:
+            provenance = dict(chunk.provenance)
+            provenance["images"] = [
+                {
+                    "ref": ref,
+                    "described": bool(descriptions.get(ref, "").strip()),
+                }
+                for ref in refs
+            ]
+            if model:
+                provenance["image_model"] = model
+            merged.append(
+                replace(
+                    chunk,
+                    text=text,
+                    token_count=count_tokens(text, tokenizer_name),
+                    provenance=provenance,
+                )
             )
-        )
+        else:
+            merged.append(replace(chunk, text=text, token_count=chunk.token_count))
     return merged

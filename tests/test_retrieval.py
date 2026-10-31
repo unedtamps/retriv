@@ -549,7 +549,7 @@ async def test_a_heading_match_pulls_in_the_subtree_it_heads() -> None:
     an answer asserting the article's content was absent from a document that
     contained it.
 
-    The shape matters. Docling files the substance of "Pasal 16" under one section
+    The shape matters. The markdown extractor files the substance of "Pasal 16" under one section
     per numbered sub-provision, so the article's own key is held by a single short
     chunk and the prose lives at deeper keys that no amount of position-based
     expansion reaches. Only a subtree query does.

@@ -2,10 +2,10 @@
 # it depends on plus the worker.
 #
 # The worker is the only app process in here, and it is here rather than on
-# the host because Docling and PyTorch need ~1.7 GB, an 8 GiB parser memory
-# cap, and a sandboxed subprocess per document. Keeping that in its own
-# container is what keeps the API image small and the API process free of
-# anything a hostile PDF can reach.
+# the host because the extractors load native parsing libraries and an ONNX
+# OCR engine, and run a sandboxed subprocess per document. Keeping that in
+# its own container is what keeps the API image small and the API process
+# free of anything a hostile PDF can reach.
 
 name: retriv-api
 
@@ -18,8 +18,7 @@ x-worker-environment: &worker-environment
   RETRIV_ENVIRONMENT: ${RETRIV_ENVIRONMENT:-local}
   RETRIV_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
   RETRIV_PIPELINE_VERSION: ${RETRIV_PIPELINE_VERSION:-2026.1}
-  RETRIV_DOCLING_ARTIFACTS_PATH: ${RETRIV_DOCLING_ARTIFACTS_PATH:-/opt/docling-models}
-  RETRIV_OCR_LANGUAGES: ${RETRIV_OCR_LANGUAGES:-["ind","eng"]}
+  RETRIV_NATIVE_SCAN_TEXT_THRESHOLD: ${RETRIV_NATIVE_SCAN_TEXT_THRESHOLD:-32}
   RETRIV_CHUNK_MAX_TOKENS: ${RETRIV_CHUNK_MAX_TOKENS:-700}
   RETRIV_MAX_SOURCE_BYTES: ${RETRIV_MAX_SOURCE_BYTES:-104857600}
   RETRIV_MAX_CHUNKS_PER_DOCUMENT: ${RETRIV_MAX_CHUNKS_PER_DOCUMENT:-10000}
@@ -27,13 +26,14 @@ x-worker-environment: &worker-environment
   RETRIV_MAX_EXTRACTED_TEXT_BYTES: ${RETRIV_MAX_EXTRACTED_TEXT_BYTES:-52428800}
   RETRIV_MAX_CHUNK_PAYLOAD_BYTES: ${RETRIV_MAX_CHUNK_PAYLOAD_BYTES:-104857600}
   RETRIV_PROCESSING_TIMEOUT_SECONDS: ${RETRIV_PROCESSING_TIMEOUT_SECONDS:-3600}
-  # Two runs in flight, one parser sandbox at a time. Each concurrent
-  # sandbox adds up to ~6.5 GB -- raising RETRIV_PARSER_MAX_CONCURRENT_EXTRACTIONS
-  # means raising mem_limit below by that much per extra parser.
+  # Two runs in flight, one parser sandbox at a time. A sandbox holds at
+  # most ~1.6 GB (OCR is the heavy end) -- raising
+  # RETRIV_PARSER_MAX_CONCURRENT_EXTRACTIONS means raising mem_limit below
+  # by roughly that much per extra parser.
   RETRIV_PROCESSING_MAX_CONCURRENT_RUNS: ${RETRIV_PROCESSING_MAX_CONCURRENT_RUNS:-2}
   RETRIV_PARSER_MAX_CONCURRENT_EXTRACTIONS: ${RETRIV_PARSER_MAX_CONCURRENT_EXTRACTIONS:-1}
   RETRIV_TRACING_ENABLED: ${RETRIV_TRACING_ENABLED:-true}
-  RETRIV_TRACING_ENDPOINT: ${RETRIV_TRACING_ENDPOINT:-http://jaeger:4318/v1/traces}
+  RETRIV_TRACING_ENDPOINT: http://jaeger:4318/v1/traces
   RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS: ${RETRIV_ARTIFACT_RECONCILIATION_INTERVAL_SECONDS:-300}
   RETRIV_EMBEDDING_BASE_URL: ${RETRIV_EMBEDDING_CONTAINER_BASE_URL:-http://host.docker.internal:1234/v1}
   RETRIV_EMBEDDING_API_KEY: ${RETRIV_EMBEDDING_API_KEY:?RETRIV_EMBEDDING_API_KEY is required}
@@ -55,6 +55,7 @@ x-worker-environment: &worker-environment
   RETRIV_VLM_MAX_IMAGES_PER_DOCUMENT: ${RETRIV_VLM_MAX_IMAGES_PER_DOCUMENT:-100}
   RETRIV_VLM_MAX_CONCURRENCY: ${RETRIV_VLM_MAX_CONCURRENCY:-4}
   RETRIV_VLM_MAX_DESCRIPTION_CHARS: ${RETRIV_VLM_MAX_DESCRIPTION_CHARS:-1200}
+  RETRIV_VLM_SCAN_PAGE_DESCRIBE: ${RETRIV_VLM_SCAN_PAGE_DESCRIBE:-true}
   RETRIV_MODEL_WAIT_BASE_SECONDS: ${RETRIV_MODEL_WAIT_BASE_SECONDS:-5}
   RETRIV_MODEL_WAIT_MAX_SECONDS: ${RETRIV_MODEL_WAIT_MAX_SECONDS:-60}
   RETRIV_MODEL_WAIT_TIMEOUT_SECONDS: ${RETRIV_MODEL_WAIT_TIMEOUT_SECONDS:-3600}
@@ -68,7 +69,7 @@ x-worker-environment: &worker-environment
   RETRIV_QDRANT_COLLECTION: ${RETRIV_QDRANT_COLLECTION:-retriv-chunks-qwen3-8b-4096-v1}
   RETRIV_QDRANT_TIMEOUT_SECONDS: ${RETRIV_QDRANT_TIMEOUT_SECONDS:-30}
   RETRIV_QDRANT_VECTORS_ON_DISK: ${RETRIV_QDRANT_VECTORS_ON_DISK:-true}
-  RETRIV_PARSER_MEMORY_LIMIT_BYTES: ${RETRIV_PARSER_MEMORY_LIMIT_BYTES:-17179869184}
+  RETRIV_PARSER_MEMORY_LIMIT_BYTES: ${RETRIV_PARSER_MEMORY_LIMIT_BYTES:-4294967296}
   RETRIV_PARSER_MAX_PROCESSES: ${RETRIV_PARSER_MAX_PROCESSES:-4096}
   RETRIV_S3_RAW_BUCKET: ${RETRIV_S3_RAW_BUCKET:-raw-documents}
   RETRIV_S3_ARTIFACT_BUCKET: ${RETRIV_S3_ARTIFACT_BUCKET:-context-documents}
@@ -94,7 +95,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:7432:5432"
     networks:
       - app-net
 
@@ -158,7 +159,7 @@ services:
     volumes:
       - clamav_data:/var/lib/clamav
     ports:
-      - "127.0.0.1:3310:3310"
+      - "127.0.0.1:4410:3310"
     networks:
       - app-net
 

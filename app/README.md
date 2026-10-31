@@ -17,9 +17,10 @@ the whole repository, read the [root README](../README.md).
 - the admin API for users, workspaces and workspace members.
 
 The heavy extraction work is deliberately not here. A separate `worker/`
-process claims runs from PostgreSQL, runs Docling in a sandboxed subprocess,
-embeds chunks, and writes vectors to Qdrant. Keeping that out of this process
-is what keeps the API image small and a hostile PDF away from the request path.
+process claims runs from PostgreSQL, extracts documents in a sandboxed
+subprocess, embeds chunks, and writes vectors to Qdrant. Keeping that out of
+this process is what keeps the API image small and a hostile PDF away from
+the request path.
 
 ## Package map
 
@@ -30,7 +31,7 @@ is what keeps the API image small and a hostile PDF away from the request path.
 | `app/db/` | SQLAlchemy models, session factory, database contracts |
 | `app/documents/` | upload validation, staging, ingest, dedup, delete acceptance |
 | `app/embeddings/` | embedding client contract and Qdrant vector store |
-| `app/extraction/` | Docling adapter, chunking, table and picture serializers |
+| `app/extraction/` | markdown extraction (PDF, DOCX, OCR), chunking, table and picture handling |
 | `app/http/` | HTTP middleware such as upload body limits |
 | `app/infrastructure/` | S3/R2 object storage and ClamAV scanning |
 | `app/mcp/` | MCP tools, request authentication and tool-facing documents |
@@ -79,7 +80,7 @@ every PostgreSQL row. What changed is that the scope is now a function argument 
 from the caller's own memberships, rather than a token that had to be signed and
 verified.
 
-The worker stays a separate process for a concrete reason: Docling and PyTorch need
+The worker stays a separate process for a concrete reason: the extraction stack needs
 about 1.7 GB, a 16 GiB parser memory cap, and a sandboxed subprocess per document. Keeping
 that in its own container is what keeps the API image around 250 MB and keeps a hostile
 PDF away from the request path.
@@ -133,12 +134,12 @@ switch the stage off with `RETRIV_IMAGE_PROCESSING_ENABLED=false`.
 ```bash
 make worker    # build and start the worker image
 make migrate   # start infrastructure and apply the schema
-make api       # run the API on :8000
+make api       # run the API on :9000
 ```
 
-The first worker build takes a while: the image is ~1.7 GB and the Docling layout
-and tableformer models are downloaded into it. `make api` reuses that image; after
-changing worker or shared `app/` code, run `make worker` or `make run-build` first.
+The first worker build takes a while: the OCR models are downloaded into it at
+build time. `make api` reuses that image; after changing worker or shared
+`app/` code, run `make worker` or `make run-build` first.
 
 The dashboard is a separate npm project:
 
@@ -146,7 +147,7 @@ The dashboard is a separate npm project:
 cd web && npm ci && npm run dev
 ```
 
-It is at `http://127.0.0.1:5173`.
+It is at `http://127.0.0.1:9500`.
 
 ClamAV's first start downloads its signature database and can take a few minutes.
 PostgreSQL, Qdrant, and ClamAV publish on loopback only.
@@ -308,10 +309,10 @@ takes effect on the next call, not at the end of a session.
 
 ### How a heading gets its content back
 
-Docling chunks a document by its own structure, not by a fixed window: a section that
-fits becomes one chunk, a longer one splits, and every chunk carries the full ancestor
-heading path (`section_path`) both as a column and prepended to its text. Retrieval is
-where that structure is spent.
+The extractor chunks a document by its own structure, not by a fixed window: a section
+that fits becomes one chunk, a longer one splits, and every chunk carries the full
+ancestor heading path (`section_path`) both as a column and prepended to its text.
+Retrieval is where that structure is spent.
 
 A heading is short and topically concentrated, so against a vague query it outscores the
 prose it introduces. On a 57-page regulation, "Article 16: General framework" matched at
@@ -319,7 +320,7 @@ prose it introduces. On a 57-page regulation, "Article 16: General framework" ma
 article's content as absent from a document that contained it.
 
 The repair is not to return the next few chunks in reading order -- the content is
-rarely adjacent. When Docling meets a heading followed by numbered sub-provisions, it
+rarely adjacent. When the extractor meets a heading followed by numbered sub-provisions, it
 files the prose under paths that *end* in the sub-number, so the heading's own key is
 held by a single short chunk and the substance sits at deeper keys. So a search completes
 each section it names: the anchor's own chunks, then its sub-sections, capped at
@@ -522,7 +523,7 @@ sequenceDiagram
     K->>K: claim the run, set lease_until and lease_token
     K->>M: GET the raw object
     alt PDF or DOCX
-        K->>K: Docling extraction in a sandboxed subprocess
+        K->>K: native markdown extraction in a sandboxed subprocess
         opt the document has pictures
             loop a few at a time
                 K->>V: POST /chat/completions with the picture
@@ -623,13 +624,11 @@ the answer is that the document does not say it — which is not true.
 
 So the pictures are described, and the description is put where the picture was.
 
-Docling's layout model already tells a figure apart from a logo, a rule and page
-furniture, and crops the figure out of the page on its own. The pipeline asks it to
-keep those crops (`generate_picture_images`), and the chunking serializer writes each
-picture into its chunk as a marker naming it — Docling's own serializer writes a
-picture as an empty string, which drops it from the chunk entirely. The marker is
-what lets the description land on the line the picture was on, in the section the
-picture was in, between the sentences that talk about it:
+The extractor lifts every raster figure the PDF embeds, crops it from the page, and
+skips what cannot be a figure: a region covering the whole page is a scan, not a
+picture, and becomes an OCR page instead. Each picture is written into its chunk as a
+marker naming it. The marker is what lets the description land on the line the picture
+was on, in the section the picture was in, between the sentences that talk about it:
 
 ```
 3.2 Financial Performance

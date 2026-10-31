@@ -130,9 +130,9 @@ def section_anchors(sources: Sequence[ContextSource]) -> list[str]:
     contained it.
 
     Reading order does not repair that, because the content is rarely adjacent. When
-    Docling meets "Pasal 16" followed by numbered sub-provisions it files the prose
-    under paths that *end* in "16.01", "16.02" and so on -- none of which equal the
-    article's own key. Completing an anchor therefore means its own section plus
+    the extractor meets "Pasal 16" followed by numbered sub-provisions it files the
+    prose under paths that *end* in "16.01", "16.02" and so on -- none of which
+    equal the article's own key. Completing an anchor therefore means its own section plus
     every section beneath it, which is a hierarchy question rather than a positional
     one.
 

@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     app_name: str = "Retriv"
     component: Literal["api", "worker"] = "api"
     environment: Literal["local", "test", "production"] = "local"
-    database_url: str = "postgresql+asyncpg://retriv:retriv@localhost:5432/retriv"
+    database_url: str = "postgresql+asyncpg://retriv:retriv@localhost:7432/retriv"
 
     jwt_secret: SecretStr = Field(default_factory=lambda: SecretStr(token_urlsafe(48)))
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     bootstrap_admin_username: str = ""
     bootstrap_admin_password: SecretStr = SecretStr("")
     cors_allowed_origins: list[str] = [
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
+        "http://127.0.0.1:9500",
+        "http://localhost:9500",
     ]
 
     s3_endpoint_url: str | None = None
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     antivirus_enabled: bool = True
     clamd_host: str = "localhost"
-    clamd_port: int = Field(default=3310, ge=1, le=65535)
+    clamd_port: int = Field(default=4410, ge=1, le=65535)
     clamd_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
 
     max_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
@@ -85,15 +85,19 @@ class Settings(BaseSettings):
     max_extracted_text_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
     max_chunk_payload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     pipeline_version: str = "2026.1"
-    ocr_languages: list[str] = ["ind", "eng"]
     min_extraction_coverage: float = Field(default=0.6, gt=0, le=2)
     chunk_max_tokens: int = Field(default=700, ge=100, le=8192)
     chunk_tokenizer: str = "cl100k_base"
-    docling_artifacts_path: Path | None = None
+    native_scan_text_threshold: int = Field(default=32, ge=0)
+    """A page whose own text is thinner than this is read as a scan."""
 
     processing_timeout_seconds: int = Field(default=3600, ge=30, le=86_400)
-    parser_memory_limit_bytes: int = Field(default=16 * 1024 * 1024 * 1024, ge=512 * 1024 * 1024)
+    parser_memory_limit_bytes: int = Field(default=4 * 1024 * 1024 * 1024, ge=512 * 1024 * 1024)
+    """Virtual, not resident: the OCR engine's thread stacks and arenas count
+    against it even though actual RAM stays under a gigabyte."""
     parser_max_processes: int = Field(default=4096, ge=16, le=32_768)
+    """A per-user process ceiling: threads count against it too, so it stays
+    high enough to exceed whatever else runs under the same account."""
     processing_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs
     processing_poll_interval_seconds: float = Field(default=2.0, gt=0, le=3600)
     artifact_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
@@ -127,6 +131,8 @@ class Settings(BaseSettings):
     vlm_max_images_per_document: int = Field(default=100, ge=0, le=1_000)
     vlm_max_concurrency: int = Field(default=4, ge=1, le=32)
     vlm_max_description_chars: int = Field(default=1200, ge=100, le=8000)
+    vlm_scan_page_describe: bool = True
+    """Offer each scanned page to the vision model once, to catch figures."""
     model_wait_base_seconds: float = Field(default=5.0, gt=0, le=3600)
     model_wait_max_seconds: float = Field(default=60.0, gt=0, le=3600)
     model_wait_timeout_seconds: float = Field(default=3600.0, gt=0, le=86_400)
@@ -393,8 +399,6 @@ class Settings(BaseSettings):
             for url in (self.embedding_base_url, self.qdrant_url, self.vlm_base_url)
         ):
             raise ValueError("Production embedding, Qdrant and vision endpoints must use HTTPS")
-        if self.component == "worker" and self.docling_artifacts_path is None:
-            raise ValueError("Production workers require baked Docling artifacts")
         if self.component == "api" and not self.antivirus_enabled:
             raise ValueError("Antivirus scanning cannot be disabled in production")
         if self.component == "api" and any(

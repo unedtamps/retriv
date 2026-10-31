@@ -43,7 +43,6 @@ WORKER_BASE: dict[str, Any] = {
     "embedding_api_key": SecretStr("production-embedding-key-xxxxxxxxxxxxxxxx"),
     "vlm_base_url": "https://vision.example.test/v1/chat/completions",
     "vlm_api_key": SecretStr("production-vision-key-xxxxxxxxxxxxxxxxxxxx"),
-    "docling_artifacts_path": Path("/opt/docling-models"),
 }
 
 
@@ -168,11 +167,6 @@ def test_an_r2_shaped_configuration_is_accepted() -> None:
     assert settings.s3_addressing_style == "path"
 
 
-def test_production_worker_requires_baked_docling_artifacts() -> None:
-    with pytest.raises(ValidationError, match="Docling artifacts"):
-        Settings(**{k: v for k, v in WORKER_BASE.items() if k != "docling_artifacts_path"})
-
-
 def test_worker_accepts_a_fully_configured_production_environment() -> None:
     settings = Settings(**WORKER_BASE)
     assert settings.component == "worker"
@@ -241,18 +235,18 @@ def test_json_settings_survive_both_dotenv_parsers(
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
         "RETRIV_CORS_ALLOWED_ORIGINS='[\"https://a.example.test\"]'\n"
-        'RETRIV_OCR_LANGUAGES=\'["ind","eng"]\'\n'
+        'RETRIV_VLM_SCAN_PAGE_DESCRIBE=True\n'
     )
 
     from_settings = Settings()
     assert from_settings.cors_allowed_origins == ["https://a.example.test"]
-    assert from_settings.ocr_languages == ["ind", "eng"]
+    assert from_settings.vlm_scan_page_describe is True
 
     from dotenv import dotenv_values
 
     parsed = dotenv_values(tmp_path / ".env")
     assert parsed["RETRIV_CORS_ALLOWED_ORIGINS"] == '["https://a.example.test"]'
-    assert parsed["RETRIV_OCR_LANGUAGES"] == '["ind","eng"]'
+    assert parsed["RETRIV_VLM_SCAN_PAGE_DESCRIBE"] == "True"
 
 
 def _reader_settings(**overrides: Any) -> dict[str, Any]:

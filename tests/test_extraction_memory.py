@@ -1,12 +1,14 @@
-"""Telling "this page was hard to read" apart from "the parser ran out of room".
+"""Telling "this page was hard to read" apart from "the sandbox ran out of room".
 
-Both arrive as Docling per-page conversion errors, and a partial conversion still
-returns ``status=partial_success`` with a document attached, so the status alone
-cannot distinguish them. The worker's coverage guardrail reads the difference:
-without it a memory ceiling is reported as a lossy parse.
+The sandbox turns a memory ceiling into a non-zero exit or a SIGKILL, and the
+wording of an allocator failure travels out in its stderr. The worker's
+coverage guardrail reads the difference: without it a memory ceiling is
+reported as a lossy parse, and a retry burns another run on a deterministic
+failure.
 """
 
-from types import SimpleNamespace
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,8 +19,7 @@ from app.extraction.base import (
     ExtractionResourceError,
     looks_like_allocation_failure,
 )
-from app.extraction.docling import _allocation_failure
-from app.extraction.sandbox import SandboxedDoclingExtractor
+from app.extraction.sandbox import SandboxedExtractor
 
 
 def test_the_production_allocation_message_is_recognised() -> None:
@@ -37,9 +38,8 @@ def test_the_production_allocation_message_is_recognised() -> None:
         "MemoryError",
         "std::bad_alloc",
         "Cannot allocate memory",
-        "CUDA out of memory",
-        "torch.OutOfMemoryError: out of memory",
         "OpenBLAS error: Memory allocation still failed after 10 retries, giving up.",
+        "onnxruntime: out of memory: Failed to allocate memory for the model",
     ],
 )
 def test_allocator_wordings_are_recognised(message: str) -> None:
@@ -50,76 +50,12 @@ def test_allocator_wordings_are_recognised(message: str) -> None:
     "message",
     [
         "Page 4 is blank",
-        "Table structure model returned no cells",
+        "no such table: revenue",
         "OCR produced too few characters",
     ],
 )
-def test_ordinary_conversion_errors_are_not_mistaken_for_memory(
-    message: str,
-) -> None:
+def test_ordinary_errors_are_not_mistaken_for_memory(message: str) -> None:
     assert not looks_like_allocation_failure(message)
-
-
-def test_the_first_offending_page_is_reported_with_its_number() -> None:
-    errors = [
-        SimpleNamespace(page_no=1, error_message="Page 1 is blank"),
-        SimpleNamespace(
-            page_no=3,
-            error_message=(
-                "DefaultCPUAllocator: can't allocate memory: you tried to allocate 52428800 bytes"
-            ),
-        ),
-        SimpleNamespace(page_no=4, error_message="no such page"),
-    ]
-    failure = _allocation_failure(errors)
-    assert failure is not None
-    assert failure.startswith("page 3:")
-    assert "52428800" in failure
-
-
-def test_a_clean_error_list_reports_nothing() -> None:
-    assert _allocation_failure([]) is None
-    assert _allocation_failure([SimpleNamespace(page_no=2, error_message="blank")]) is None
-
-
-def test_a_partial_conversion_that_hit_the_limit_is_not_returned_as_a_result(
-    tmp_path, monkeypatch
-) -> None:
-    """Docling still hands back a document, so the caller has to refuse it.
-
-    This is the shape of the production failure: status=partial_success, one
-    error per unread page, a document holding only page 2, and a 182-page file.
-    """
-    from app.extraction.docling import DoclingExtractor
-
-    extractor = DoclingExtractor.__new__(DoclingExtractor)
-    extractor._version = "test-docling"
-    extractor.measure_pdf_text_layer = lambda path: (608_897, 182)  # type: ignore[method-assign]
-    extractor._converter = SimpleNamespace(
-        convert=lambda path: SimpleNamespace(
-            status=SimpleNamespace(value="partial_success"),
-            errors=[
-                SimpleNamespace(
-                    page_no=3,
-                    error_message=(
-                        "DefaultCPUAllocator: can't allocate memory: you tried to "
-                        "allocate 26214400 bytes. Error code 12 (Cannot allocate memory)"
-                    ),
-                )
-            ],
-            document=SimpleNamespace(pages={page: None for page in range(1, 183)}),
-        )
-    )
-    path = tmp_path / "10-K.pdf"
-    path.write_bytes(b"%PDF-1.7\n")
-
-    with pytest.raises(ExtractionResourceError) as caught:
-        extractor.extract(path, media_type=PDF_MEDIA_TYPE)
-
-    message = str(caught.value)
-    assert "182 pages" in message
-    assert "page 3" in message
-    assert "26214400" in message
 
 
 def test_a_resource_failure_is_still_an_extraction_failure() -> None:
@@ -127,12 +63,12 @@ def test_a_resource_failure_is_still_an_extraction_failure() -> None:
     assert issubclass(ExtractionResourceError, ExtractionError)
 
 
-def _sandboxed_extractor() -> SandboxedDoclingExtractor:
-    return SandboxedDoclingExtractor(
-        ocr_languages=["eng"],
+def _sandboxed_extractor() -> SandboxedExtractor:
+    return SandboxedExtractor(
         chunk_max_tokens=700,
         tokenizer_name="cl100k_base",
-        artifacts_path=None,
+        scan_text_threshold=32,
+        scan_page_describe=False,
         timeout_seconds=60,
         memory_limit_bytes=8 * 1024**3,
         max_processes=4096,
@@ -154,12 +90,12 @@ def _sandboxed_extractor() -> SandboxedDoclingExtractor:
     ],
 )
 def test_the_sandbox_reports_running_out_of_room_as_a_resource_failure(
-    tmp_path, monkeypatch, return_code: int, stderr_text: bytes
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, return_code: int, stderr_text: bytes
 ) -> None:
     class FakeProcess:
         pid = 4321
 
-        def __init__(self, *args, **kwargs) -> None:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             if stderr_text:
                 kwargs["stderr"].write(stderr_text)
                 kwargs["stderr"].flush()
@@ -178,13 +114,15 @@ def test_the_sandbox_reports_running_out_of_room_as_a_resource_failure(
     assert "8.0 GiB" in message, "the message must name the limit to raise"
 
 
-def test_an_ordinary_sandbox_failure_stays_an_extraction_failure(tmp_path, monkeypatch) -> None:
+def test_an_ordinary_sandbox_failure_stays_an_extraction_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Only memory failures get the limit advice; a broken document does not."""
 
     class FakeProcess:
         pid = 4321
 
-        def __init__(self, *args, **kwargs) -> None:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             kwargs["stderr"].write(b"pymupdf: cannot open document")
             kwargs["stderr"].flush()
 

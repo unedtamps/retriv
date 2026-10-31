@@ -24,10 +24,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--media-type", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--ocr-language", action="append", required=True)
     parser.add_argument("--chunk-max-tokens", type=int, required=True)
     parser.add_argument("--tokenizer-name", required=True)
-    parser.add_argument("--artifacts-path", type=Path)
+    parser.add_argument("--scan-text-threshold", type=int, default=32)
+    parser.add_argument("--no-scan-page-describe", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, required=True)
     parser.add_argument("--memory-limit-bytes", type=int, required=True)
     parser.add_argument("--max-processes", type=int, required=True)
@@ -93,6 +93,7 @@ def write_images(args: argparse.Namespace, images: list[ExtractedImage]) -> list
                 "caption": image.caption,
                 "width": image.width,
                 "height": image.height,
+                "describe_hint": image.describe_hint,
                 "file": f"images/{name}",
                 "size_bytes": size,
             }
@@ -102,13 +103,13 @@ def write_images(args: argparse.Namespace, images: list[ExtractedImage]) -> list
 
 def run(args: argparse.Namespace) -> None:
     set_resource_limits(args)
-    from app.extraction.docling import DoclingExtractor
+    from app.extraction.native import NativeMarkdownExtractor
 
-    extractor = DoclingExtractor(
-        ocr_languages=args.ocr_language,
+    extractor = NativeMarkdownExtractor(
         chunk_max_tokens=args.chunk_max_tokens,
         tokenizer_name=args.tokenizer_name,
-        artifacts_path=args.artifacts_path,
+        scan_text_threshold=args.scan_text_threshold,
+        scan_page_describe=not args.no_scan_page_describe,
         picture_images_enabled=args.picture_images,
         image_render_scale=args.image_render_scale,
         image_min_pixels=args.image_min_pixels,

@@ -2,9 +2,9 @@
 # the worker needs all of it. Building both from a shared base keeps the
 # lockfile and the copy steps in one place.
 #
-# The API image is ~250 MB. The worker is ~1.7 GB, almost all of it torch.
-# That difference is the reason the worker is a separate process, not a
-# separate codebase.
+# The API image is ~250 MB. The worker is ~1 GB, dominated by the ONNX
+# runtime and the OCR models. That difference is the reason the worker is a
+# separate process, not a separate codebase.
 
 FROM python:3.13-slim-bookworm AS base
 
@@ -25,7 +25,7 @@ COPY worker ./worker
 COPY alembic.ini ./
 COPY alembic ./alembic
 
-# --- API: no extraction extra, so no torch, no Docling, no tesseract ---
+# --- API: no extraction extra, so no OCR engine and no native parsers ---
 FROM base AS api
 
 RUN uv sync --frozen --no-dev --no-install-project \
@@ -40,28 +40,22 @@ EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-# --- Worker: extraction extra, OCR, and baked model weights ---
+# --- Worker: the extraction extra and the OCR models, baked at build ---
 FROM base AS worker
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \
-        tesseract-ocr \
-        tesseract-ocr-eng \
-        tesseract-ocr-ind \
     && rm -rf /var/lib/apt/lists/*
 
 RUN uv sync --frozen --no-dev --extra extraction --no-install-project \
-    && docling-tools models download layout tableformer \
-        --output-dir /opt/docling-models \
     && uv sync --frozen --no-dev --extra extraction \
+    && python -c "from rapidocr import RapidOCR; RapidOCR()" \
     && groupadd --system app \
     && useradd --system --gid app --home-dir /app app \
     && chown -R app:app /app
 
 USER app
-
-ENV RETRIV_DOCLING_ARTIFACTS_PATH=/opt/docling-models
 
 CMD ["python", "-m", "worker"]

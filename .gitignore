@@ -9,6 +9,7 @@ __pycache__/
 .coverage
 htmlcov/
 data
+.zcode/
 
 # local model/tessdata caches used by offline diagnostics
 .cache/

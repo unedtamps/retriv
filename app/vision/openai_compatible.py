@@ -28,7 +28,11 @@ from typing import Any
 import httpx
 
 from app.extraction.base import ExtractedImage
-from app.vision.base import DESCRIPTION_PROMPT, VisionProviderError
+from app.vision.base import (
+    DESCRIPTION_PROMPT,
+    SCAN_PAGE_PROMPT,
+    VisionProviderError,
+)
 
 _CHAT_SUFFIX = "/chat/completions"
 
@@ -255,7 +259,8 @@ class OpenAICompatibleVisionProvider:
 
     def _build_payload(self, image: ExtractedImage, *, context: str) -> dict[str, Any]:
         encoded = base64.b64encode(image.data).decode("ascii")
-        prompt = f"{context}{DESCRIPTION_PROMPT}" if context else DESCRIPTION_PROMPT
+        prompt = SCAN_PAGE_PROMPT if image.describe_hint == "scan_page" else DESCRIPTION_PROMPT
+        prompt = f"{context}{prompt}" if context and image.describe_hint != "scan_page" else prompt
         return {
             "model": self._model,
             "messages": [

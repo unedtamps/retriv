@@ -28,22 +28,20 @@ SAFE_ENVIRONMENT_KEYS = (
     "PATH",
     "SSL_CERT_DIR",
     "SSL_CERT_FILE",
-    "TESSDATA_PREFIX",
     "TMPDIR",
-    "TORCH_HOME",
     "XDG_CACHE_HOME",
     "LD_PRELOAD",
 )
 
 
-class SandboxedDoclingExtractor:
+class SandboxedExtractor:
     def __init__(
         self,
         *,
-        ocr_languages: list[str],
         chunk_max_tokens: int,
         tokenizer_name: str,
-        artifacts_path: Path | None,
+        scan_text_threshold: int,
+        scan_page_describe: bool,
         timeout_seconds: int,
         memory_limit_bytes: int,
         max_processes: int,
@@ -58,10 +56,10 @@ class SandboxedDoclingExtractor:
         max_image_bytes: int = 5 * 1024 * 1024,
         max_total_image_bytes: int = 50 * 1024 * 1024,
     ) -> None:
-        self._ocr_languages = ocr_languages
         self._chunk_max_tokens = chunk_max_tokens
         self._tokenizer_name = tokenizer_name
-        self._artifacts_path = artifacts_path
+        self._scan_text_threshold = scan_text_threshold
+        self._scan_page_describe = scan_page_describe
         self._timeout_seconds = timeout_seconds
         self._memory_limit_bytes = memory_limit_bytes
         self._max_processes = max_processes
@@ -95,6 +93,8 @@ class SandboxedDoclingExtractor:
                 str(self._chunk_max_tokens),
                 "--tokenizer-name",
                 self._tokenizer_name,
+                "--scan-text-threshold",
+                str(self._scan_text_threshold),
                 "--timeout-seconds",
                 str(self._timeout_seconds),
                 "--memory-limit-bytes",
@@ -126,17 +126,14 @@ class SandboxedDoclingExtractor:
                     str(self._max_images),
                 )
             )
-            for language in self._ocr_languages:
-                command.extend(("--ocr-language", language))
-            if self._artifacts_path is not None:
-                command.extend(("--artifacts-path", str(self._artifacts_path)))
+            if not self._scan_page_describe:
+                command.append("--no-scan-page-describe")
 
             environment = {
                 key: os.environ[key] for key in SAFE_ENVIRONMENT_KEYS if key in os.environ
             }
             environment.update(
                 {
-                    "DOCLING_SERVE_ENABLE_REMOTE_SERVICES": "false",
                     "MKL_NUM_THREADS": "4",
                     "NUMEXPR_NUM_THREADS": "4",
                     "OMP_NUM_THREADS": "4",
@@ -144,13 +141,6 @@ class SandboxedDoclingExtractor:
                     "MALLOC_ARENA_MAX": "2",
                 }
             )
-            if self._artifacts_path is not None:
-                environment.update(
-                    {
-                        "HF_HUB_OFFLINE": "1",
-                        "TRANSFORMERS_OFFLINE": "1",
-                    }
-                )
             stderr_path = output_dir / "stderr.log"
             with stderr_path.open("wb") as stderr:
                 process = subprocess.Popen(  # noqa: S603 - fixed interpreter and module
@@ -312,6 +302,7 @@ class SandboxedDoclingExtractor:
         caption = value.get("caption", "")
         width = value.get("width", 0)
         height = value.get("height", 0)
+        describe_hint = value.get("describe_hint", "picture")
         name = value.get("file")
         if (
             not isinstance(ref, str)
@@ -325,6 +316,8 @@ class SandboxedDoclingExtractor:
             or isinstance(width, bool)
             or not isinstance(height, int)
             or isinstance(height, bool)
+            or not isinstance(describe_hint, str)
+            or not describe_hint
             or not isinstance(name, str)
             or not name
         ):
@@ -341,6 +334,7 @@ class SandboxedDoclingExtractor:
             caption=caption,
             width=width,
             height=height,
+            describe_hint=describe_hint,
         )
 
     @staticmethod

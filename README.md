@@ -28,8 +28,9 @@ services the deployment provides: object storage, embeddings, and vision.
 [`docs/retriv-ui-architecture.pen`](docs/retriv-ui-architecture.pen); object
 storage and model endpoints are external services.*
 
-The API answers requests. The worker does the expensive, untrusted part: Docling
-extraction in a sandboxed subprocess, chunking, embeddings, and Qdrant writes.
+The API answers requests. The worker does the expensive, untrusted part: native
+markdown extraction (PyMuPDF, python-docx and an ONNX OCR engine) in a sandboxed
+subprocess, chunking, embeddings, and Qdrant writes.
 They coordinate through PostgreSQL processing runs; there is no direct HTTP call
 between them.
 
@@ -41,7 +42,7 @@ between them.
 | PostgreSQL | Canonical documents, workspace links, runs, chunks and CSV rows. |
 | Qdrant | Candidate vectors filtered by the `workspace_ids` payload. |
 | S3 / R2 | Raw uploads and extracted artifacts, one object per content hash. |
-| `worker/` | Sandboxed Docling extraction, chunking, embeddings and payload sync. |
+| `worker/` | Sandboxed native extraction, chunking, embeddings and payload sync. |
 | ClamAV | Malware scan before any bytes reach storage. |
 | LM Studio + VLM | Text embeddings and descriptions of document pictures. |
 
@@ -183,7 +184,7 @@ first admin credentials.
 ```bash
 make worker      # build and start the extraction worker
 make migrate     # start infrastructure and apply migrations
-make api         # run the API on http://127.0.0.1:8000
+make api         # run the API on http://127.0.0.1:9000
 ```
 
 The dashboard is a separate npm project:
@@ -192,7 +193,7 @@ The dashboard is a separate npm project:
 cd web && npm ci && npm run dev
 ```
 
-It runs at `http://127.0.0.1:5173`.
+It runs at `http://127.0.0.1:9500`.
 
 `make api` reuses the worker image already built. After changing worker code,
 run `make worker` or `make run-build` first. Object storage is external: no

@@ -14,6 +14,7 @@ import pytest
 
 from app.extraction.base import ExtractedChunk, ExtractedImage
 from app.extraction.images import (
+    is_no_figure_reply,
     merge_descriptions,
     picture_marker,
     picture_refs,
@@ -120,7 +121,6 @@ async def test_the_client_sends_the_picture_and_returns_the_description() -> Non
 
 async def test_an_answer_from_another_model_is_refused() -> None:
     calls = 0
-
     def handler(_: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
@@ -294,6 +294,7 @@ def test_a_marker_is_replaced_by_the_description() -> None:
     merged = merge_descriptions(
         [chunk],
         {"#/pictures/0": "A bar chart of net revenue by segment."},
+        images=[an_image()],
         tokenizer_name="cl100k_base",
         model="vendor/vision-model",
     )
@@ -313,6 +314,7 @@ def test_a_picture_that_was_never_described_loses_its_marker() -> None:
     merged = merge_descriptions(
         [chunk],
         {},
+        images=[an_image()],
         tokenizer_name="cl100k_base",
         model="vendor/vision-model",
     )
@@ -326,6 +328,7 @@ def test_a_chunk_of_nothing_but_a_picture_stays_readable() -> None:
     merged = merge_descriptions(
         [chunk],
         {},
+        images=[an_image()],
         tokenizer_name="cl100k_base",
         model="vendor/vision-model",
     )
@@ -338,6 +341,7 @@ def test_the_token_count_is_recounted_after_a_merge() -> None:
     merged = merge_descriptions(
         [chunk],
         {"#/pictures/0": "A bar chart of net revenue by segment."},
+        images=[an_image()],
         tokenizer_name="cl100k_base",
         model="vendor/vision-model",
     )
@@ -352,6 +356,7 @@ def test_a_chunk_without_a_picture_is_left_alone() -> None:
     merged = merge_descriptions(
         [chunk],
         {"#/pictures/0": "A bar chart."},
+        images=[an_image()],
         tokenizer_name="cl100k_base",
         model="vendor/vision-model",
     )
@@ -371,3 +376,85 @@ def test_a_bigger_budget_is_given_more_time_on_the_wire() -> None:
     assert provider._timeout_for(256) == 10
     assert provider._timeout_for(2048) == 20
     assert provider._timeout_for(4096) == 40
+
+
+def test_a_scan_page_reply_of_none_is_recognised() -> None:
+    assert is_no_figure_reply("none")
+    assert is_no_figure_reply("None.")
+    assert is_no_figure_reply("  NONE \n")
+    assert not is_no_figure_reply("None of the above chart types apply.")
+
+
+async def test_a_scan_page_is_asked_the_scan_page_question() -> None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=an_answer("none"))
+
+    scanned = ExtractedImage(
+        ref="scan-page-4",
+        page_number=4,
+        media_type="image/jpeg",
+        data=PNG_BYTES,
+        describe_hint="scan_page",
+    )
+    provider = a_provider(handler)
+    try:
+        description = await provider.describe(scanned, context="ignored for scan pages")
+    finally:
+        await provider.aclose()
+
+    assert description == "none"
+    content = seen["body"]["messages"][0]["content"]
+    assert "scanned document" in content[0]["text"]
+    assert "reply exactly: none" in content[0]["text"]
+    assert "ignored for scan pages" not in content[0]["text"]
+
+
+def test_a_scan_page_without_figures_drops_its_marker_and_its_chunk() -> None:
+    text_chunk = a_chunk("Auditor's report follows below.")
+    page_chunk = a_chunk(picture_marker("scan-page-4"))
+    merged = merge_descriptions(
+        [text_chunk, page_chunk],
+        {"scan-page-4": "none"},
+        images=[
+            an_image(),
+            ExtractedImage(
+                ref="scan-page-4",
+                page_number=4,
+                media_type="image/jpeg",
+                data=PNG_BYTES,
+                describe_hint="scan_page",
+            ),
+        ],
+        tokenizer_name="cl100k_base",
+        model="vendor/vision-model",
+    )
+
+    assert merged == [text_chunk]
+
+
+def test_a_scan_page_with_a_figure_keeps_the_description() -> None:
+    page_chunk = a_chunk(f"Page text.\n{picture_marker('scan-page-4')}")
+    merged = merge_descriptions(
+        [page_chunk],
+        {"scan-page-4": "A pie chart of the expense breakdown."},
+        images=[
+            ExtractedImage(
+                ref="scan-page-4",
+                page_number=4,
+                media_type="image/jpeg",
+                data=PNG_BYTES,
+                describe_hint="scan_page",
+            )
+        ],
+        tokenizer_name="cl100k_base",
+        model="vendor/vision-model",
+    )
+
+    assert len(merged) == 1
+    assert "[Image description: A pie chart of the expense breakdown.]" in merged[0].text
+    assert merged[0].provenance["images"] == [
+        {"ref": "scan-page-4", "described": True}
+    ]

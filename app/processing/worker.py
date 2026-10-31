@@ -74,7 +74,7 @@ from app.extraction.base import (
     ExtractionResourceError,
     ExtractionResult,
 )
-from app.extraction.images import merge_descriptions, picture_refs
+from app.extraction.images import is_no_figure_reply, merge_descriptions, picture_refs
 from app.infrastructure.storage import (
     ArtifactStorage,
     ObjectNotFoundError,
@@ -571,14 +571,16 @@ class ProcessingWorker:
                         f"{self._settings.parser_memory_limit_bytes / 1024**3:.1f} GiB) "
                         f"and requeue this document."
                     ) from exc
+            await self._ensure_active(claimed_run.id, lease_token)
             extraction = await self._describe_images(claimed_run.id, lease_token, extraction)
+            await self._ensure_active(claimed_run.id, lease_token)
             self._validate_extraction(extraction)
 
             artifact_prefix = (
                 f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
                 f"runs/{claimed_run.id}/attempts/{lease_token}"
             )
-            artifact_key = f"{artifact_prefix}/docling-document.json.gz"
+            artifact_key = f"{artifact_prefix}/document.json.gz"
             manifest_key = f"{artifact_prefix}/manifest.json"
             compressed_document = gzip.compress(extraction.document_json, mtime=0)
             artifact_sha256 = hashlib.sha256(compressed_document).hexdigest()
@@ -656,9 +658,10 @@ class ProcessingWorker:
         more than the parse itself.
 
         The parser is the stdlib csv module, which is why it runs in-process
-        rather than in the extraction sandbox. The sandbox exists because
-        Docling loads third-party native parsers; plain delimited text has no
-        such surface, and the caps in the validator bound it instead.
+        rather than in the extraction sandbox. The sandbox exists because the
+        document extractors load native parsing libraries; plain delimited
+        text has no such surface, and the caps in the validator bound it
+        instead.
         """
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
@@ -1018,8 +1021,8 @@ class ProcessingWorker:
         artifact_sha256: str,
     ) -> dict[str, object]:
         return {
-            "artifact_type": "docling-document",
-            "artifact_schema_version": 1,
+            "artifact_type": "retriv-markdown",
+            "artifact_schema_version": 2,
             "workspace_id": str(document.origin_workspace_id),
             "document_id": str(document.id),
             "run_id": str(run.id),
@@ -1034,9 +1037,8 @@ class ProcessingWorker:
             "pipeline": {
                 "name": "retriv-context-pipeline",
                 "version": self._settings.pipeline_version,
-                "docling_version": extraction.extractor_version,
+                "extractor_version": extraction.extractor_version,
                 "ocr_enabled": extraction.ocr_enabled,
-                "ocr_languages": self._settings.ocr_languages,
                 "chunk_max_tokens": self._settings.chunk_max_tokens,
                 "source_text_chars": extraction.source_text_chars,
                 "extracted_text_chars": sum(len(chunk.text) for chunk in extraction.chunks),
@@ -1368,6 +1370,20 @@ class ProcessingWorker:
     def _qdrant_point_id(self, chunk_id: UUID) -> UUID:
         return uuid5(chunk_id, self._settings.embedding_profile)
 
+    async def _ensure_active(self, run_id: UUID, lease_token: UUID) -> None:
+        """Stop work whose run was cancelled or whose lease is gone.
+
+        Deletion cancels a run in the database while the worker is inside a
+        stage that cannot be interrupted. Between stages the run is read
+        back: a cancelled or lease-less run abandons the rest of the
+        pipeline instead of describing and embedding a document that no
+        longer exists, and the pipeline slot it held is freed at once.
+        """
+        async with self._session_factory() as session:
+            run = await session.get(ProcessingRun, run_id)
+            if run is None or run.lease_token != lease_token or run.status == RUN_CANCELLED:
+                raise LeaseLostError()
+
     async def _set_phase(self, run_id: UUID, lease_token: UUID, status: str) -> None:
         lease_until = utcnow() + timedelta(seconds=self._settings.processing_lease_seconds)
         async with self._session_factory() as session:
@@ -1586,7 +1602,11 @@ class ProcessingWorker:
                 await heartbeat
         chunks = merge_descriptions(
             extraction.chunks,
-            descriptions,
+            {
+                ref: ("" if is_no_figure_reply(description) else description)
+                for ref, description in descriptions.items()
+            },
+            images=images,
             tokenizer_name=self._settings.chunk_tokenizer,
             model=self._settings.vlm_model,
         )
