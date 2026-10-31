@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
-import { api, getErrorMessage, isUnauthorized } from './api'
+import {
+  api,
+  clearTokens,
+  getErrorMessage,
+  hasSession,
+  isUnauthorized,
+  restoreSession,
+  setSessionLostHandler,
+} from './api'
 import { Dashboard } from './components/Dashboard'
 import { LoginScreen } from './components/LoginScreen'
 import { BrandMark } from './components/ui/Brand'
-import { clearSessionToken, readSessionToken, writeSessionToken } from './session'
+import { useTheme } from './hooks/useTheme'
+import { clearDocumentCache } from './lib/documentCache'
 import type { AppRoute, CurrentUser, Workspace } from './types'
 
 interface ReadyState {
@@ -18,13 +27,22 @@ function currentRoute(): AppRoute {
   return '/dashboard'
 }
 
+/**
+ * The app shell: resolve a session, then hand everything to the dashboard.
+ *
+ * The tokens themselves are not React state. They belong to `api.ts`, which
+ * renews them mid-request when it has to; what React watches here is only
+ * whether a session exists at all, which is what decides between the sign-in
+ * screen and the dashboard.
+ */
 function App() {
   const [route, setRoute] = useState<AppRoute>(currentRoute)
-  const [token, setToken] = useState<string | null>(() => readSessionToken())
+  const [signedIn, setSignedIn] = useState(() => restoreSession())
   const [ready, setReady] = useState<ReadyState | null>(null)
-  const [loading, setLoading] = useState(token !== null)
+  const [loading, setLoading] = useState(hasSession())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const theme = useTheme()
 
   useEffect(() => {
     if (
@@ -38,18 +56,32 @@ function App() {
     return () => window.removeEventListener('popstate', syncRoute)
   }, [])
 
+  const handleLogout = useCallback(() => {
+    clearDocumentCache()
+    clearTokens()
+    setSignedIn(false)
+    setReady(null)
+    setLoading(false)
+    setLoadError(null)
+  }, [])
+
+  useEffect(() => {
+    setSessionLostHandler(handleLogout)
+    return () => setSessionLostHandler(null)
+  }, [handleLogout])
+
   const navigate = useCallback((route: AppRoute) => {
     if (window.location.pathname !== route) window.history.pushState(null, '', route)
     setRoute(route)
   }, [])
 
   useEffect(() => {
-    if (token === null) return
+    if (!signedIn) return
 
     const controller = new AbortController()
     Promise.all([
-      api.me(token, controller.signal),
-      loadWorkspaceCatalog(token, controller.signal),
+      api.me(controller.signal),
+      loadWorkspaceCatalog(controller.signal),
     ])
       .then(([user, workspaces]) => {
         setReady({ user, workspaces })
@@ -58,22 +90,26 @@ function App() {
       .catch((caught: unknown) => {
         if (caught instanceof Error && caught.name === 'AbortError') return
         if (isUnauthorized(caught)) {
-          clearSessionToken()
-          setToken(null)
+          clearTokens()
+          setSignedIn(false)
           return
         }
         setLoadError(getErrorMessage(caught))
         setLoading(false)
       })
     return () => controller.abort()
-  }, [token, retryKey])
+  }, [signedIn, retryKey])
 
   async function handleLogin(username: string, password: string) {
-    const session = await api.login(username, password)
-    writeSessionToken(session.access_token)
+    await api.login(username, password)
     setLoading(true)
     setLoadError(null)
-    setToken(session.access_token)
+    setSignedIn(true)
+  }
+
+  async function handleSignOut() {
+    await api.logout()
+    handleLogout()
   }
 
   function retryLoad() {
@@ -82,26 +118,17 @@ function App() {
     setRetryKey((value) => value + 1)
   }
 
-  const handleLogout = useCallback(() => {
-    clearSessionToken()
-    setToken(null)
-    setReady(null)
-    setLoading(false)
-    setLoadError(null)
-  }, [])
-
   const refreshWorkspaces = useCallback(async () => {
-    if (token === null) return
     try {
-      const workspaces = await loadWorkspaceCatalog(token)
+      const workspaces = await loadWorkspaceCatalog()
       setReady((current) => current === null ? current : { ...current, workspaces })
     } catch (caught) {
       if (isUnauthorized(caught)) handleLogout()
       else throw caught
     }
-  }, [token, handleLogout])
+  }, [handleLogout])
 
-  if (token === null) return <LoginScreen onLogin={handleLogin} />
+  if (!signedIn) return <LoginScreen onLogin={handleLogin} />
   if (loading) return <BootScreen />
   if (loadError !== null || ready === null) {
     return (
@@ -119,7 +146,7 @@ function App() {
               <RefreshCw aria-hidden="true" size={16} />
               Try again
             </button>
-            <button type="button" className="btn btn-secondary" onClick={handleLogout}>
+            <button type="button" className="btn btn-secondary" onClick={handleSignOut}>
               Sign out
             </button>
           </div>
@@ -132,24 +159,25 @@ function App() {
     <Dashboard
       route={route}
       onNavigate={navigate}
-      token={token}
       user={ready.user}
       workspaces={ready.workspaces}
       onRefreshWorkspaces={refreshWorkspaces}
       onUnauthorized={handleLogout}
-      onLogout={handleLogout}
+      onLogout={handleSignOut}
+      themePreference={theme.preference}
+      onThemeChange={theme.setPreference}
     />
   )
 }
 
-async function loadWorkspaceCatalog(token: string, signal?: AbortSignal): Promise<Workspace[]> {
+async function loadWorkspaceCatalog(signal?: AbortSignal): Promise<Workspace[]> {
   const pageSize = 100
-  const first = await api.listWorkspaces(token, { limit: pageSize, signal })
+  const first = await api.listWorkspaces({ limit: pageSize, signal })
   if (first.items.length >= first.total) return first.items
 
   const remainingPages: Promise<{ items: Workspace[] }>[] = []
   for (let offset = pageSize; offset < first.total; offset += pageSize) {
-    remainingPages.push(api.listWorkspaces(token, { offset, limit: pageSize, signal }))
+    remainingPages.push(api.listWorkspaces({ offset, limit: pageSize, signal }))
   }
   const pages = await Promise.all(remainingPages)
   return [first, ...pages].flatMap((page) => page.items)

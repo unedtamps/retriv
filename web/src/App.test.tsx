@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { readSessionToken, writeSessionToken } from './session'
+import { readSession, readSessionToken, writeSession, writeSessionToken } from './session'
+import { buildDocx, DOCX_MEDIA_TYPE } from './test/docxFixture'
 import type { CurrentUser, Workspace } from './types'
 
 const admin: CurrentUser = {
@@ -28,6 +29,7 @@ const workspace: Workspace = {
   membership_role: 'owner' as const,
   member_count: 3,
   can_upload: true,
+  can_download: true,
   can_search_context: true,
   can_manage_members: true,
   can_delete: true,
@@ -45,16 +47,56 @@ function installApi(
   workspaces: Workspace[] = [workspace],
   uploadResponse?: Response,
   processingResponses: { runs?: unknown } = {},
-  documents: { list?: unknown; deleted?: string[] } = {},
+  documents: {
+    list?: unknown
+    deleted?: string[]
+    search?: unknown
+    download?: 'ok' | 'forbidden'
+    /** Serve these bytes instead of the PDF fixture, for the Word preview path. */
+    downloadBlob?: Blob
+  } = {},
   members: { list?: unknown } = {},
+  auth: { refresh?: 'ok' | 'rejected'; meFirst?: 'ok' | 'expired' } = {},
 ) {
+  const refreshes: string[] = []
+  const logouts: string[] = []
+  let meCalls = 0
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url === '/v1/auth/token') {
       expect(init?.body).toBeInstanceOf(URLSearchParams)
-      return json({ access_token: 'signed-token', token_type: 'bearer' })
+      return json({
+        access_token: 'signed-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: `rt_${'a'.repeat(43)}`,
+        refresh_expires_in: 2592000,
+      })
     }
-    if (url === '/v1/auth/me') return json(user)
+    if (url === '/v1/auth/refresh') {
+      if (auth.refresh === 'rejected') {
+        return json({ code: 'invalid_credentials' }, 401)
+      }
+      refreshes.push(String(init?.body))
+      return json({
+        access_token: 'refreshed-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: `rt_${'b'.repeat(43)}`,
+        refresh_expires_in: 2592000,
+      })
+    }
+    if (url === '/v1/auth/logout') {
+      logouts.push(String(init?.body))
+      return new Response(null, { status: 204 })
+    }
+    if (url === '/v1/auth/me') {
+      meCalls += 1
+      if (auth.meFirst === 'expired' && meCalls === 1) {
+        return json({ code: 'invalid_credentials' }, 401)
+      }
+      return json(user)
+    }
     if (url.startsWith('/v1/workspaces?')) {
       return json({ items: workspaces, total: workspaces.length, offset: 0, limit: 100 })
     }
@@ -97,6 +139,18 @@ function installApi(
     if (documentList !== null && (init?.method === undefined || init.method === 'GET')) {
       return json(documents.list ?? { items: [], total: 0, offset: 0, limit: 50 })
     }
+    const downloadMatch = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)\/download/)
+    if (downloadMatch !== null) {
+      if (documents.download === 'forbidden') return json({ code: 'insufficient_workspace_permission' }, 403)
+      const body = documents.downloadBlob
+        ?? new Blob(['%PDF-1.7 fake'], { type: 'application/pdf' })
+      // jsdom's Response stringifies a Blob body instead of reading it, so the
+      // bytes have to go in as an ArrayBuffer.
+      return new Response(await body.arrayBuffer(), {
+        status: 200,
+        headers: { 'Content-Type': body.type || 'application/pdf' },
+      })
+    }
     const documentDelete = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)$/)
     if (documentDelete !== null && init?.method === 'DELETE') {
       documents.deleted?.push(documentDelete[1])
@@ -105,6 +159,16 @@ function installApi(
         list.items = list.items.filter((item) => item.id !== documentDelete[1])
       }
       return new Response(null, { status: 204 })
+    }
+    const reindexMatch = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)\/reindex$/)
+    if (reindexMatch !== null && init?.method === 'POST') {
+      const id = reindexMatch[1]
+      const list = documents.list as { items: Array<Record<string, unknown>> } | undefined
+      const existing = list?.items.find((item) => item.id === id)
+      return json({ ...existing, status: 'processing' }, 202)
+    }
+    if (url.startsWith('/v1/documents/search')) {
+      return json(documents.search ?? { items: [], total: 0 })
     }
     if (url === '/v1/processing-runs') {
       return json(processingResponses.runs ?? { items: [], total: 0 })
@@ -163,7 +227,7 @@ function installApi(
     throw new Error(`Unexpected request: ${url}`)
   })
   vi.stubGlobal('fetch', fetchMock)
-  return fetchMock
+  return Object.assign(fetchMock, { refreshes, logouts })
 }
 
 describe('dashboard application', () => {
@@ -236,6 +300,7 @@ describe('dashboard application', () => {
         name: 'Company catalog',
         membership_role: null,
         can_upload: false,
+        can_download: false,
         can_search_context: false,
         can_manage_members: false,
         can_delete: false,
@@ -308,6 +373,7 @@ describe('dashboard application', () => {
         ...workspace,
         membership_role: null,
         can_upload: false,
+        can_download: false,
         can_search_context: false,
         can_manage_members: false,
         can_delete: false,
@@ -399,6 +465,7 @@ describe('dashboard application', () => {
         ...workspace,
         membership_role: null,
         can_upload: false,
+        can_download: false,
         can_search_context: false,
         can_manage_members: false,
         can_delete: false,
@@ -412,6 +479,170 @@ describe('dashboard application', () => {
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).getByRole('button', { name: 'Users' })).toHaveClass('nav-link-active')
     expect(window.location.search).toContain('view=users')
+  })
+
+  it('offers reindex to an owner and swaps the row into its new state', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const document = {
+      id: 'document-1',
+      workspace_id: workspace.id,
+      original_filename: 'launch-review.pdf',
+      detected_media_type: 'application/pdf',
+      size_bytes: 2048,
+      sha256: 'a'.repeat(64),
+      status: 'ready',
+      created_by_user_id: 'user-owner',
+      created_at: '2026-09-24T08:00:00Z',
+      duplicate: false,
+    }
+    const fetchMock = installApi(owner, [workspace], undefined, {}, {
+      list: { items: [document], total: 1, offset: 0, limit: 50 },
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
+    const row = screen.getByRole('row', { name: /launch-review.pdf/ })
+    expect(within(row).getByText('Ready')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reindex launch-review.pdf' }))
+
+    const confirm = await screen.findByRole('dialog', { name: 'Reindex this document?' })
+    expect(
+      within(confirm).getByText(/replaced once the new run finishes/),
+    ).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/reindex'))).toHaveLength(0)
+
+    await user.click(within(confirm).getByRole('button', { name: 'Reindex document' }))
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input) === '/v1/workspaces/workspace-1/documents/document-1/reindex' &&
+          init?.method === 'POST',
+      ),
+    ).toBe(true)
+    expect(await screen.findByText('launch-review.pdf queued for reindexing.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('row', { name: /launch-review.pdf/ })).getByText('Processing'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('hides reindex from an editor who may delete', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const editorWorkspace = { ...workspace, membership_role: 'editor' as const }
+    installApi(owner, [editorWorkspace], undefined, {}, {
+      list: {
+        items: [
+          {
+            id: 'document-2',
+            workspace_id: editorWorkspace.id,
+            original_filename: 'editable.pdf',
+            detected_media_type: 'application/pdf',
+            size_bytes: 1024,
+            sha256: 'b'.repeat(64),
+            status: 'ready',
+            created_by_user_id: 'user-owner',
+            created_at: '2026-09-24T08:00:00Z',
+            duplicate: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByText('editable.pdf')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
+        name: 'Documents',
+      }),
+    )
+    expect(await screen.findByText('editable.pdf')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reindex editable.pdf' })).not.toBeInTheDocument()
+  })
+
+  it('debounces the search so typing quickly costs one request', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const hit = {
+      document_id: 'document-1',
+      workspace_id: workspace.id,
+      workspace_name: workspace.name,
+      filename: 'quarterly-report.pdf',
+      media_type: 'application/pdf',
+      size_bytes: 2048,
+      status: 'ready',
+      row_count: 0,
+      created_at: '2026-09-24T08:00:00Z',
+    }
+    const fetchMock = installApi(owner, [workspace], undefined, {}, {
+      search: { items: [hit], total: 1 },
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    await user.type(screen.getByLabelText('Search documents'), 'quarterly')
+
+    const searchCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/v1/documents/search')).length
+
+    expect(await screen.findByRole('listbox', { name: 'Document search results' })).toBeInTheDocument()
+    await waitFor(() => expect(searchCalls()).toBe(1))
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(searchCalls()).toBe(1)
+  })
+
+  it('searches every readable workspace and jumps to the picked document', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const targetHit = {
+      document_id: 'document-target',
+      workspace_id: 'workspace-2',
+      workspace_name: 'Read only',
+      filename: 'shared-notes.pdf',
+      media_type: 'application/pdf',
+      size_bytes: 2048,
+      status: 'ready',
+      row_count: 0,
+      created_at: '2026-09-24T08:00:00Z',
+    }
+    const ownHit = { ...targetHit, document_id: 'document-own', workspace_id: 'workspace-1', workspace_name: 'Launch notes', filename: 'launch-review.pdf' }
+    installApi(
+      owner,
+      [workspace, { ...workspace, id: 'workspace-2', name: 'Read only', membership_role: 'viewer', can_upload: false }],
+      undefined,
+      {},
+      { search: { items: [ownHit, targetHit], total: 2 } },
+    )
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    await user.type(screen.getByLabelText('Search documents'), 'shared')
+    const panel = await screen.findByRole('listbox', { name: 'Document search results' })
+    expect(await within(panel).findByText('shared-notes.pdf')).toBeInTheDocument()
+    expect(within(panel).getByText('Read only')).toBeInTheDocument()
+    expect(within(panel).getByText('Launch notes')).toBeInTheDocument()
+
+    await user.click(within(panel).getByRole('option', { name: /shared-notes\.pdf/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Read only', level: 1 })).toBeInTheDocument()
+    expect(window.location.search).toContain('ws=workspace-2')
+    expect(window.location.search).toContain('view=documents')
   })
 
   it('restores the documents view and workspace for a member refreshing the dashboard', async () => {
@@ -562,6 +793,74 @@ describe('dashboard application', () => {
 
     expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument()
     await waitFor(() => expect(readSessionToken()).toBeNull())
+  })
+
+  it('renews an expired access token instead of signing the user out', async () => {
+    writeSession({ accessToken: 'stale-token', refreshToken: `rt_${'z'.repeat(43)}` })
+    const fetchMock = installApi(owner, [workspace], undefined, {}, {}, {}, {
+      meFirst: 'expired',
+    })
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    expect(fetchMock.refreshes).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+
+    const meCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/v1/auth/me')
+    expect(meCalls).toHaveLength(2)
+    const retried = new Headers(meCalls[1][1]?.headers)
+    expect(retried.get('Authorization')).toBe('Bearer refreshed-token')
+    expect(readSession()?.accessToken).toBe('refreshed-token')
+  })
+
+  it('shares one renewal between requests refused at the same time', async () => {
+    writeSession({ accessToken: 'stale-token', refreshToken: `rt_${'y'.repeat(43)}` })
+    const fetchMock = installApi(owner, [workspace], undefined, {}, {}, {}, {
+      meFirst: 'expired',
+    })
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    const workspaceCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).startsWith('/v1/workspaces?'),
+    )
+    const staleCalls = workspaceCalls.filter(
+      ([, init]) => new Headers(init?.headers).get('Authorization') === 'Bearer stale-token',
+    )
+    expect(staleCalls.length).toBeGreaterThan(0)
+    expect(fetchMock.refreshes).toHaveLength(1)
+  })
+
+  it('returns to sign in when the session cannot be renewed', async () => {
+    writeSession({ accessToken: 'stale-token', refreshToken: `rt_${'x'.repeat(43)}` })
+    installApi(owner, [workspace], undefined, {}, {}, {}, { meFirst: 'expired', refresh: 'rejected' })
+
+    render(<App />)
+
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument()
+    expect(readSessionToken()).toBeNull()
+  })
+
+  it('revokes the session on the server when signing out', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSession({ accessToken: 'member-token', refreshToken: `rt_${'w'.repeat(43)}` })
+    const fetchMock = installApi(owner, [workspace])
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: 'Sign out' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Sign out of Retriv?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Sign out' }))
+
+    await waitFor(() => expect(readSessionToken()).toBeNull())
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument()
+    expect(fetchMock.logouts).toHaveLength(1)
+    expect(JSON.parse(fetchMock.logouts[0])).toEqual({ refresh_token: `rt_${'w'.repeat(43)}` })
   })
 
   it('keeps a direct upload route through login and sends multipart only to an uploadable workspace', async () => {
@@ -881,6 +1180,294 @@ describe('dashboard application', () => {
 
     expect((await screen.findAllByText('second-upload.pdf')).length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText('first-upload.pdf')).not.toBeInTheDocument()
+  })
+
+  it('opens a document in the viewer and reuses the cached bytes', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const document = {
+      id: 'document-1',
+      workspace_id: workspace.id,
+      original_filename: 'launch-review.pdf',
+      detected_media_type: 'application/pdf',
+      size_bytes: 2048,
+      sha256: 'a'.repeat(64),
+      status: 'ready',
+      created_by_user_id: 'user-owner',
+      created_at: '2026-09-24T08:00:00Z',
+      duplicate: false,
+    }
+    const fetchMock = installApi(owner, [workspace], undefined, {}, {
+      list: { items: [document], total: 1, offset: 0, limit: 50 },
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
+
+    const downloadCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).includes('/download')).length
+
+    await user.click(screen.getByRole('button', { name: 'View launch-review.pdf' }))
+    const viewer = await screen.findByRole('dialog', { name: 'launch-review.pdf' })
+    await waitFor(() => expect(downloadCalls()).toBe(1))
+
+    await user.click(within(viewer).getByRole('button', { name: 'Close launch-review.pdf' }))
+    expect(screen.queryByRole('dialog', { name: 'launch-review.pdf' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'View launch-review.pdf' }))
+    expect(await screen.findByRole('dialog', { name: 'launch-review.pdf' })).toBeInTheDocument()
+    await waitFor(() => expect(downloadCalls()).toBe(1))
+  })
+
+  it('shows the error instead of a blank viewer when the download is refused', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    installApi(owner, [workspace], undefined, {}, {
+      list: {
+        items: [
+          {
+            id: 'document-1',
+            workspace_id: workspace.id,
+            original_filename: 'launch-review.pdf',
+            detected_media_type: 'application/pdf',
+            size_bytes: 2048,
+            sha256: 'b'.repeat(64),
+            status: 'ready',
+            created_by_user_id: 'user-owner',
+            created_at: '2026-09-24T08:00:00Z',
+            duplicate: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+      download: 'forbidden',
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'View launch-review.pdf' }))
+
+    const viewer = await screen.findByRole('dialog', { name: 'launch-review.pdf' })
+    expect(await within(viewer).findByRole('alert')).toBeInTheDocument()
+    expect(within(viewer).queryByTitle('launch-review.pdf')).not.toBeInTheDocument()
+  })
+
+  it('lays out a Word document instead of refusing to preview it', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const docx = await buildDocx('Business Case Answer Sheet')
+    installApi(owner, [workspace], undefined, {}, {
+      list: {
+        items: [
+          {
+            id: 'document-docx',
+            workspace_id: workspace.id,
+            original_filename: 'business-case.docx',
+            detected_media_type: DOCX_MEDIA_TYPE,
+            size_bytes: docx.size,
+            sha256: 'c'.repeat(64),
+            status: 'ready',
+            created_by_user_id: 'user-owner',
+            created_at: '2026-09-24T08:00:00Z',
+            duplicate: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+      downloadBlob: docx,
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByText('business-case.docx')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'View business-case.docx' }))
+
+    const viewer = await screen.findByRole('dialog', { name: 'business-case.docx' })
+    const preview = await within(viewer).findByTestId('docx-preview', {}, { timeout: 5000 })
+    expect(within(viewer).queryByText('No inline preview for this file type')).not.toBeInTheDocument()
+
+    await waitFor(() =>
+      expect(preview.shadowRoot?.textContent).toContain('Business Case Answer Sheet'),
+    )
+  })
+
+  it('fetches a Word document once across repeated previews', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const docx = await buildDocx('Repeat preview')
+    const fetchMock = installApi(owner, [workspace], undefined, {}, {
+      list: {
+        items: [
+          {
+            id: 'document-docx-2',
+            workspace_id: workspace.id,
+            original_filename: 'repeat.docx',
+            detected_media_type: DOCX_MEDIA_TYPE,
+            size_bytes: docx.size,
+            sha256: 'd'.repeat(64),
+            status: 'ready',
+            created_by_user_id: 'user-owner',
+            created_at: '2026-09-24T08:00:00Z',
+            duplicate: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+      downloadBlob: docx,
+    })
+    const user = userEvent.setup()
+
+    const downloadCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).includes('/download')).length
+
+    render(<App />)
+
+    expect(await screen.findByText('repeat.docx')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'View repeat.docx' }))
+    const first = await screen.findByRole('dialog', { name: 'repeat.docx' })
+    await within(first).findByTestId('docx-preview', {}, { timeout: 5000 })
+    await waitFor(() => expect(downloadCalls()).toBe(1))
+
+    await user.click(within(first).getByRole('button', { name: 'Close repeat.docx' }))
+    await user.click(screen.getByRole('button', { name: 'View repeat.docx' }))
+
+    const second = await screen.findByRole('dialog', { name: 'repeat.docx' })
+    await within(second).findByTestId('docx-preview')
+    expect(downloadCalls()).toBe(1)
+  })
+
+  it('follows the system theme by default', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    expect(document.documentElement.dataset.theme).toBe('light')
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: /^Theme: system/ }))
+
+    const menu = screen.getByRole('menu', { name: 'Theme' })
+    expect(within(menu).getByRole('menuitemradio', { name: 'System' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
+
+  it('applies and remembers an explicit dark choice', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: /^Theme:/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'Dark' }))
+
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.documentElement.style.colorScheme).toBe('dark')
+    expect(localStorage.getItem('retriv.theme')).toBe('dark')
+  })
+
+  it('keeps the explicit choice when the system says otherwise', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('prefers-color-scheme: dark'),
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }))
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    expect(document.documentElement.dataset.theme).toBe('dark')
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: /^Theme:/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'Light' }))
+
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(localStorage.getItem('retriv.theme')).toBe('light')
+  })
+
+  it('stays on the api keys view when the workspace is switched', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=api-keys')
+    writeSessionToken('member-token')
+    installApi(owner, [
+      workspace,
+      { ...workspace, id: 'workspace-2', name: 'Read only', membership_role: 'viewer' },
+    ])
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'API keys', level: 1 })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: /switch workspace/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'Switch to Read only' }))
+
+    expect(await screen.findByRole('heading', { name: 'API keys', level: 1 })).toBeInTheDocument()
+    expect(window.location.search).toContain('view=api-keys')
+    expect(window.location.search).toContain('ws=workspace-2')
+  })
+
+  it('asks before signing out and only ends the session on confirm', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    installApi(owner)
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: 'Sign out' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Sign out of Retriv?' })
+    expect(dialog).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(/need to sign in again to reach the dashboard/),
+    ).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog', { name: 'Sign out of Retriv?' })).not.toBeInTheDocument()
+    expect(readSessionToken()).toBe('member-token')
+    expect(window.location.pathname).toBe('/dashboard')
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Sign out of Retriv?' })).getByRole('button', {
+        name: 'Sign out',
+      }),
+    )
+    await waitFor(() => expect(readSessionToken()).toBeNull())
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument()
   })
 
   it('closes the slide-in navigation with Escape and the backdrop', async () => {

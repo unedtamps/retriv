@@ -4,17 +4,18 @@ import type {
   AppRoute,
   CurrentUser,
   DashboardView,
+  DocumentSearchHit,
   DocumentUpload,
   OneTimeCredential,
   Workspace,
 } from '../types'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import {
-  WORKSPACE_VIEWS,
   dashboardHref,
   readDashboardView,
   readDashboardWorkspaceId,
 } from '../lib/dashboardLocation'
+import type { ThemePreference } from '../hooks/useTheme'
 import { useProcessingRuns } from '../hooks/useProcessingRuns'
 import { useWorkspaceDocuments } from '../hooks/useWorkspaceDocuments'
 import { AdminUserPanel } from './AdminUserPanel'
@@ -23,6 +24,7 @@ import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
 import { ConfirmDialog, Dialog } from './Dialog'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
+import { DocumentViewerDrawer } from './DocumentViewerDrawer'
 import { CredentialDialog } from './CredentialDialog'
 import { EmptyWorkspace, WorkspaceOverview } from './WorkspaceOverview'
 import { UploadContext } from './UploadContext'
@@ -33,12 +35,13 @@ import { WorkspaceMembersPage } from './WorkspaceMembersPage'
 interface DashboardProps {
   route: AppRoute
   onNavigate: (route: AppRoute) => void
-  token: string
   user: CurrentUser
   workspaces: Workspace[]
   onRefreshWorkspaces: () => Promise<void>
   onUnauthorized: () => void
   onLogout: () => void
+  themePreference: ThemePreference
+  onThemeChange: (preference: ThemePreference) => void
 }
 
 interface Notice {
@@ -49,12 +52,13 @@ interface Notice {
 export function Dashboard({
   route,
   onNavigate,
-  token,
   user,
   workspaces,
   onRefreshWorkspaces,
   onUnauthorized,
   onLogout,
+  themePreference,
+  onThemeChange,
 }: DashboardProps) {
   const isAdmin = user.role === 'admin'
   const adminMode = isAdmin && workspaces.every((workspace) => workspace.membership_role === null)
@@ -67,6 +71,10 @@ export function Dashboard({
     readDashboardWorkspaceId(window.location.search, workspaces),
   )
   const [searchQuery, setSearchQuery] = useState('')
+  const [focusDocumentId, setFocusDocumentId] = useState<string | null>(null)
+  const [reindexingId, setReindexingId] = useState<string | null>(null)
+  const [reindexTarget, setReindexTarget] = useState<DocumentUpload | null>(null)
+  const [viewTarget, setViewTarget] = useState<DocumentUpload | null>(null)
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DocumentUpload | null>(null)
@@ -79,8 +87,8 @@ export function Dashboard({
   const selectedWorkspace =
     workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ??
     preferredWorkspace
-  const documents = useWorkspaceDocuments(token, selectedWorkspace, onUnauthorized)
-  const runs = useProcessingRuns(token, onUnauthorized)
+  const documents = useWorkspaceDocuments(selectedWorkspace, onUnauthorized)
+  const runs = useProcessingRuns(onUnauthorized)
 
   useEffect(() => {
     if (route !== '/dashboard') return
@@ -103,12 +111,34 @@ export function Dashboard({
     setActiveView(view)
   }
 
+  /**
+   * Change which workspace the console is looking at.
+   *
+   * The view is left exactly where it is. Documents and Members simply answer
+   * for the new workspace, and the platform views (API keys, Users) are not
+   * workspace-scoped at all -- switching workspace has no bearing on them, so
+   * yanking the user out of API keys would only lose their place.
+   */
   function selectWorkspace(workspaceId: string) {
     setSelectedWorkspaceId(workspaceId)
     setSearchQuery('')
-    if (route === '/upload-context') return
-    if (adminMode) return
-    setActiveView((current) => (WORKSPACE_VIEWS.includes(current) ? current : 'overview'))
+  }
+
+  /**
+   * Jump to one document from the cross-workspace search.
+   *
+   * The workspace changes, the view becomes Documents, and the query is set
+   * to the filename so the table is guaranteed to contain the row even when
+   * it sits past the first page. The id is handed down as a one-shot focus
+   * signal the table consumes when it scrolls the row into view.
+   */
+  function openDocument(hit: DocumentSearchHit) {
+    if (route !== '/dashboard') onNavigate('/dashboard')
+    setSelectedWorkspaceId(hit.workspace_id)
+    setActiveView('documents')
+    setSearchQuery(hit.filename)
+    setFocusDocumentId(hit.document_id)
+    window.setTimeout(() => setFocusDocumentId(null), 2200)
   }
 
   function openUpload() {
@@ -120,7 +150,7 @@ export function Dashboard({
     if (deleteTarget === null || selectedWorkspace === null) return
     setDeleting(true)
     try {
-      await api.deleteDocument(token, selectedWorkspace.id, deleteTarget.id)
+      await api.deleteDocument(selectedWorkspace.id, deleteTarget.id)
       documents.setData((current) =>
         current === null
           ? current
@@ -140,6 +170,37 @@ export function Dashboard({
     }
   }
 
+  /**
+   * Re-run extraction for one document, on an owner's order.
+   *
+   * The 202 body already describes the document in its new state, so the row
+   * is replaced in place instead of refetching the list: the status stamp
+   * turns into "processing" and the pipeline popover picks the run up.
+   */
+  async function reindexDocument() {
+    if (reindexTarget === null || selectedWorkspace === null) return
+    setReindexingId(reindexTarget.id)
+    try {
+      const updated = await api.reindexDocument(selectedWorkspace.id, reindexTarget.id)
+      documents.setData((current) =>
+        current === null
+          ? current
+          : {
+              ...current,
+              items: current.items.map((item) => (item.id === updated.id ? updated : item)),
+            },
+      )
+      showNotice(`${updated.original_filename} queued for reindexing.`)
+      setReindexTarget(null)
+      runs.reload()
+    } catch (caught) {
+      if (isUnauthorized(caught)) onUnauthorized()
+      else showNotice(getErrorMessage(caught), 'error')
+    } finally {
+      setReindexingId(null)
+    }
+  }
+
   return (
     <AppShell
       route={route}
@@ -155,11 +216,14 @@ export function Dashboard({
       selectedWorkspace={selectedWorkspace}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
+      onOpenDocument={openDocument}
+      onUnauthorized={onUnauthorized}
       onLogout={onLogout}
+      themePreference={themePreference}
+      onThemeChange={onThemeChange}
     >
       {route === '/upload-context' ? (
         <UploadContext
-          token={token}
           workspaces={workspaces}
           selectedWorkspaceId={selectedWorkspaceId}
           onUnauthorized={onUnauthorized}
@@ -170,7 +234,7 @@ export function Dashboard({
           title="API keys"
           description="Keys authenticate MCP clients with your identity. Workspace access is checked on every call, so membership changes apply immediately."
         >
-          <ApiKeysPanel token={token} onUnauthorized={onUnauthorized} onNotice={showNotice} />
+          <ApiKeysPanel onUnauthorized={onUnauthorized} onNotice={showNotice} />
         </PlatformPage>
       ) : activeView === 'users' && isAdmin ? (
         <PlatformPage
@@ -179,7 +243,6 @@ export function Dashboard({
           description="Create accounts, reset passwords and keep the platform directory current."
         >
           <AdminUserPanel
-            token={token}
             currentUserId={user.id}
             onCredential={setCredential}
             onUnauthorized={onUnauthorized}
@@ -188,7 +251,6 @@ export function Dashboard({
         </PlatformPage>
       ) : adminMode ? (
         <AdminWorkspacesPage
-          token={token}
           onUnauthorized={onUnauthorized}
           onNotice={showNotice}
         />
@@ -199,13 +261,18 @@ export function Dashboard({
           workspace={selectedWorkspace}
           documents={documents}
           searchQuery={searchQuery}
+          focusDocumentId={focusDocumentId}
+          canReindex={selectedWorkspace.membership_role === 'owner'}
+          reindexingId={reindexingId}
+          onReindex={setReindexTarget}
+          canView={selectedWorkspace.can_download}
+          onView={setViewTarget}
           onUpload={openUpload}
           onDeleteDocument={setDeleteTarget}
         />
       ) : activeView === 'members' ? (
         <WorkspaceMembersPage
           workspace={selectedWorkspace}
-          token={token}
           isAdmin={isAdmin}
           onChanged={onRefreshWorkspaces}
           onUnauthorized={onUnauthorized}
@@ -214,11 +281,15 @@ export function Dashboard({
       ) : (
         <WorkspaceOverview
           workspace={selectedWorkspace}
-          token={token}
           isAdmin={isAdmin}
           documents={documents}
           searchQuery={searchQuery}
           onUpload={openUpload}
+          canReindex={selectedWorkspace.membership_role === 'owner'}
+          reindexingId={reindexingId}
+          onReindex={setReindexTarget}
+          canView={selectedWorkspace.can_download}
+          onView={setViewTarget}
           onViewDocuments={() => setActiveView('documents')}
           onManageMembers={() => setActiveView('members')}
           onUnauthorized={onUnauthorized}
@@ -229,7 +300,6 @@ export function Dashboard({
       {createWorkspaceOpen ? (
         <CreateWorkspaceDialog
           open
-          token={token}
           onUnauthorized={onUnauthorized}
           onClose={() => setCreateWorkspaceOpen(false)}
           onCreated={async (workspace) => {
@@ -254,7 +324,6 @@ export function Dashboard({
         >
           <div className="drawer-scroll px-5 py-5 sm:px-6">
             <UploadForm
-              token={token}
               workspaces={workspaces}
               initialWorkspaceId={selectedWorkspace.id}
               lockWorkspace
@@ -269,6 +338,16 @@ export function Dashboard({
       ) : null}
 
       <ConfirmDialog
+        open={reindexTarget !== null}
+        title="Reindex this document?"
+        description={`${reindexTarget?.original_filename ?? 'This document'} will be extracted again with the current pipeline. Its existing chunks, tables and image descriptions are replaced once the new run finishes, and it stays unavailable for search while that happens.`}
+        confirmLabel="Reindex document"
+        busy={reindexingId !== null}
+        onClose={() => setReindexTarget(null)}
+        onConfirm={reindexDocument}
+      />
+
+      <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete this document?"
         description={`${deleteTarget?.original_filename ?? 'This document'} and its indexed context will be permanently removed from ${selectedWorkspace?.name ?? 'this workspace'}. This cannot be undone.`}
@@ -278,6 +357,15 @@ export function Dashboard({
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteDocument}
       />
+
+      {viewTarget === null || selectedWorkspace === null ? null : (
+        <DocumentViewerDrawer
+          document={viewTarget}
+          workspace={selectedWorkspace}
+          onUnauthorized={onUnauthorized}
+          onClose={() => setViewTarget(null)}
+        />
+      )}
 
       <CredentialDialog credential={credential} onClose={() => setCredential(null)} />
 

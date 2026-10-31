@@ -36,7 +36,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   return (
     <main className="min-h-svh bg-paper">
       <div className="grid min-h-svh bg-surface lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="relative hidden overflow-hidden bg-panel-dark text-white lg:flex">
+        <section className="relative hidden overflow-hidden bg-panel-dark text-on-dark lg:flex">
           <img
             src={loginScene}
             alt=""
@@ -45,39 +45,39 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           />
           <div
             aria-hidden="true"
-            className="absolute inset-0 bg-gradient-to-b from-[#101c27f5] via-[#101c27c4] to-[#101c27f0]"
+            className="absolute inset-0 bg-gradient-to-b from-panel-dark/95 via-panel-dark/75 to-panel-dark/94"
           />
           <div className="relative flex w-full flex-col justify-between p-8 xl:p-10">
             <div className="flex items-center gap-3">
               <BrandMark />
               <div>
                 <p className="text-sm font-semibold">Retriv</p>
-                <p className="text-[11px] text-white/50">Control plane</p>
+                <p className="text-[11px] text-on-dark-faint">Control plane</p>
               </div>
             </div>
 
             <div>
-              <p className="text-xs text-white/60">Workspace control plane</p>
+              <p className="text-xs text-on-dark-muted">Workspace control plane</p>
               <h1 className="mt-4 font-display text-3xl font-medium leading-[1.12] xl:text-4xl">
                 Access is explicit
                 <br />
                 Context stays scoped
               </h1>
-              <p className="mt-4 max-w-md text-sm leading-6 text-white/70">
+              <p className="mt-4 max-w-md text-sm leading-6 text-on-dark-muted">
                 Administer users, workspace ownership, and retrieval boundaries from one
                 deliberate surface.
               </p>
             </div>
 
-            <ol className="grid grid-cols-3 gap-4 border-t border-white/10 pt-6">
+            <ol className="grid grid-cols-3 gap-4 border-t border-on-dark-line pt-6">
               {[
                 ['01', 'Identity'],
                 ['02', 'Membership'],
                 ['03', 'Context'],
               ].map(([number, label]) => (
                 <li key={number}>
-                  <p className="font-mono text-eyebrow text-[#a9c0dc]">{number}</p>
-                  <p className="mt-1.5 text-sm text-white/80">{label}</p>
+                  <p className="font-mono text-eyebrow text-on-dark-accent">{number}</p>
+                  <p className="mt-1.5 text-sm text-on-dark">{label}</p>
                 </li>
               ))}
             </ol>

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
+  ArrowLeftRight,
+  Check,
   ChevronsDown,
   FileText,
   FileUp,
@@ -9,16 +11,19 @@ import {
   LogOut,
   Menu,
   Plus,
-  Search,
   Users,
   X,
 } from 'lucide-react'
-import type { AppRoute, CurrentUser, DashboardView, Workspace } from '../types'
+import type { AppRoute, CurrentUser, DashboardView, DocumentSearchHit, Workspace } from '../types'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
+import { ConfirmDialog } from './Dialog'
+import { ThemeMenu } from './ThemeMenu'
+import { DocumentSearch } from './DocumentSearch'
 import { PipelinePopover } from './PipelinePopover'
 import { ProcessingNotifications } from './ProcessingNotifications'
 import { Avatar } from './ui/Avatar'
 import { BrandLockup, BrandMark } from './ui/Brand'
+import type { ThemePreference } from '../hooks/useTheme'
 import { useIsDesktop } from '../hooks/useIsDesktop'
 
 interface AppShellProps {
@@ -35,7 +40,11 @@ interface AppShellProps {
   selectedWorkspace: Workspace | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
+  onOpenDocument: (hit: DocumentSearchHit) => void
+  onUnauthorized: () => void
   onLogout: () => void
+  themePreference: ThemePreference
+  onThemeChange: (preference: ThemePreference) => void
   children: ReactNode
 }
 
@@ -63,11 +72,15 @@ export function AppShell({
   selectedWorkspace,
   searchQuery,
   onSearchQueryChange,
+  onOpenDocument,
+  onUnauthorized,
   onLogout,
+  themePreference,
+  onThemeChange,
   children,
 }: AppShellProps) {
   const [navigationOpen, setNavigationOpen] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [openPopover, setOpenPopover] = useState<'notifications' | 'pipeline' | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const drawerCloseButtonRef = useRef<HTMLButtonElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -136,7 +149,7 @@ export function AppShell({
       {!isDesktop && navigationOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-40 cursor-pointer bg-ink/40 backdrop-blur-[1px]"
+          className="fixed inset-0 z-40 cursor-pointer bg-scrim backdrop-blur-[1px]"
           aria-label="Close navigation"
           onClick={() => setNavigationOpen(false)}
         />
@@ -173,12 +186,13 @@ export function AppShell({
           onClose={() => setNavigationOpen(false)}
           closeButtonRef={isDesktop ? undefined : drawerCloseButtonRef}
           onLogout={onLogout}
+          themePreference={themePreference}
+          onThemeChange={onThemeChange}
         />
       </div>
 
       <div className="lg:pl-[15.5rem]">
         <header
-          inert={navigationOpen || notificationsOpen}
           className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-paper/95 px-4 backdrop-blur sm:px-6"
         >
           <button
@@ -213,42 +227,33 @@ export function AppShell({
           </div>
 
           <div className="ml-auto flex min-w-0 items-center gap-2">
-            {showSearch ? (
-              <div className="relative hidden w-64 md:block xl:w-72">
-                <Search
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
-                  size={15}
-                />
-                <label className="sr-only" htmlFor="global-search">
-                  Search documents
-                </label>
-                <input
-                  ref={searchRef}
-                  id="global-search"
-                  type="search"
-                  className="field h-9 py-1.5 pl-8 pr-12 text-xs"
-                  value={searchQuery}
-                  placeholder="Search documents…"
-                  onChange={(event) => onSearchQueryChange(event.target.value)}
-                />
-                <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-line bg-sunken px-1.5 py-0.5 font-mono text-[0.6rem] text-ink-faint">
-                  ⌘K
-                </kbd>
-              </div>
-            ) : null}
-            <PipelinePopover runs={runs} workspaceId={selectedWorkspace?.id ?? null} />
+          {showSearch ? (
+            <DocumentSearch
+              value={searchQuery}
+              onChange={onSearchQueryChange}
+              onOpenDocument={onOpenDocument}
+              onUnauthorized={onUnauthorized}
+              inputRef={searchRef}
+            />
+          ) : null}
+            <PipelinePopover
+              runs={runs}
+              workspaceId={selectedWorkspace?.id ?? null}
+              open={openPopover === 'pipeline'}
+              onOpenChange={(open) => setOpenPopover(open ? 'pipeline' : null)}
+            />
             <ProcessingNotifications
               workspaces={workspaces}
               runs={runs}
-              onOpenChange={setNotificationsOpen}
+              open={openPopover === 'notifications'}
+              onOpenChange={(open) => setOpenPopover(open ? 'notifications' : null)}
             />
             <span className="hidden h-8 w-px bg-line sm:block" aria-hidden="true" />
             <Avatar name={user.username} seed={user.id} size="sm" className="hidden sm:flex" />
           </div>
         </header>
 
-        <main id="main-content" inert={navigationOpen || notificationsOpen}>
+        <main id="main-content" inert={navigationOpen}>
           {children}
         </main>
       </div>
@@ -271,6 +276,8 @@ interface NavigationProps {
   onClose: () => void
   closeButtonRef?: React.RefObject<HTMLButtonElement | null>
   onLogout: () => void
+  themePreference: ThemePreference
+  onThemeChange: (preference: ThemePreference) => void
 }
 
 function Navigation({
@@ -288,8 +295,28 @@ function Navigation({
   onClose,
   closeButtonRef,
   onLogout,
+  themePreference,
+  onThemeChange,
 }: NavigationProps) {
   const [directoryOpen, setDirectoryOpen] = useState(false)
+  const [signOutOpen, setSignOutOpen] = useState(false)
+  const [systemDark, setSystemDark] = useState(
+    () => typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-color-scheme: dark)').matches,
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setSystemDark(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  const themeResolved =
+    themePreference === 'system' ? (systemDark ? 'dark' : 'light') : themePreference
   const memberWorkspaces = workspaces.filter((workspace) => workspace.membership_role !== null)
   const catalogWorkspaces = workspaces.filter((workspace) => workspace.membership_role === null)
   return (
@@ -312,21 +339,11 @@ function Navigation({
       {adminMode ? null : (
         <div className="border-b border-line px-3 py-3">
           <p className="px-2 eyebrow">Current workspace</p>
-          <div className="mt-2 flex items-center gap-2.5 rounded-control bg-sunken/70 px-2.5 py-2">
-            <Avatar
-              name={selectedWorkspace?.name ?? 'Retriv'}
-              seed={selectedWorkspace?.id ?? 'retriv'}
-              size="sm"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-ink">
-                {selectedWorkspace?.name ?? 'No workspace'}
-              </p>
-              <p className="font-mono text-[0.65rem] text-ink-faint">
-                {selectedWorkspace?.membership_role ?? 'Not assigned'}
-              </p>
-            </div>
-          </div>
+          <WorkspaceSwitcher
+            workspaces={memberWorkspaces}
+            selectedWorkspace={selectedWorkspace}
+            onSelect={onSelectWorkspace}
+          />
         </div>
       )}
 
@@ -528,16 +545,147 @@ function Navigation({
             <p className="truncate text-sm font-medium text-ink">{user.username}</p>
             <p className="text-[0.7rem] capitalize text-ink-muted">{user.role}</p>
           </div>
-          <button
-            type="button"
-            className="btn-icon ml-auto h-8 w-8 border-transparent bg-transparent"
-            aria-label="Sign out"
-            onClick={onLogout}
-          >
-            <LogOut aria-hidden="true" size={15} />
-          </button>
+          <div className="ml-auto flex items-center gap-0.5">
+            <ThemeMenu preference={themePreference} resolved={themeResolved} onSelect={onThemeChange} />
+            <button
+              type="button"
+              className="btn-icon h-8 w-8 border-transparent bg-transparent"
+              aria-label="Sign out"
+              onClick={() => setSignOutOpen(true)}
+            >
+              <LogOut aria-hidden="true" size={15} />
+            </button>
+          </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={signOutOpen}
+        title="Sign out of Retriv?"
+        description="Your session ends in this tab. Unsaved work in an open form is lost, and you will need to sign in again to reach the dashboard."
+        confirmLabel="Sign out"
+        destructive
+        onClose={() => setSignOutOpen(false)}
+        onConfirm={onLogout}
+      />
     </>
+  )
+}
+
+interface WorkspaceSwitcherProps {
+  workspaces: Workspace[]
+  selectedWorkspace: Workspace | null
+  onSelect: (workspaceId: string) => void
+}
+
+/**
+ * The current workspace, and the switch that changes it.
+ *
+ * The card itself is the button: with only a handful of memberships, a
+ * dropdown beside it beats walking down to the workspace list. Picking one
+ * closes the menu in the same click and keeps the current view, which is
+ * the workspace-scoped behaviour the dashboard already implements.
+ */
+function WorkspaceSwitcher({
+  workspaces,
+  selectedWorkspace,
+  onSelect,
+}: WorkspaceSwitcherProps) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    function closeOnPointerDown(event: PointerEvent) {
+      if (containerRef.current?.contains(event.target as Node)) return
+      setOpen(false)
+    }
+
+    window.addEventListener('keydown', closeOnEscape)
+    document.addEventListener('pointerdown', closeOnPointerDown)
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape)
+      document.removeEventListener('pointerdown', closeOnPointerDown)
+    }
+  }, [open])
+
+  const hasChoices = workspaces.length > 1
+
+  return (
+    <div ref={containerRef} className="relative mt-2">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2.5 rounded-control bg-sunken/70 px-2.5 py-2 text-left transition-colors hover:bg-sunken focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+        aria-haspopup={hasChoices ? 'menu' : undefined}
+        aria-expanded={hasChoices ? open : undefined}
+        aria-label={
+          hasChoices
+            ? `Current workspace ${selectedWorkspace?.name ?? 'none'}, switch workspace`
+            : `Current workspace ${selectedWorkspace?.name ?? 'none'}`
+        }
+        disabled={!hasChoices}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Avatar
+          name={selectedWorkspace?.name ?? 'Retriv'}
+          seed={selectedWorkspace?.id ?? 'retriv'}
+          size="sm"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-ink">
+            {selectedWorkspace?.name ?? 'No workspace'}
+          </span>
+          <span className="block font-mono text-[0.65rem] text-ink-faint">
+            {selectedWorkspace?.membership_role ?? 'Not assigned'}
+          </span>
+        </span>
+        {hasChoices ? (
+          <ArrowLeftRight
+            aria-hidden="true"
+            className={`shrink-0 text-ink-faint transition-transform duration-200 ${open ? 'text-accent-ink' : ''}`}
+            size={14}
+          />
+        ) : null}
+      </button>
+
+      {open && hasChoices ? (
+        <div
+          role="menu"
+          aria-label="Switch workspace"
+          className="popover-enter absolute inset-x-0 top-[calc(100%+6px)] z-40 overflow-hidden rounded-control border border-line bg-surface py-1 shadow-raised"
+        >
+          {workspaces.map((workspace) => {
+            const active = workspace.id === selectedWorkspace?.id
+            return (
+              <button
+                key={workspace.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                className={`flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-sunken ${
+                  active ? 'text-accent-ink' : 'text-ink-muted'
+                }`}
+                aria-label={`Switch to ${workspace.name}`}
+                onClick={() => {
+                  setOpen(false)
+                  onSelect(workspace.id)
+                }}
+              >
+                <Avatar name={workspace.name} seed={workspace.id} size="xs" />
+                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                <span className="shrink-0 font-mono text-[0.6rem] text-ink-faint">
+                  {workspace.membership_role}
+                </span>
+                {active ? <Check aria-hidden="true" size={13} /> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
   )
 }
