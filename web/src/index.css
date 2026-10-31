@@ -25,6 +25,13 @@
   --color-accent-ink: #16304d;
   --color-panel-dark: #101c27;
 
+  --color-scrim: rgb(21 34 46 / 0.5);
+  --color-on-dark: #ffffff;
+  --color-on-dark-muted: rgb(255 255 255 / 0.66);
+  --color-on-dark-faint: rgb(255 255 255 / 0.5);
+  --color-on-dark-accent: #a9c0dc;
+  --color-on-dark-line: rgb(255 255 255 / 0.1);
+
   
   --color-blue: #2f6aae;
   --color-blue-soft: #ecf2f9;
@@ -57,6 +64,61 @@
   --radius-card: 0.75rem;
   --shadow-card: 0 1px 2px rgb(21 34 46 / 0.06);
   --shadow-raised: 0 16px 40px rgb(21 34 46 / 0.16);
+}
+
+:root {
+  color-scheme: light;
+}
+
+/*
+ * The dark theme re-declares the same variables the components already use,
+ * so nothing has to carry a `dark:` variant. Utilities resolve through
+ * var(--color-*), and even an opacity modifier like bg-sunken/70 goes through
+ * color-mix against the variable, which means it follows the theme too.
+ *
+ * accent-ink inverts on purpose: the app uses it as TEXT and as the focus
+ * outline, so on a dark surface it has to be the light blue, not the navy.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-paper: #0b0f14;
+  --color-surface: #121821;
+  --color-sunken: #070a0e;
+
+  --color-line: #1f2833;
+  --color-line-strong: #2e3a49;
+
+  --color-ink: #dde5ef;
+  --color-ink-muted: #9baabb;
+  --color-ink-faint: #71818f;
+
+  --color-accent: #22405f;
+  --color-accent-soft: #16212e;
+  --color-accent-ink: #8db6de;
+
+  --color-blue: #6fa8e0;
+  --color-blue-soft: #0f1a26;
+  --color-teal: #55bcb0;
+  --color-teal-soft: #0c1d1b;
+  --color-violet: #a78fe0;
+  --color-violet-soft: #151228;
+  --color-coral: #e08f80;
+  --color-coral-soft: #1e1210;
+  --color-amber: #d8b063;
+  --color-amber-soft: #1e180f;
+
+  --color-danger: #be5257;
+  --color-danger-soft: #1e1012;
+  --color-success: #4fa365;
+  --color-success-soft: #0c1a11;
+  --color-warn: #d3a24a;
+  --color-warn-soft: #1e1810;
+
+  --color-scrim: rgb(0 0 0 / 0.72);
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-raised: 0 16px 40px rgb(0 0 0 / 0.6);
 }
 
 @layer base {
@@ -100,7 +162,7 @@
 
   ::selection {
     background: var(--color-accent);
-    color: #ffffff;
+    color: var(--color-on-dark);
   }
 }
 
@@ -227,7 +289,7 @@
 }
 
 .app-dialog::backdrop {
-  background: rgb(21 34 46 / 0.5);
+  background: var(--color-scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -251,6 +313,119 @@
   width: min(100%, 35rem);
 }
 
+/*
+ * A centred, tall variant for content that needs room but is not a side
+ * panel -- the document viewer. It keeps the dialog centred like a modal and
+ * simply gives it the height a page needs.
+ */
+@keyframes wide-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.app-dialog-wide {
+  width: min(calc(100% - 3rem), 74rem);
+  height: min(90svh, 62rem);
+  max-height: min(90svh, 62rem);
+}
+
+.app-dialog-wide .dialog-surface {
+  display: flex;
+  height: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  animation: wide-enter 220ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/*
+ * Full screen: the viewer earns the whole window because a page of a PDF is
+ * itself a full-page document. On a phone this is the only shape that leaves
+ * a readable page.
+ */
+/*
+ * Full screen. The UA stylesheet sizes a modal <dialog> in the top layer, so
+ * rather than fight its max-width/max-height we take the whole window with
+ * explicit fixed positioning; inset:0 plus width/height:100% is what actually
+ * reaches the edges here.
+ */
+.app-dialog-wide.app-dialog-full {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.app-dialog-full .dialog-surface {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@keyframes document-focus-tint {
+  0% {
+    background-color: var(--color-accent-soft);
+  }
+  70% {
+    background-color: var(--color-accent-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes document-focus-rail {
+  0% {
+    box-shadow: inset 3px 0 0 0 var(--color-accent);
+  }
+  70% {
+    box-shadow: inset 3px 0 0 0 var(--color-accent);
+  }
+  100% {
+    box-shadow: inset 3px 0 0 0 transparent;
+  }
+}
+
+.document-focus {
+  animation: document-focus-tint 2s ease-out both;
+}
+
+.document-focus > td:first-child {
+  animation: document-focus-rail 2s ease-out both;
+}
+
+@keyframes drawer-enter {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .app-drawer .dialog-surface {
   display: flex;
   height: 100%;
@@ -258,12 +433,37 @@
   flex-direction: column;
   border-block: 0;
   border-right: 0;
+  animation: drawer-enter 260ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.app-drawer::backdrop {
+  animation: backdrop-enter 200ms ease-out both;
 }
 
 .drawer-scroll {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/*
+ * In a drawer the header and the footer are chrome: they keep their height,
+ * and the body between them takes the scroll. Without this the footer was
+ * laid out past the viewport on a phone -- the submit button sat at y=853 in
+ * an 844px viewport and could not be tapped.
+ */
+.app-drawer .dialog-surface > header,
+.app-drawer .dialog-surface > footer,
+.app-drawer .dialog-surface > [data-drawer-footer] {
+  flex-shrink: 0;
+}
+
+.app-drawer .dialog-surface > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
 }
 
 @media (max-width: 640px) {
