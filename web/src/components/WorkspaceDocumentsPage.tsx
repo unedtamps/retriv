@@ -11,6 +11,12 @@ interface WorkspaceDocumentsPageProps {
   workspace: Workspace
   documents: ApiResource<WorkspaceDocumentsData>
   searchQuery: string
+  focusDocumentId?: string | null
+  canReindex?: boolean
+  reindexingId?: string | null
+  onReindex?: (document: DocumentUpload) => void
+  canView?: boolean
+  onView?: (document: DocumentUpload) => void
   onUpload: () => void
   onDeleteDocument: (document: DocumentUpload) => void
 }
@@ -19,6 +25,12 @@ export function WorkspaceDocumentsPage({
   workspace,
   documents,
   searchQuery,
+  focusDocumentId,
+  canReindex,
+  reindexingId,
+  onReindex,
+  canView,
+  onView,
   onUpload,
   onDeleteDocument,
 }: WorkspaceDocumentsPageProps) {
@@ -78,7 +90,13 @@ export function WorkspaceDocumentsPage({
             loading={documents.loading}
             error={documents.error}
             canDelete={workspace.can_delete}
+            canReindex={canReindex}
+            reindexingId={reindexingId}
+            onReindex={onReindex}
+            canView={canView}
+            onView={onView}
             searchQuery={searchQuery}
+            focusDocumentId={focusDocumentId}
             onDelete={onDeleteDocument}
           />
         )}

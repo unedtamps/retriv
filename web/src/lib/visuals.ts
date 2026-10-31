@@ -93,14 +93,22 @@ export function runStatusLabel(status: string): string {
 
 export type PipelineStage = 'scan' | 'extract' | 'chunk' | 'embed' | 'index'
 
+/**
+ * Which stage of the pipeline a run is standing at.
+ *
+ * A `queued` run has not been picked up yet, so it belongs to the first stage
+ * rather than to whatever the fallback happens to be -- otherwise a document
+ * nobody has touched yet is reported as being indexed.
+ */
 export function pipelineStage(status: string): PipelineStage {
-  if (status === 'fetching') return 'scan'
+  if (status === 'queued' || status === 'fetching' || status === 'retry_wait') return 'scan'
   if (status === 'extracting' || status === 'describing' || status === 'storing_artifact') {
     return 'extract'
   }
   if (status === 'chunking') return 'chunk'
   if (status === 'embedding') return 'embed'
-  return 'index'
+  if (status === 'syncing' || status === 'ready') return 'index'
+  return 'scan'
 }
 
 export function formatClock(value: string): string {

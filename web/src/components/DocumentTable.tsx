@@ -1,5 +1,5 @@
-import { useDeferredValue, useState } from 'react'
-import { FileText, Search, Trash2 } from 'lucide-react'
+import { useDeferredValue, useEffect, useRef, useState } from 'react'
+import { Eye, FileText, RotateCcw, Search, Trash2 } from 'lucide-react'
 import type { DocumentUpload } from '../types'
 import {
   documentStatusLabel,
@@ -21,7 +21,13 @@ interface DocumentTableProps {
   loading: boolean
   error: string | null
   canDelete: boolean
+  canReindex?: boolean
+  reindexingId?: string | null
+  onReindex?: (document: DocumentUpload) => void
+  canView?: boolean
+  onView?: (document: DocumentUpload) => void
   searchQuery: string
+  focusDocumentId?: string | null
   onDelete: (document: DocumentUpload) => void
   limit?: number
 }
@@ -39,12 +45,30 @@ export function DocumentTable({
   loading,
   error,
   canDelete,
+  canReindex = false,
+  reindexingId = null,
+  onReindex,
+  canView = false,
+  onView,
   searchQuery,
+  focusDocumentId,
   onDelete,
   limit,
 }: DocumentTableProps) {
   const [filter, setFilter] = useState<DocumentFilter>('all')
-  const deferredQuery = useDeferredValue(searchQuery.trim().toLowerCase())
+  const tableRef = useRef<HTMLTableElement>(null)
+  // The typed query reaches this table on every keystroke. Filtering on it
+  // directly makes the rows vanish and reappear faster than the eye can
+  // follow, so the table settles on a short delay of its own.
+  const [settledQuery, setSettledQuery] = useState(() => searchQuery.trim().toLowerCase())
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setSettledQuery(searchQuery.trim().toLowerCase()),
+      420,
+    )
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+  const deferredQuery = useDeferredValue(settledQuery)
   const filtered = documents.filter((document) => {
     const matchesQuery =
       deferredQuery === '' ||
@@ -61,6 +85,21 @@ export function DocumentTable({
     return true
   })
   const visible = limit === undefined ? filtered : filtered.slice(0, limit)
+
+  useEffect(() => {
+    if (focusDocumentId === null || focusDocumentId === undefined) return
+    const row = tableRef.current?.querySelector<HTMLElement>(
+      `[data-document-id="${focusDocumentId}"]`,
+    )
+    if (row === null || row === undefined) return
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    row.classList.add('document-focus')
+    const timer = window.setTimeout(() => row.classList.remove('document-focus'), 2000)
+    return () => {
+      window.clearTimeout(timer)
+      row.classList.remove('document-focus')
+    }
+  }, [focusDocumentId, visible.length])
 
   return (
     <div className="overflow-hidden rounded-card border border-line bg-surface">
@@ -129,8 +168,8 @@ export function DocumentTable({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[38rem] border-collapse text-left">
+        <div className="relative overflow-x-auto">
+          <table ref={tableRef} className="w-full min-w-[38rem] border-collapse text-left">
             <caption className="sr-only">Documents</caption>
             <thead>
               <tr className="border-b border-line text-left">
@@ -154,7 +193,11 @@ export function DocumentTable({
                 const type = documentType(document.original_filename, document.detected_media_type)
                 const tone = documentStatusTone(document.status)
                 return (
-                  <tr key={document.id} className="group border-b border-line last:border-b-0">
+                  <tr
+                    key={document.id}
+                    data-document-id={document.id}
+                    className="group border-b border-line last:border-b-0"
+                  >
                     <td className="px-4 py-3 sm:px-5">
                       <div className="flex min-w-0 items-center gap-3">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-line bg-sunken text-ink-muted">
@@ -162,9 +205,21 @@ export function DocumentTable({
                         </span>
                         <div className="min-w-0">
                           <div className="flex min-w-0 items-center gap-2">
-                            <p className="truncate text-sm font-medium text-ink">
-                              {document.original_filename}
-                            </p>
+                            {canView && onView !== undefined ? (
+                              <button
+                                type="button"
+                                className="truncate text-left text-sm font-medium text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:no-underline disabled:text-ink-faint"
+                                aria-label={`View ${document.original_filename}`}
+                                disabled={document.status === 'deleting'}
+                                onClick={() => onView(document)}
+                              >
+                                {document.original_filename}
+                              </button>
+                            ) : (
+                              <p className="truncate text-sm font-medium text-ink">
+                                {document.original_filename}
+                              </p>
+                            )}
                             <span className="stamp shrink-0">{type}</span>
                           </div>
                           {document.row_count > 0 ? (
@@ -186,17 +241,50 @@ export function DocumentTable({
                     <td className="hidden px-3 py-3 font-mono text-meta text-ink-muted md:table-cell">
                       {formatBytes(document.size_bytes)}
                     </td>
-                    <td className="px-3 py-3 text-right">
-                      {canDelete ? (
-                        <button
-                          type="button"
-                          className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-danger sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-                          aria-label={`Delete ${document.original_filename}`}
-                          onClick={() => onDelete(document)}
-                        >
-                          <Trash2 aria-hidden="true" size={14} />
-                        </button>
-                      ) : null}
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {canView && onView !== undefined ? (
+                          <button
+                            type="button"
+                            className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-accent-ink disabled:opacity-40"
+                            aria-label={`Preview ${document.original_filename}`}
+                            disabled={document.status === 'deleting'}
+                            onClick={() => onView(document)}
+                          >
+                            <Eye aria-hidden="true" size={14} />
+                          </button>
+                        ) : null}
+                        {canReindex && onReindex !== undefined ? (
+                          <button
+                            type="button"
+                            className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-accent-ink disabled:opacity-40"
+                            aria-label={`Reindex ${document.original_filename}`}
+                            disabled={reindexingId === document.id || isActiveStatus(document.status)}
+                            title={
+                              isActiveStatus(document.status)
+                                ? 'A run is already in progress'
+                                : 'Re-run extraction with the current pipeline'
+                            }
+                            onClick={() => onReindex(document)}
+                          >
+                            <RotateCcw
+                              aria-hidden="true"
+                              size={14}
+                              className={reindexingId === document.id ? 'animate-spin' : undefined}
+                            />
+                          </button>
+                        ) : null}
+                        {canDelete ? (
+                          <button
+                            type="button"
+                            className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-danger disabled:opacity-40"
+                            aria-label={`Delete ${document.original_filename}`}
+                            onClick={() => onDelete(document)}
+                          >
+                            <Trash2 aria-hidden="true" size={14} />
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 )
