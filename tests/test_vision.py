@@ -458,3 +458,39 @@ def test_a_scan_page_with_a_figure_keeps_the_description() -> None:
     assert merged[0].provenance["images"] == [
         {"ref": "scan-page-4", "described": True}
     ]
+
+
+async def test_a_gateway_session_header_is_sent_when_configured() -> None:
+    """opencode zen refuses a request without x-opencode-session.
+
+    The header is opt-in config, so a plain OpenAI-compatible endpoint --
+    which may reject unknown headers -- sees exactly what it saw before.
+    """
+    seen: list[httpx.Headers] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers)
+        return httpx.Response(200, json=an_answer("A solid blue rectangle."))
+
+    provider = a_provider(
+        handler, session_header="x-opencode-session", session_id="retriv-worker"
+    )
+    await provider.describe(an_image())
+    await provider.aclose()
+
+    assert seen[0].get("x-opencode-session") == "retriv-worker"
+
+
+async def test_no_session_header_is_sent_when_not_configured() -> None:
+    seen: list[httpx.Headers] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers)
+        return httpx.Response(200, json=an_answer("A chart."))
+
+    provider = a_provider(handler)
+    await provider.describe(an_image())
+    await provider.aclose()
+
+    assert "x-opencode-session" not in seen[0]
+    assert seen[0].get("authorization") == "Bearer test-key"

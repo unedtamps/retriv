@@ -56,6 +56,8 @@ x-worker-environment: &worker-environment
   RETRIV_VLM_MAX_CONCURRENCY: ${RETRIV_VLM_MAX_CONCURRENCY:-4}
   RETRIV_VLM_MAX_DESCRIPTION_CHARS: ${RETRIV_VLM_MAX_DESCRIPTION_CHARS:-1200}
   RETRIV_VLM_SCAN_PAGE_DESCRIBE: ${RETRIV_VLM_SCAN_PAGE_DESCRIBE:-true}
+  RETRIV_VLM_SESSION_HEADER: ${RETRIV_VLM_SESSION_HEADER:-}
+  RETRIV_VLM_SESSION_ID: ${RETRIV_VLM_SESSION_ID:-}
   RETRIV_MODEL_WAIT_BASE_SECONDS: ${RETRIV_MODEL_WAIT_BASE_SECONDS:-5}
   RETRIV_MODEL_WAIT_MAX_SECONDS: ${RETRIV_MODEL_WAIT_MAX_SECONDS:-60}
   RETRIV_MODEL_WAIT_TIMEOUT_SECONDS: ${RETRIV_MODEL_WAIT_TIMEOUT_SECONDS:-3600}
@@ -182,14 +184,38 @@ services:
       dockerfile: Dockerfile
       target: worker
     restart: unless-stopped
-    # The parser's address-space limit is 16 GiB (about 9.5 GiB observed for a
-    # 182-page PDF), while what it actually touches peaked at 5.9 GiB. The cgroup
-    # is the hard RAM bound, so it stays above the resident high-water mark but
-    # below the address-space limit: enough room to finish, not enough to take
-    # the host down if a document really is pathological.
+    # Measured on this stack (scripts/benchmark_extraction.py, 4-cpu cgroup):
+    # one sandbox peaks at 0.7-1.0 GiB resident for a 182-410 page PDF, and a
+    # batch of three peaks around 2.5 GiB -- they do not sit at their high-water
+    # mark simultaneously. The parser's address-space limit (RLIMIT_AS,
+    # RETRIV_PARSER_MEMORY_LIMIT_BYTES) is a separate 4 GiB virtual ceiling, not
+    # a resident figure. The cgroup is the hard bound: 12g leaves room for the
+    # worker itself plus three parsers without letting a pathological document
+    # take the host down.
+    #
+    # CPU is the real limit, not memory: a single parse already drives all four
+    # cores (CPU/wall ~3.9x) because of BLAS/ONNX threading inside the sandbox.
+    # Raising PARSER_MAX_CONCURRENT_EXTRACTIONS therefore buys wall-clock only
+    # while the cores have slack -- at 3 parallel parsers throughput is flat
+    # (1.69 vs 1.7 pages/s serial).
+    #
+    # Scaling the worker SERVICE is what adds throughput, because each container
+    # brings its own 4 cores: three containers, one 182-410 page PDF each, ran
+    # 956 pages in 225s (4.25 pages/s, 2.57x the serial 1.66 pages/s) with peak
+    # ~1.1 GiB per container. Two containers claiming from the queue was
+    # verified live: two distinct lease tokens held at once, no double claim
+    # (FOR UPDATE SKIP LOCKED). One container extracting during that test
+    # measured ~300-400% CPU and ~380-630 MiB resident.
+    # So: scale containers for throughput; keep one parser slot per container.
     mem_limit: 12g
     cpus: 4
     pids_limit: 320
+    # An extraction sandbox runs far longer than Docker's default 10s stop
+    # grace, and being SIGKILLed mid-stage leaves the run's lease written to
+    # the row -- the run then looks stuck for the full lease window. The
+    # worker hands its own leases back after SHUTDOWN_GRACE_SECONDS (8s); this
+    # gives it room to do that and to let a nearly-finished run complete.
+    stop_grace_period: 20s
     read_only: true
     cap_drop:
       - ALL
@@ -201,10 +227,8 @@ services:
     environment:
       <<: *worker-environment
       RETRIV_S3_ENDPOINT_URL: ${RETRIV_S3_ENDPOINT_URL:-}
-      RETRIV_S3_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
-      RETRIV_S3_SECRET_KEY: ${RETRIV_S3_ARTIFACT_SECRET_KEY:?RETRIV_S3_ARTIFACT_SECRET_KEY is required}
-      RETRIV_S3_ARTIFACT_ACCESS_KEY: ${RETRIV_S3_ARTIFACT_ACCESS_KEY:?RETRIV_S3_ARTIFACT_ACCESS_KEY is required}
-      RETRIV_S3_ARTIFACT_SECRET_KEY: ${RETRIV_S3_ARTIFACT_SECRET_KEY:?RETRIV_S3_ARTIFACT_SECRET_KEY is required}
+      RETRIV_S3_ACCESS_KEY: ${RETRIV_S3_ACCESS_KEY:?RETRIV_S3_ACCESS_KEY is required}
+      RETRIV_S3_SECRET_KEY: ${RETRIV_S3_SECRET_KEY:?RETRIV_S3_SECRET_KEY is required}
     depends_on:
       postgres:
         condition: service_healthy

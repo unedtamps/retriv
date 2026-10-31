@@ -8,9 +8,14 @@ WEB_DIR ?= web
 WEB_HOST ?= 127.0.0.1
 WEB_PORT ?= 9500
 WAIT_TIMEOUT ?= 300
+# Berapa container worker. Dibaca dari .env kalau ada (RETRIV_WORKER_REPLICAS),
+# supaya satu tempat mengatur kapasitas; `make run RETRIV_WORKER_REPLICAS=3`
+# tetap menang untuk percobaan sekali jalan.
+RETRIV_WORKER_REPLICAS ?= $(or $(shell grep -s '^RETRIV_WORKER_REPLICAS=' $(ENV_FILE) | tail -1 | cut -d= -f2),1)
 
 UV_RUN := uv run --env-file $(ENV_FILE) --
 COMPOSE := docker compose --env-file $(ENV_FILE)
+COMPOSE_WORKER := $(COMPOSE) up -d --scale worker=$(RETRIV_WORKER_REPLICAS) worker
 
 .PHONY: help install infra worker run-worker run-build migrate bootstrap api run web status logs down test check check-env sql-role
 
@@ -64,13 +69,15 @@ migrate: infra
 # Build the worker image and start it. The slow path, and the only one that
 # picks up a change in the worker's source or its Dockerfile.
 worker: check-env
-	$(COMPOSE) up -d --build worker
+	@printf 'Worker  %s container(s)\n' '$(RETRIV_WORKER_REPLICAS)'
+	$(COMPOSE) up -d --build --scale worker=$(RETRIV_WORKER_REPLICAS) worker
 
 # The same worker from the image already built. Compose builds it only when
 # the image is missing, so a restart costs seconds instead of an ONNX
 # runtime and OCR model rebuild.
 run-worker: check-env
-	$(COMPOSE) up -d worker
+	@printf 'Worker  %s container(s)\n' '$(RETRIV_WORKER_REPLICAS)'
+	$(COMPOSE_WORKER)
 
 # The shared front half of `api` and `run`: start the worker without
 # rebuilding it, the reader role, and the migrations. Split out so the
@@ -107,6 +114,7 @@ run: bootstrap
 	trap 'interrupted=1' INT TERM; \
 	printf 'API   http://%s:%s\n' '$(HOST)' '$(PORT)'; \
 	printf 'Web   http://%s:%s\n' '$(WEB_HOST)' '$(WEB_PORT)'; \
+	printf 'Worker %s container(s), 1 parser each\n' '$(RETRIV_WORKER_REPLICAS)'; \
 	$(UV_RUN) uvicorn app.main:app --host $(HOST) --port $(PORT) & api_pid=$$!; \
 	(cd $(WEB_DIR) && npm run dev -- --host $(WEB_HOST) --port $(WEB_PORT)) & web_pid=$$!; \
 	wait -n "$$api_pid" "$$web_pid"; status=$$?; \

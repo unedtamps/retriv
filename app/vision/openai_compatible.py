@@ -81,6 +81,8 @@ class OpenAICompatibleVisionProvider:
         wait_base_seconds: float = 5.0,
         wait_max_seconds: float = 60.0,
         wait_timeout_seconds: float = 3600.0,
+        session_header: str = "",
+        session_id: str = "",
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._url = chat_completions_url(base_url)
@@ -92,8 +94,11 @@ class OpenAICompatibleVisionProvider:
         self._wait_base_seconds = wait_base_seconds
         self._wait_max_seconds = wait_max_seconds
         self._wait_timeout_seconds = wait_timeout_seconds
+        headers = {"Authorization": f"Bearer {api_key}"}
+        if session_header and session_id:
+            headers[session_header] = session_id
         self._client = httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=headers,
             timeout=timeout_seconds,
             transport=transport,
         )

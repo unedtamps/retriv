@@ -49,6 +49,8 @@ async def run_worker() -> None:
         wait_base_seconds=settings.model_wait_base_seconds,
         wait_max_seconds=settings.model_wait_max_seconds,
         wait_timeout_seconds=settings.model_wait_timeout_seconds,
+        session_header=settings.vlm_session_header,
+        session_id=settings.vlm_session_id,
     )
     worker = ProcessingWorker(
         session_factory,
@@ -83,7 +85,7 @@ async def run_worker() -> None:
         with suppress(NotImplementedError, RuntimeError):
             loop.add_signal_handler(stop_signal, stop_event.set)
     try:
-        await worker.run(stop_event)
+        await worker.run(stop_event, shutdown_grace_seconds=SHUTDOWN_GRACE_SECONDS)
     finally:
         await embedding_provider.aclose()
         await vector_store.aclose()
@@ -111,6 +113,15 @@ class TraceLogFilter(logging.Filter):
         else:
             record.trace_id = "-"
         return True
+
+
+SHUTDOWN_GRACE_SECONDS = 8.0
+"""How long in-flight runs may finish once SIGTERM arrives.
+
+Docker's default stop grace period is 10 seconds, after which the process is
+SIGKILLed. Giving our own drain less than that leaves time to hand the
+remaining leases back to the queue instead of dying with them written to the
+row, which would strand those runs for the whole processing_lease_seconds."""
 
 
 def main() -> None:
