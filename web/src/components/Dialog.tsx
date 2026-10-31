@@ -7,9 +7,13 @@ interface DialogProps {
   title: string
   eyebrow?: string
   description?: string
-  variant?: 'modal' | 'drawer'
+  variant?: 'modal' | 'drawer' | 'wide'
+  /** Fill the whole window instead of sitting centred. */
+  fullScreen?: boolean
   drawerWidth?: 'default' | 'narrow'
   preventBackdropClose?: boolean
+  /** Actions rendered beside the close button, in the header. */
+  headerActions?: ReactNode
   children: ReactNode
   onClose: () => void
 }
@@ -20,8 +24,10 @@ export function Dialog({
   eyebrow,
   description,
   variant = 'modal',
+  fullScreen = false,
   drawerWidth = 'default',
   preventBackdropClose = false,
+  headerActions,
   children,
   onClose,
 }: DialogProps) {
@@ -42,7 +48,9 @@ export function Dialog({
       className={
         variant === 'drawer'
           ? `app-dialog app-drawer${drawerWidth === 'narrow' ? ' app-drawer-narrow' : ''}`
-          : 'app-dialog'
+          : variant === 'wide'
+            ? `app-dialog app-dialog-wide${fullScreen ? ' app-dialog-full' : ''}`
+            : 'app-dialog'
       }
       aria-labelledby={titleId}
       aria-describedby={description === undefined ? undefined : descriptionId}
@@ -70,14 +78,17 @@ export function Dialog({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            className="btn-icon shrink-0"
-            aria-label={`Close ${title}`}
-            onClick={onClose}
-          >
-            <X aria-hidden="true" size={18} strokeWidth={1.8} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {headerActions}
+            <button
+              type="button"
+              className="btn-icon"
+              aria-label={`Close ${title}`}
+              onClick={onClose}
+            >
+              <X aria-hidden="true" size={18} strokeWidth={1.8} />
+            </button>
+          </div>
         </header>
         {children}
       </section>
