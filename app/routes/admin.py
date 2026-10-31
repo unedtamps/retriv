@@ -4,7 +4,7 @@ from uuid import UUID
 
 from anyio import to_thread
 from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import Result, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -181,7 +181,10 @@ async def list_admin_workspaces(
         )
     ).all()
     workspace_ids = [workspace.id for workspace, _ in workspaces]
-    membership_rows = (
+    empty_membership_rows: list[tuple[WorkspaceMembership, User]] = []
+    membership_rows: Result[tuple[WorkspaceMembership, User]] | list[
+        tuple[WorkspaceMembership, User]
+    ] = (
         await session.execute(
             select(WorkspaceMembership, User)
             .join(User, User.id == WorkspaceMembership.user_id)
@@ -189,7 +192,7 @@ async def list_admin_workspaces(
             .order_by(User.username, User.id)
         )
         if workspace_ids
-        else []
+        else empty_membership_rows
     )
     members_by_workspace: dict[UUID, list[WorkspaceMemberResponse]] = {}
     for membership, user in membership_rows:
