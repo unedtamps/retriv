@@ -72,6 +72,30 @@ async def enqueue_extract(
     return run
 
 
+async def enqueue_reextract(
+    session: AsyncSession, document: Document, settings: Settings
+) -> ProcessingRun:
+    """Queue a fresh extraction for an existing document.
+
+    Unlike ``enqueue_extract`` this never no-ops: every call creates a new
+    run, which is how an owner refreshes a document onto the current
+    pipeline -- new extractor, new vision stage -- without deleting and
+    re-uploading the file. The raw object stays where it is; the worker
+    fetches it again.
+    """
+    run = ProcessingRun(
+        id=uuid4(),
+        document_id=document.id,
+        origin_workspace_id=document.origin_workspace_id,
+        job_kind=JOB_EXTRACT,
+        pipeline_version=settings.pipeline_version,
+        status=RUN_QUEUED,
+    )
+    session.add(run)
+    document.active_processing_run_id = run.id
+    return run
+
+
 async def enqueue_access_sync(
     session: AsyncSession, document: Document, settings: Settings
 ) -> ProcessingRun:

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models import (
     JOB_DELETE,
     JOB_EXTRACT,
+    RUN_FAILED,
     RUN_QUEUED,
     Document,
     DocumentWorkspace,
@@ -199,6 +200,69 @@ async def test_download_streams_original_bytes(
     assert "filename*=UTF-8''laporan%202026.pdf" in response.headers["content-disposition"]
 
 
+async def test_download_can_be_requested_inline_for_preview(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    """`inline` is what the preview needs: render, do not save."""
+    content = pdf_bytes()
+    created = await upload(client, auth_headers, entities.finance.id, "laporan 2026.pdf", content)
+    document_id = created.json()["id"]
+
+    response = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}/download",
+        headers=auth_headers,
+        params={"disposition": "inline"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-disposition"].startswith("inline;")
+    assert "filename*=UTF-8''laporan%202026.pdf" in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "private, max-age=300"
+    assert response.headers["etag"] == f'"{created.json()["sha256"]}"'
+
+
+async def test_inline_download_keeps_the_download_disposition_as_default(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
+
+    response = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents/{created.json()['id']}/download",
+        headers=auth_headers,
+    )
+
+    assert response.headers["content-disposition"].startswith("attachment;")
+    assert "etag" not in response.headers
+
+
+async def test_a_viewer_still_cannot_request_an_inline_download(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    """Inline is a disposition, not a permission: the role check is unchanged."""
+    created = await upload(client, auth_headers, entities.legal.id, "report.pdf", pdf_bytes())
+    viewer_login = await client.post(
+        "/v1/auth/token",
+        data={"username": "bob", "password": "another-correct-password"},
+    )
+    viewer_headers = {"Authorization": f"Bearer {viewer_login.json()['access_token']}"}
+
+    response = await client.get(
+        f"/v1/workspaces/{entities.legal.id}/documents/{created.json()['id']}/download",
+        headers=viewer_headers,
+        params={"disposition": "inline"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "insufficient_workspace_permission"
+
+
 async def test_workspace_viewer_cannot_download_original_document(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
@@ -311,6 +375,97 @@ async def test_download_without_any_credential_is_refused(
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
+
+
+async def test_reindex_queues_a_fresh_extract_run(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The reindex creates a second extract run and moves the active pointer.
+
+    The original run is marked terminal first, because a document whose
+    upload is still queued refuses a reindex -- that is the conflict guard
+    doing its job.
+    """
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
+    document_id = UUID(created.json()["id"])
+    url = f"/v1/workspaces/{entities.finance.id}/documents/{document_id}"
+    async with db_session_factory() as session, session.begin():
+        first_run = await session.scalar(
+            select(ProcessingRun).where(ProcessingRun.document_id == document_id)
+        )
+        assert first_run is not None
+        first_run.status = RUN_FAILED
+
+    response = await client.post(f"{url}/reindex", headers=auth_headers)
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "processing"
+    async with db_session_factory() as session:
+        runs = (
+            await session.scalars(
+                select(ProcessingRun).where(
+                    ProcessingRun.document_id == document_id,
+                    ProcessingRun.job_kind == JOB_EXTRACT,
+                )
+            )
+        ).all()
+        document = await session.get(Document, document_id)
+    assert document is not None
+    assert len(runs) == 2
+    reindexed = next(run for run in runs if run.id != first_run.id)
+    assert document.active_processing_run_id == reindexed.id
+
+
+async def test_reindex_refuses_while_a_run_is_in_flight(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    """The upload's run is still queued, so the reindex must wait behind it."""
+    created = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
+    url = f"/v1/workspaces/{entities.finance.id}/documents/{created.json()['id']}"
+
+    response = await client.post(f"{url}/reindex", headers=auth_headers)
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "reindex_conflict"
+
+
+async def test_reindex_is_owner_only(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    """A viewer of the workspace cannot re-run a whole pipeline."""
+    created = await upload(client, auth_headers, entities.legal.id, "report.pdf", pdf_bytes())
+    url = f"/v1/workspaces/{entities.legal.id}/documents/{created.json()['id']}/reindex"
+    login = await client.post(
+        "/v1/auth/token",
+        data={"username": "bob", "password": "another-correct-password"},
+    )
+    viewer_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    response = await client.post(url, headers=viewer_headers)
+
+    assert response.status_code == 403
+
+
+async def test_reindex_refuses_an_unknown_document(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    from uuid import uuid4
+
+    response = await client.post(
+        f"/v1/workspaces/{entities.finance.id}/documents/{uuid4()}/reindex",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
 
 
 async def test_delete_marks_the_document_and_queues_the_cleanup(

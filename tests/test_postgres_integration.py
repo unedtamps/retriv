@@ -248,6 +248,7 @@ async def test_chunk_and_embedding_rows_commit_in_foreign_key_order(
             extractor.extract(Path("unused.pdf"), media_type="application/pdf"),
             artifact_key="artifact.json.gz",
             manifest_key="manifest.json",
+            stored_images=[],
         )
 
         async with factory() as session:
@@ -1353,3 +1354,72 @@ def _plan_methods(node: Any) -> set[str]:
         if isinstance(children, list):
             pending.extend(children)
     return found
+
+async def test_the_database_allows_only_one_in_flight_extract_per_document() -> None:
+    """The partial unique index, not just the application guards.
+
+    Two extracts of one document cannot be in flight together, but the two
+    combinations that are legitimate must still work: an ``access`` run
+    alongside a running extract (a link created or restored while extraction
+    runs), and a fresh extract once the previous one reached a terminal state.
+    """
+    engine = create_async_engine(database_url())
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            await clear_database(session)
+            workspace_id = uuid4()
+            session.add(Workspace(id=workspace_id, slug="index-probe", name="Index probe"))
+            await session.flush()
+            document = Document(
+                origin_workspace_id=workspace_id,
+                original_filename="probe.pdf",
+                detected_media_type="application/pdf",
+                size_bytes=10,
+                sha256="a" * 64,
+                bucket="raw-documents",
+                object_key="probe",
+            )
+            session.add(document)
+            await session.flush()
+            document_id = document.id
+            session.add(_run(document_id, workspace_id, "extract", "queued"))
+            await session.commit()
+
+            # The forbidden combination: a second extract while the first lives.
+            session.add(_run(document_id, workspace_id, "extract", "extracting"))
+            with pytest.raises(DBAPIError, match="uq_processing_runs_one_active_extract"):
+                await session.commit()
+            await session.rollback()
+
+            # Allowed: an access run beside a running extract.
+            session.add(_run(document_id, workspace_id, "access", "queued"))
+            await session.commit()
+
+            # Allowed: a new extract once the previous one is terminal.
+            first = await session.scalar(
+                select(ProcessingRun).where(
+                    ProcessingRun.document_id == document_id,
+                    ProcessingRun.job_kind == "extract",
+                )
+            )
+            assert first is not None
+            first.status = "ready"
+            await session.commit()
+            session.add(_run(document_id, workspace_id, "extract", "queued"))
+            await session.commit()
+
+            await clear_database(session)
+    finally:
+        await engine.dispose()
+
+
+def _run(document_id: UUID, workspace_id: UUID, job_kind: str, status: str) -> ProcessingRun:
+    return ProcessingRun(
+        id=uuid4(),
+        document_id=document_id,
+        origin_workspace_id=workspace_id,
+        job_kind=job_kind,
+        pipeline_version="2026.1",
+        status=status,
+    )

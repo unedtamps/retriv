@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.errors import AppError
-from app.db.models import Document, DocumentWorkspace, ProcessingRun
+from app.db.models import (
+    NON_TERMINAL_RUN_STATUSES,
+    Document,
+    DocumentWorkspace,
+    ProcessingRun,
+)
 from app.documents.validation import StagedUpload, validate_document
 from app.infrastructure.scanner import (
     MalwareDetectedError,
@@ -32,6 +37,7 @@ from app.processing.service import (
     enqueue_access_sync,
     enqueue_delete,
     enqueue_extract,
+    enqueue_reextract,
     load_active_run,
 )
 
@@ -204,6 +210,49 @@ async def attach_to_existing(
         await enqueue_access_sync(session, document, settings)
         await session.commit()
     return link
+
+
+async def accept_document_reindex(
+    *,
+    session: AsyncSession,
+    document_id: UUID,
+    workspace_id: UUID,
+    settings: Settings,
+) -> ProcessingRun | None:
+    """Lock the document, refuse a reindex while a run is in flight, queue one.
+
+    The row lock makes the conflict check and the enqueue one decision: two
+    owners reindexing together, or an owner reindexing while a run is
+    mid-flight, cannot both pass. The owner role was checked by the caller's
+    dependency; this only guards the pipeline state. ``None`` means the
+    document vanished or was deleted under the lock.
+    """
+    locked_document = await session.scalar(
+        select(Document)
+        .where(Document.id == document_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_document is None or locked_document.deleted_at is not None:
+        await session.rollback()
+        return None
+    in_flight = await session.scalar(
+        select(ProcessingRun.id).where(
+            ProcessingRun.document_id == document_id,
+            ProcessingRun.status.in_(NON_TERMINAL_RUN_STATUSES),
+        )
+    )
+    if in_flight is not None:
+        await session.rollback()
+        raise AppError(
+            status_code=409,
+            code="reindex_conflict",
+            title="Reindex conflict",
+            detail="The document already has a run in progress. Wait for it to finish.",
+        )
+    run = await enqueue_reextract(session, locked_document, settings)
+    await session.commit()
+    return run
 
 
 async def accept_document_delete(

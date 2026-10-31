@@ -1,7 +1,7 @@
 import logging
 import re
 from functools import partial
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 from anyio import to_thread
@@ -14,6 +14,7 @@ from app.api.dependencies import (
     DocumentContext,
     DownloadableDocumentContext,
     MutableDocumentContext,
+    OwnerDocumentContext,
     ScannerDependency,
     StorageDependency,
     UploadWorkspaceContext,
@@ -26,6 +27,7 @@ from app.db.models import Document, DocumentWorkspace, ProcessingRun
 from app.db.session import get_session
 from app.documents.service import (
     accept_document_delete,
+    accept_document_reindex,
     ingest_staged_upload,
     storage_unavailable_error,
 )
@@ -122,7 +124,15 @@ async def get_document_metadata(
 async def download_document(
     document: DownloadableDocumentContext,
     storage: StorageDependency,
+    disposition: Annotated[Literal["inline", "attachment"], Query()] = "attachment",
 ) -> StreamingResponse:
+    """Stream the original file, either as a download or for inline viewing.
+
+    ``inline`` is what the dashboard's preview needs: the browser renders the
+    PDF instead of saving it. It also earns a short private cache and an
+    ``ETag`` -- the bytes under a given sha256 never change, so a revalidation
+    costs a 304 rather than another full stream out of the object store.
+    """
     if document.deleted_at is not None:
         raise AppError(
             status_code=409,
@@ -144,15 +154,19 @@ async def download_document(
     except StorageError as exc:
         raise storage_unavailable_error("The document could not be downloaded.") from exc
 
+    inline = disposition == "inline"
+    headers = {
+        "Content-Length": str(document.size_bytes),
+        "Content-Disposition": content_disposition(document.original_filename, inline=inline),
+        "Cache-Control": "private, max-age=300" if inline else "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if inline:
+        headers["ETag"] = f'"{document.sha256}"'
     return StreamingResponse(
         iter_object(stream),
         media_type=document.detected_media_type,
-        headers={
-            "Content-Length": str(document.size_bytes),
-            "Content-Disposition": content_disposition(document.original_filename),
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-        },
+        headers=headers,
     )
 
 
@@ -176,6 +190,40 @@ async def delete_document(
         workspace_id=document.link.workspace_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{document_id}/reindex",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def reindex_document(
+    document: OwnerDocumentContext,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DocumentResponse:
+    """Re-run extraction with the current pipeline, on the owner's order.
+
+    The raw file never moves: the worker fetches it again, re-extracts,
+    re-describes the pictures and re-embeds, and the new run supersedes the
+    old one in place. This is how a document gains whatever the pipeline
+    has learned since it was first uploaded -- its images, its tables, its
+    reading order.
+    """
+    run = await accept_document_reindex(
+        session=session,
+        document_id=document.document.id,
+        workspace_id=document.link.workspace_id,
+        settings=settings,
+    )
+    if run is None:
+        raise AppError(
+            status_code=404,
+            code="document_not_found",
+            title="Document not found",
+            detail="The requested document does not exist in this workspace.",
+        )
+    return document_response(document.document, document.link, run)
 
 
 def document_response(
@@ -204,7 +252,8 @@ def document_response(
     )
 
 
-def content_disposition(filename: str) -> str:
+def content_disposition(filename: str, *, inline: bool = False) -> str:
     ascii_fallback = re.sub(r"[^A-Za-z0-9._-]", "_", filename).strip("._") or "document"
     encoded_filename = quote(filename, safe="")
-    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
+    kind = "inline" if inline else "attachment"
+    return f"{kind}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"

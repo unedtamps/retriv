@@ -19,7 +19,11 @@ from app.security.api_keys import (
     looks_like_api_key,
 )
 from app.security.auth import CurrentUser, authentication_error, decode_access_token
-from app.security.authorization import load_workspace_access, require_platform_admin
+from app.security.authorization import (
+    insufficient_workspace_permission_error,
+    load_workspace_access,
+    require_platform_admin,
+)
 
 
 async def get_bearer_user(
@@ -139,6 +143,27 @@ async def get_admin_user(current_user: CurrentUser) -> User:
     return require_platform_admin(current_user)
 
 
+async def get_owner_workspace(
+    workspace_id: UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Workspace:
+    """The workspace with the caller holding the owner role on it.
+
+    The first true role check in this file: reindexing re-runs a whole
+    pipeline for a document, which is an owner's lever, not an editor's.
+    """
+    access = await load_workspace_access(
+        session,
+        workspace_id=workspace_id,
+        user=current_user,
+        permission="read",
+    )
+    if access.membership.role != "owner":
+        raise insufficient_workspace_permission_error()
+    return access.workspace
+
+
 @dataclass(frozen=True)
 class ScopedDocument:
     """A canonical document as seen through one workspace link."""
@@ -222,6 +247,7 @@ UploadWorkspaceContext = Annotated[Workspace, Depends(get_upload_workspace)]
 DownloadWorkspaceContext = Annotated[Workspace, Depends(get_download_workspace)]
 MutationWorkspaceContext = Annotated[Workspace, Depends(get_mutation_workspace)]
 MemberManagementWorkspaceContext = Annotated[Workspace, Depends(get_member_management_workspace)]
+OwnerWorkspaceContext = Annotated[Workspace, Depends(get_owner_workspace)]
 PlatformAdmin = Annotated[User, Depends(get_admin_user)]
 StorageDependency = Annotated[ObjectStorage, Depends(get_object_storage)]
 ScannerDependency = Annotated[MalwareScanner, Depends(get_malware_scanner)]
@@ -284,5 +310,24 @@ async def get_mutable_document(
     return document
 
 
+async def get_owner_document(
+    document_id: UUID,
+    workspace: OwnerWorkspaceContext,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ScopedDocument:
+    document = await load_scoped_document(
+        session, workspace_id=workspace.id, document_id=document_id
+    )
+    if document is None:
+        raise AppError(
+            status_code=404,
+            code="document_not_found",
+            title="Document not found",
+            detail="The requested document does not exist in this workspace.",
+        )
+    return document
+
+
 DownloadableDocumentContext = Annotated[ScopedDocument, Depends(get_downloadable_document)]
 MutableDocumentContext = Annotated[ScopedDocument, Depends(get_mutable_document)]
+OwnerDocumentContext = Annotated[ScopedDocument, Depends(get_owner_document)]
