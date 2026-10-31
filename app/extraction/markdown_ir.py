@@ -159,7 +159,9 @@ def build_pdf_pages(
                 pages.append(
                     PageIR(
                         page_no=page_no,
-                        markdown=ocr_page_text(pdf, index),
+                        markdown="\n".join(
+                            promote_landmarks(ocr_page_text(pdf, index).splitlines())
+                        ),
                         is_scan=True,
                         text_layer_chars=len(text),
                     )

@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 os.environ["RETRIV_TRACING_ENABLED"] = "false"
@@ -26,8 +27,10 @@ from app.db.models import User, Workspace, WorkspaceMembership
 from app.db.session import Base, get_session
 from app.infrastructure.scanner import MalwareScanner, get_malware_scanner
 from app.infrastructure.storage import (
+    DownloadResult,
     ObjectNotFoundError,
     ObjectStorage,
+    ObjectTooLargeError,
     ReadableObject,
     StorageError,
     get_object_storage,
@@ -91,6 +94,44 @@ class InMemoryObjectStorage:
         self.objects.pop((bucket, key), None)
         self.metadata.pop((bucket, key), None)
 
+    def download_file(
+        self,
+        destination: Path,
+        *,
+        bucket: str,
+        key: str,
+        max_bytes: int,
+    ) -> DownloadResult:
+        try:
+            data = self.objects[(bucket, key)]
+        except KeyError as exc:
+            raise ObjectNotFoundError("Object does not exist") from exc
+        if len(data) > max_bytes:
+            raise ObjectTooLargeError("Object exceeds the size limit")
+        destination = Path(destination)
+        destination.write_bytes(data)
+        return DownloadResult(size_bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+
+    def put_bytes(
+        self,
+        data: bytes,
+        *,
+        bucket: str,
+        key: str,
+        content_type: str,
+        content_encoding: str | None,
+        sha256: str,
+    ) -> None:
+        self.objects[(bucket, key)] = data
+        self.metadata[(bucket, key)] = {"content_type": content_type, "sha256": sha256}
+
+    def delete_prefix(self, *, bucket: str, prefix: str) -> None:
+        if self.delete_error:
+            raise StorageError("Injected delete failure")
+        for candidate in [k for k in self.objects if k[0] == bucket and k[1].startswith(prefix)]:
+            self.objects.pop(candidate, None)
+            self.metadata.pop(candidate, None)
+
     def check_health(self, *, bucket: str) -> None:
         del bucket
 
@@ -127,7 +168,6 @@ def settings(tmp_path: Path) -> Settings:
         s3_endpoint_url="http://unused",
         s3_access_key="test",
         s3_secret_key=SecretStr("test-s3-secret-xxxxxxxxxxxxxxxxxx"),
-        s3_artifact_secret_key=SecretStr("test-artifact-secret-xxxxxxxxxxxxxx"),
         s3_raw_bucket="raw-documents",
         s3_artifact_bucket="context-documents",
         qdrant_read_only_api_key=SecretStr("test-qdrant-read-only-key-xxxxxxxxxx"),

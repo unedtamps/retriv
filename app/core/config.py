@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     jwt_issuer: str = "retriv"
     jwt_audience: str = "retriv"
     access_token_minutes: int = Field(default=60, ge=1, le=1440)
+    refresh_token_days: int = Field(default=30, ge=1, le=365)
     login_max_attempts: int = Field(default=5, ge=1, le=100)
     login_window_seconds: int = Field(default=300, ge=1, le=3600)
     max_password_bytes: int = Field(default=1024, ge=64, le=8192)
@@ -50,8 +51,6 @@ class Settings(BaseSettings):
     s3_endpoint_url: str | None = None
     s3_access_key: str = "retriv"
     s3_secret_key: SecretStr = SecretStr("development-s3-secret-placeholder")
-    s3_artifact_access_key: str = "retriv-worker"
-    s3_artifact_secret_key: SecretStr = SecretStr("development-s3-worker-secret-placeholder")
     s3_raw_bucket: str = "raw-documents"
     s3_artifact_bucket: str = "context-documents"
     s3_region: str = "us-east-1"
@@ -132,6 +131,14 @@ class Settings(BaseSettings):
     vlm_max_concurrency: int = Field(default=4, ge=1, le=32)
     vlm_max_description_chars: int = Field(default=1200, ge=100, le=8000)
     vlm_scan_page_describe: bool = True
+    vlm_session_header: str = ""
+    """Header a routing gateway wants on every request, e.g. the opencode
+    zen gateway's ``x-opencode-session``. Empty means the endpoint needs
+    none, which is true of a plain OpenAI-compatible endpoint."""
+    vlm_session_id: str = ""
+    """The value sent in that header. Sent only when both this and the
+    header name are set, so an endpoint that rejects unknown headers is
+    unaffected."""
     """Offer each scanned page to the vision model once, to catch figures."""
     model_wait_base_seconds: float = Field(default=5.0, gt=0, le=3600)
     model_wait_max_seconds: float = Field(default=60.0, gt=0, le=3600)
@@ -268,7 +275,6 @@ class Settings(BaseSettings):
 
     @field_validator(
         "s3_secret_key",
-        "s3_artifact_secret_key",
         "embedding_api_key",
         "qdrant_api_key",
         "qdrant_read_only_api_key",
@@ -364,7 +370,7 @@ class Settings(BaseSettings):
             )
         else:
             secrets = (
-                self.s3_artifact_secret_key.get_secret_value(),
+                self.s3_secret_key.get_secret_value(),
                 self.embedding_api_key.get_secret_value(),
                 self.qdrant_api_key.get_secret_value(),
                 self.vlm_api_key.get_secret_value(),

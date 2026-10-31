@@ -371,14 +371,17 @@ def get_object_storage() -> ObjectStorage:
 def get_artifact_storage() -> ArtifactStorage:
     """The worker's object-store view.
 
-    Uses the artifact identity, which can read raw documents and write
-    artifacts but cannot write raw documents.
+    One credential covers both buckets: the deployment gives the pipeline a
+    single object-store identity, and the artifact bucket is separated from
+    the raw bucket by name and layout rather than by a second keypair. The
+    two views stay separate because their operations differ -- the worker
+    downloads and writes, the API streams -- not because their keys do.
     """
     settings = get_settings()
     return S3ArtifactStorage(
         endpoint_url=settings.s3_endpoint_url,
-        access_key=settings.s3_artifact_access_key,
-        secret_key=settings.s3_artifact_secret_key.get_secret_value(),
+        access_key=settings.s3_access_key,
+        secret_key=settings.s3_secret_key.get_secret_value(),
         region=settings.s3_region,
         addressing_style=settings.s3_addressing_style,
     )

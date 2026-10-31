@@ -44,6 +44,7 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentImage,
     DocumentRow,
     DocumentWorkspace,
     ProcessingRun,
@@ -242,13 +243,24 @@ class FakeVectorStore(VectorStore):
             if point.payload.get("document_id") == str(document_id):
                 del self.points[key]
 
-    async def set_document_workspaces(self, document_id: UUID, workspace_ids: list[UUID]) -> None:
+    async def set_document_workspaces(
+        self,
+        document_id: UUID,
+        workspace_ids: list[UUID],
+        *,
+        processing_run_id: UUID | None = None,
+    ) -> None:
         self.workspace_payloads[document_id] = list(workspace_ids)
         for point in self.points.values():
-            if point.payload.get("document_id") == str(document_id):
-                point.payload["workspace_ids"] = [
-                    str(workspace_id) for workspace_id in workspace_ids
-                ]
+            if point.payload.get("document_id") != str(document_id):
+                continue
+            if processing_run_id is not None and point.payload.get(
+                "processing_run_id"
+            ) != str(processing_run_id):
+                continue
+            point.payload["workspace_ids"] = [
+                str(workspace_id) for workspace_id in workspace_ids
+            ]
 
     async def search(
         self,
@@ -2024,3 +2036,474 @@ async def test_stopping_drains_the_runs_in_flight(
         extractor.release()
         await asyncio.wait_for(runner, 15)
     assert await run_status(session_factory, run.id) == RUN_READY
+
+
+def a_rendered_png(width: int = 2000, height: int = 500) -> bytes:
+    import pymupdf
+
+    document = pymupdf.open()
+    page = document.new_page(width=width, height=height)
+    page.draw_rect(page.rect, color=None, fill=(0.2, 0.5, 0.9))
+    return page.get_pixmap().tobytes("png")
+
+
+async def test_extracted_pictures_are_persisted_and_mapped(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A picture the vision stage described becomes two stored objects and a row.
+
+    The render as extracted is kept for `full` fetches, the preview bounded to
+    a model's useful edge is what an agent gets by default, and the row names
+    both with the checksum, the page and the words the model said about it.
+    """
+    storage = FakeStorage()
+    document, _run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
+    png = a_rendered_png()
+    extractor = FakeExtractor(
+        chunk_texts=[f"Body text.\n{picture_marker('image-p1-0')}"],
+        images=[
+            ExtractedImage(
+                ref="image-p1-0",
+                page_number=1,
+                media_type="image/png",
+                data=png,
+                caption="Figure 1: Growth.",
+            )
+        ],
+    )
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        extractor=extractor,
+        vision=FakeVisionProvider(),
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(DocumentImage).where(DocumentImage.document_id == document.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.ref == "image-p1-0"
+    assert row.bucket == settings.s3_artifact_bucket
+    assert row.described is True
+    assert row.description == "A description of image-p1-0."
+    assert row.caption == "Figure 1: Growth."
+
+    stored = storage.objects[(row.bucket, row.object_key)]
+    assert stored != png, "a 2000px render must come back bounded to the model edge"
+    assert row.size_bytes == len(stored)
+    assert row.sha256 == hashlib.sha256(stored).hexdigest()
+    import pymupdf
+
+    preview_document = pymupdf.open(stream=stored, filetype="png")
+    try:
+        rendered = preview_document[0].get_pixmap()
+        assert max(rendered.width, rendered.height) <= 1568
+    finally:
+        preview_document.close()
+
+
+async def test_a_reingest_replaces_the_picture_rows(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A re-processed document must not leave the old run's picture rows."""
+    storage = FakeStorage()
+    document, _run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
+    extractor = FakeExtractor(
+        images=[an_extracted_image()],
+    )
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        extractor=extractor,
+        vision=FakeVisionProvider(),
+    )
+    assert await worker.run_once() is True
+
+    second = ProcessingRun(
+        id=uuid4(),
+        document_id=document.id,
+        origin_workspace_id=document.origin_workspace_id,
+        job_kind=JOB_EXTRACT,
+        pipeline_version="2026.1",
+        status=RUN_QUEUED,
+    )
+    async with db_session_factory() as session, session.begin():
+        session.add(second)
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(DocumentImage).where(DocumentImage.document_id == document.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert [row.processing_run_id for row in rows] == [second.id]
+
+
+async def test_a_csv_run_stores_no_picture_rows(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """The CSV path never touches the picture stage."""
+    storage = FakeStorage()
+    document, _run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=csv_bytes(),
+        media_type="text/csv",
+        filename="sales.csv",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(DocumentImage).where(DocumentImage.document_id == document.id)
+            )
+        ).scalars().all()
+
+    assert rows == []
+
+
+async def test_activation_sweeps_superseded_run_artifacts(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Reindexing piles up one artifact folder per run; activation reclaims the old one.
+
+    The superseded run's database row stays as history -- only its bucket
+    folder goes, the moment the new run takes the document over.
+    """
+    storage = FakeStorage()
+    document, first_run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    prefix = (
+        f"workspaces/{document.origin_workspace_id}/documents/{document.id}"
+        f"/runs/{first_run.id}/attempts/{uuid4()}"
+    )
+    storage.objects[(settings.s3_artifact_bucket, f"{prefix}/document.json.gz")] = b"old-doc"
+    storage.objects[(settings.s3_artifact_bucket, f"{prefix}/manifest.json")] = b"old-manifest"
+    async with db_session_factory() as session, session.begin():
+        superseded = await session.get(ProcessingRun, first_run.id)
+        assert superseded is not None
+        superseded.status = RUN_FAILED
+        superseded.artifact_key = f"{prefix}/document.json.gz"
+        superseded.manifest_key = f"{prefix}/manifest.json"
+
+    second = ProcessingRun(
+        id=uuid4(),
+        document_id=document.id,
+        origin_workspace_id=document.origin_workspace_id,
+        job_kind=JOB_EXTRACT,
+        pipeline_version="2026.1",
+        status=RUN_QUEUED,
+    )
+    async with db_session_factory() as session, session.begin():
+        session.add(second)
+
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    assert await worker.run_once() is True
+
+    leftovers = [
+        key
+        for (bucket, key) in storage.objects
+        if bucket == settings.s3_artifact_bucket and key.startswith(prefix)
+    ]
+    assert leftovers == [], "the superseded run's artifact folder must be swept"
+    kept = [key for (bucket, key) in storage.objects if bucket == settings.s3_artifact_bucket]
+    assert kept, "the winning run's own artifacts must stay"
+    async with db_session_factory() as session:
+        history = await session.get(ProcessingRun, first_run.id)
+    assert history is not None, "the superseded run's row stays as history"
+
+
+async def test_activation_sweeps_superseded_run_vectors(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A superseded run's points must leave the vector store, not just the bucket.
+
+    Retrieval validates every match against the active run, so those points
+    can never be served -- but the vector search still returns them, and a
+    search that hits one loses the slot it filled. Enough of them and the
+    document's whole workspace answers with nothing.
+    """
+    storage = FakeStorage()
+    vectors = FakeVectorStore()
+    document, first_run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
+    assert await worker.run_once() is True
+
+    first_points = set(vectors.points)
+    assert first_points, "the first run must have written points"
+
+    second = ProcessingRun(
+        id=uuid4(),
+        document_id=document.id,
+        origin_workspace_id=document.origin_workspace_id,
+        job_kind=JOB_EXTRACT,
+        pipeline_version="2026.1",
+        status=RUN_QUEUED,
+    )
+    async with db_session_factory() as session, session.begin():
+        session.add(second)
+
+    assert await worker.run_once() is True
+
+    remaining = set(vectors.points)
+    assert not (first_points & remaining), "the superseded run's points must be swept"
+    assert remaining, "the winning run's own points must stay"
+    assert first_points <= {str(point_id) for point_id in vectors.deleted_points}
+
+
+async def test_activation_relabels_only_the_winning_runs_points(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Relabelling a document's workspaces must not reach the points it replaced.
+
+    A superseded point that keeps a current workspace label stays inside every
+    search for that workspace. Narrowing the relabel to the winning run's
+    processing_run_id is what stops a stale point from being handed a fresh
+    scope.
+    """
+    storage = FakeStorage()
+    vectors = FakeVectorStore()
+    document, _ = await seed_document(db_session_factory, entities.finance.id, storage=storage)
+    worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
+    assert await worker.run_once() is True
+
+    stale_run_id = uuid4()
+    stale_point_id = uuid4()
+    vectors.points[str(stale_point_id)] = VectorPoint(
+        id=stale_point_id,
+        vector=[],
+        payload={
+            "document_id": str(document.id),
+            "processing_run_id": str(stale_run_id),
+            "workspace_ids": [],
+        },
+    )
+
+    second = ProcessingRun(
+        id=uuid4(),
+        document_id=document.id,
+        origin_workspace_id=document.origin_workspace_id,
+        job_kind=JOB_EXTRACT,
+        pipeline_version="2026.1",
+        status=RUN_QUEUED,
+    )
+    async with db_session_factory() as session, session.begin():
+        session.add(second)
+
+    assert await worker.run_once() is True
+
+    fresh = [point for point in vectors.points.values() if point.payload.get("workspace_ids")]
+    assert fresh, "the winning run's points must carry the workspace label"
+
+
+async def test_shutdown_hands_back_a_lease_it_cannot_finish(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """A restart must not strand a run for the whole lease window.
+
+    The sandbox outlives the container's stop grace, so the worker abandons
+    what is still running and returns it to the queue. Without this the run
+    sits in an active status with a lease no living process holds.
+    """
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+
+    claimed = await worker._claim_one()
+    assert claimed is not None
+    assert claimed.lease_token is not None
+
+    # Hold the lease the way an in-flight run does, then release it.
+    worker._held_leases[claimed.id] = claimed.lease_token
+    released = await worker.release_held_leases()
+
+    assert released == 1
+    async with db_session_factory() as session:
+        stored = await session.get(ProcessingRun, run.id)
+    assert stored is not None
+    assert stored.status == RUN_RETRY_WAIT
+    assert stored.lease_token is None
+    assert stored.lease_until is None
+    assert stored.last_error == "Worker stopped before finishing"
+
+
+async def test_shutdown_release_does_not_steal_another_workers_lease(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Only the attempt that still owns the row may hand it back."""
+    storage = FakeStorage()
+    _document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    claimed = await worker._claim_one()
+    assert claimed is not None
+
+    # A recovery sweep already reassigned the run to a different attempt.
+    async with db_session_factory() as session, session.begin():
+        stored = await session.get(ProcessingRun, run.id)
+        assert stored is not None
+        stored.lease_token = uuid4()
+
+    assert claimed.lease_token is not None
+    worker._held_leases[claimed.id] = claimed.lease_token
+    released = await worker.release_held_leases()
+
+    assert released == 0, "a stale lease must not clobber the live owner"
+    async with db_session_factory() as session:
+        stored = await session.get(ProcessingRun, run.id)
+    assert stored is not None
+    assert stored.lease_token is not None
+
+
+async def test_release_uses_a_snapshot_when_the_tasks_clear_their_own_entries(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """The map is empty by the time cancelled tasks finish unwinding.
+
+    Each task drops its own entry in its ``finally``, so releasing from the
+    live map after the cancels would find nothing -- the run would keep its
+    lease and stay stranded, which is the bug this test pins.
+    """
+    storage = FakeStorage()
+    _document, run = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    claimed = await worker._claim_one()
+    assert claimed is not None
+    assert claimed.lease_token is not None
+
+    abandoned = {claimed.id: claimed.lease_token}
+    worker._held_leases.clear()  # what the cancelled tasks leave behind
+    released = await worker.release_held_leases(held=abandoned)
+
+    assert released == 1
+    async with db_session_factory() as session:
+        stored = await session.get(ProcessingRun, run.id)
+    assert stored is not None
+    assert stored.status == RUN_RETRY_WAIT
+    assert stored.lease_token is None
+
+
+def a_jpeg_photo(width: int = 1600, height: int = 1200) -> bytes:
+    import numpy as np
+    import pymupdf
+
+    rng = np.random.default_rng(11)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, width, height), False)
+    pix.samples_mv[:] = rng.integers(
+        0, 256, size=(height, width, 3), dtype=np.uint8
+    ).tobytes()
+    return pix.tobytes("jpeg", jpg_quality=85)
+
+
+def a_png_chart(width: int = 900, height: int = 600) -> bytes:
+    import numpy as np
+    import pymupdf
+
+    samples = np.full((height, width, 3), 255, dtype=np.uint8)
+    samples[:, ::40] = 0
+    samples[::30, :] = 0
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, width, height), False)
+    pix.samples_mv[:] = samples.tobytes()
+    return pix.tobytes("png")
+
+
+def test_a_jpeg_preview_stays_jpeg_and_gets_smaller() -> None:
+    """A photograph must not be stored losslessly.
+
+    Re-encoding camera pixels as PNG multiplies the file: every gradient the
+    camera compressed cheaply is then stored exactly. The preview keeps the
+    source format so a photo stays small.
+    """
+    worker = ProcessingWorker.__new__(ProcessingWorker)  # pure method under test
+    source = a_jpeg_photo(2000, 1400)
+
+    preview, media_type = worker._preview_png(source, "image/jpeg")
+
+    assert media_type == "image/jpeg"
+    assert preview.startswith(b"\xff\xd8\xff"), "the preview must still be a JPEG"
+    assert len(preview) < len(source), "a JPEG preview must not grow the file"
+
+
+def test_a_png_preview_stays_lossless() -> None:
+    """Charts and screenshots keep their format: lossy artefacts blur labels."""
+    worker = ProcessingWorker.__new__(ProcessingWorker)
+    source = a_png_chart()
+
+    preview, media_type = worker._preview_png(source, "image/png")
+
+    assert media_type == "image/png"
+    assert preview.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_a_wide_picture_is_shrunk_to_the_model_edge() -> None:
+    """The shrink target comes from the header, not from DPI-scaled points."""
+    worker = ProcessingWorker.__new__(ProcessingWorker)
+    source = a_jpeg_photo(4000, 1000)
+
+    preview, _media_type = worker._preview_png(source, "image/jpeg")
+
+    from app.processing.worker import _image_pixel_size
+
+    size = _image_pixel_size(preview, b"jpeg")
+    assert size is not None
+    assert max(size) <= 1568
+    assert max(size) >= 1500, "it should land near the edge, not far below it"
+
+
+def test_an_undecodable_picture_keeps_its_own_bytes() -> None:
+    """A bad file must not fail a run at the artifact stage."""
+    worker = ProcessingWorker.__new__(ProcessingWorker)
+
+    preview, media_type = worker._preview_png(b"not an image at all", "image/png")
+
+    assert preview == b"not an image at all"
+    assert media_type == "image/png"

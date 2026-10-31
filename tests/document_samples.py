@@ -293,6 +293,104 @@ def image_pdf_bytes(*, full_page: bool = False) -> bytes:
     return document.tobytes()
 
 
+def vector_chart_pdf_bytes(*, dashed_series: bool = True) -> bytes:
+    """A page whose chart is line-art, with no bitmap anywhere on it.
+
+    This is the shape the extractor used to miss: axis rules plus polylines
+    drawn as paths. Nothing in the source marks it as a picture, so only
+    clustering the line-art can find it. The labels are real text, which is
+    what keeps the region from looking like a table.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 60), "COMPARISON OF 5-YEAR CUMULATIVE TOTAL RETURN", fontsize=9)
+    page.draw_line((72, 120), (72, 380), width=0.5)
+    page.draw_line((72, 380), (540, 380), width=0.5)
+    for value in (100, 200, 300):
+        y = 380 - (value - 0) * 0.8
+        page.draw_line((72, y), (540, y), width=0.3)
+        page.insert_text((40, y + 3), f"${value}", fontsize=7)
+    for index, label in enumerate(("9/25/20", "9/25/21", "9/24/22", "9/30/23")):
+        page.insert_text((72 + index * 120, 395), label, fontsize=7)
+    points = [(100, 380), (220, 340), (340, 355), (460, 300), (530, 260)]
+    for start, end in zip(points, points[1:], strict=False):
+        page.draw_line(start, end, width=1.4)
+    if dashed_series:
+        other = [(100, 380), (220, 320), (340, 330), (460, 280), (530, 230)]
+        for start, end in zip(other, other[1:], strict=False):
+            page.draw_line(start, end, width=1.2, dashes="[4 3] 0")
+        page.insert_text((400, 415), "S&P 500 Index", fontsize=7)
+    page.insert_text((72, 430), "Apple Inc.", fontsize=7)
+    return document.tobytes()
+
+
+def vector_table_pdf_bytes() -> bytes:
+    """A ruled table: the cluster shape a chart filter must not claim.
+
+    Grid lines only, and every cell carries text, so the density signal and
+    the absence of a diagonal both push it away from being a picture.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    columns = [72, 200, 330, 460, 540]
+    rows = [120 + index * 22 for index in range(9)]
+    for y in rows:
+        page.draw_line((columns[0], y), (columns[-1], y), width=0.4)
+    for x in columns:
+        page.draw_line((x, rows[0]), (x, rows[-1]), width=0.4)
+    for down, y in enumerate(rows[:-1]):
+        for across, x in enumerate(columns[:-1]):
+            page.insert_text((x + 4, y + 14), f"Row {down} Col {across}", fontsize=7)
+    return document.tobytes()
+
+
+def vector_bar_chart_pdf_bytes() -> bytes:
+    """A bar chart: no diagonal anywhere, and a value label above each bar.
+
+    It fails every signal a line chart passes -- there is nothing diagonal to
+    find, and the labels make the interior denser than a table's rules would
+    leave it -- so it is the case the bar signal exists for.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 60), "Deposits and Client Assets", fontsize=9)
+    page.draw_line((72, 380), (540, 380), width=0.5)
+    heights = [40, 62, 85, 108, 140, 175]
+    for index, height in enumerate(heights):
+        x = 90 + index * 70
+        page.draw_rect(
+            pymupdf.Rect(x, 380 - height, x + 44, 380),
+            color=None,
+            fill=(0.1, 0.2, 0.45),
+        )
+        page.insert_text((x + 2, 374 - height), f"${height}", fontsize=6)
+    for index, label in enumerate(("2020", "2021", "2022", "2023", "2024", "2025")):
+        page.insert_text((92 + index * 70, 395), label, fontsize=6)
+    return document.tobytes()
+
+
+def vector_zebra_table_pdf_bytes() -> bytes:
+    """A table with alternating row shading, the shape most likely to pass as bars.
+
+    Alternating fills give rectangles of one width and two heights, so the bar
+    signal alone would fire. What keeps it out is that two heights is fewer
+    than the three distinct heights bars require.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    rows = [120 + index * 24 for index in range(9)]
+    for index, y in enumerate(rows[:-1]):
+        if index % 2 == 0:
+            stripe = pymupdf.Rect(72, y, 540, rows[index + 1])
+            page.draw_rect(stripe, color=None, fill=(0.9, 0.9, 0.9))
+        page.insert_text((78, y + 15), f"Line item {index} with a value", fontsize=7)
+    for x in (72, 300, 540):
+        page.draw_line((x, rows[0]), (x, rows[-1]), width=0.4)
+    for y in rows:
+        page.draw_line((72, y), (540, y), width=0.4)
+    return document.tobytes()
+
+
 def scanned_pdf_bytes() -> bytes:
     """A page that is only pixels: the text has no layer to read."""
     rendered = pymupdf.open(stream=landmark_pdf_bytes(), filetype="pdf")

@@ -19,7 +19,7 @@ from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.sql import CatalogueReader, RowQuery
 
 if TYPE_CHECKING:
-    from app.infrastructure.storage import ObjectStorage
+    from app.infrastructure.storage import ArtifactStorage, ObjectStorage
 
 
 class McpNotReadyError(RuntimeError):
@@ -35,6 +35,7 @@ class McpRuntime:
     row_query: RowQuery | None
     catalogue_reader: CatalogueReader
     storage: "ObjectStorage"
+    artifact_storage: "ArtifactStorage"
 
 
 class McpRuntimeBox:

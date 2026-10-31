@@ -8,6 +8,7 @@ DOCX, and every consumer already treats an empty page list as "pages
 unknown".
 """
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +17,13 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 from app.extraction.base import ExtractedImage
-from app.extraction.images import picture_marker
+from app.extraction.images import fit_image_to_limit, picture_marker
 from app.extraction.markdown_ir import DocumentBlock
 from app.extraction.tables import row_wise_table_text
+
+_DOCX_IMAGE_MAX_EDGE = 1568
+"""Longest side worth carrying into the pipeline. A model downscales past
+this itself, so a bigger bitmap buys precision nobody reads."""
 
 _HEADING_STYLES = {"title": 1, "subtitle": 2}
 
@@ -51,13 +56,14 @@ def build_docx_blocks(
         for image in candidates:
             if max_images and len(images) >= max_images:
                 return
-            if max_image_bytes and len(image.data) > max_image_bytes:
+            fitted = _bounded_image(image, max_image_bytes)
+            if fitted is None:
                 continue
-            if max_total_image_bytes and total_bytes + len(image.data) > max_total_image_bytes:
+            if max_total_image_bytes and total_bytes + len(fitted.data) > max_total_image_bytes:
                 return
-            total_bytes += len(image.data)
-            images.append(image)
-            blocks.append(_image_block(image))
+            total_bytes += len(fitted.data)
+            images.append(fitted)
+            blocks.append(_image_block(fitted))
 
     for child in document.element.body.iterchildren():
         if child.tag.endswith("}p"):
@@ -72,6 +78,23 @@ def build_docx_blocks(
                 blocks.append(DocumentBlock(kind="table", text=text, page_no=0))
             take(_element_images(table._tbl, document, len(images)))
     return blocks, images
+
+
+def _bounded_image(image: ExtractedImage, max_bytes: int) -> ExtractedImage | None:
+    """The picture shrunk under the byte cap, or ``None`` if it cannot be.
+
+    The cap exists to keep an oversized picture out of the pipeline, not to
+    throw its content away: a 33 MB camera photo says the same thing at 800 KB.
+    """
+    if not max_bytes or len(image.data) <= max_bytes:
+        return image
+    fitted = fit_image_to_limit(
+        image.data, image.media_type, max_bytes, _DOCX_IMAGE_MAX_EDGE
+    )
+    if fitted is None:
+        return None
+    data, media_type = fitted
+    return replace(image, data=data, media_type=media_type)
 
 
 def _image_block(image: ExtractedImage) -> DocumentBlock:

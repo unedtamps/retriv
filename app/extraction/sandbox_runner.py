@@ -9,14 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from app.extraction.base import ExtractedImage
-
-_IMAGE_SUFFIX = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-    "image/tiff": ".tiff",
-}
+from app.extraction.images import IMAGE_SUFFIXES as _IMAGE_SUFFIX
 
 
 def parse_args() -> argparse.Namespace:

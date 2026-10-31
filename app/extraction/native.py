@@ -28,6 +28,7 @@ from app.extraction.chunker import MarkdownChunker
 from app.extraction.docx_ir import build_docx_blocks
 from app.extraction.images_native import (
     collect_pdf_images,
+    collect_vector_charts,
     image_refs_by_page,
     scan_page_numbers,
 )
@@ -39,7 +40,7 @@ from app.extraction.markdown_ir import (
     parse_markdown_blocks,
 )
 
-EXTRACTOR_VERSION = "retriv-native-1.0"
+EXTRACTOR_VERSION = "retriv-native-1.1"
 
 
 class NativeMarkdownExtractor:
@@ -100,6 +101,19 @@ class NativeMarkdownExtractor:
                 max_image_bytes=self._max_image_bytes,
                 max_total_image_bytes=self._max_total_image_bytes,
                 scan_page_describe=self._scan_page_describe,
+            )
+            images.extend(
+                collect_vector_charts(
+                    pdf,
+                    pages,
+                    picture_images_enabled=self._picture_images_enabled,
+                    image_render_scale=self._image_render_scale,
+                    image_min_pixels=self._image_min_pixels,
+                    max_images=self._max_images,
+                    max_image_bytes=self._max_image_bytes,
+                    max_total_image_bytes=self._max_total_image_bytes,
+                    skip_pages={image.page_number for image in images},
+                )
             )
         blocks: list[DocumentBlock] = []
         for page in pages:

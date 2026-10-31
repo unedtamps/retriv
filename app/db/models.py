@@ -308,6 +308,57 @@ class DocumentChunk(Base):
     )
 
 
+class DocumentImage(Base):
+    """One extracted picture, stored for the agent to look at.
+
+    The bytes live in the artifact bucket under the run's own attempt
+    prefix, and this row is the only address anyone outside the worker
+    holds: ref to keys, media type, checksum, the page it sat on, and the
+    words the vision stage said about it. Rows deliberately have no
+    foreign key into ``document_chunks`` -- a picture's description is
+    embedded inside its chunk's text, and several chunks may reference
+    one picture -- so the ref is the join key, exactly as it is in the
+    chunk text itself.
+
+    Access is checked in application code by joining the document's
+    workspace links, like the MCP download tool does; the SQL agent path
+    does not read this table, so no row-level policy is attached here.
+    """
+
+    __tablename__ = "document_images"
+    __table_args__ = (
+        UniqueConstraint("document_id", "ref", name="uq_document_images_document_ref"),
+        Index(
+            "ix_document_images_active_lookup",
+            "origin_workspace_id",
+            "document_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    processing_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    ref: Mapped[str] = mapped_column(String(100), nullable=False)
+    bucket: Mapped[str] = mapped_column(String(255), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    describe_hint: Mapped[str] = mapped_column(String(20), nullable=False, default="picture")
+    caption: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    described: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class DocumentRow(Base):
     """One CSV row, stored for SQL rather than for search.
 
@@ -418,4 +469,39 @@ class ApiKey(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RefreshToken(Base):
+    """One link in a rotating chain of refresh tokens for one user.
+
+    Like ``ApiKey``, only the SHA-256 hash is stored: the plaintext exists
+    once, in the response that minted it, and cannot be recovered from the
+    database.
+
+    Rotation replaces a token with a new one on every use. ``family_id`` is
+    the id of the token the chain started from, so a token being presented a
+    second time is one indexed lookup away from revoking the whole chain --
+    that reuse is the signature of a stolen token, and the OAuth security BCP
+    says the response is to end the session, not to guess which holder is the
+    attacker.
+
+    ``auth_version`` snapshots the user's value at mint time, so a password
+    reset closes every chain, not just the access token that happened to be
+    in flight.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    family_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    auth_version: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

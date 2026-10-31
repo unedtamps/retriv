@@ -9,6 +9,7 @@ request rather than the session it happens to ride in.
 
 import asyncio
 import base64
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -24,7 +25,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
-from app.db.models import ApiKey, Document, DocumentWorkspace
+from app.db.models import (
+    JOB_EXTRACT,
+    ApiKey,
+    Document,
+    DocumentImage,
+    DocumentWorkspace,
+    ProcessingRun,
+)
 from app.db.session import get_session
 from app.infrastructure.scanner import get_malware_scanner
 from app.infrastructure.storage import get_object_storage
@@ -255,6 +263,7 @@ async def running_mcp(
             row_query=row_query,
             catalogue_reader=CatalogueReader(db_session_factory),
             storage=storage,
+            artifact_storage=storage,
         )
     )
 
@@ -474,7 +483,7 @@ async def test_search_context_reports_an_empty_scope(mcp: McpEnv) -> None:
     assert mcp.retriever.calls == []
 
 
-async def test_tools_are_the_documented_six(mcp: McpEnv) -> None:
+async def test_tools_are_the_documented_set(mcp: McpEnv) -> None:
     listed = await mcp.session.request(mcp.alice_key, "tools/list", {})
     names = {tool["name"] for tool in listed["result"]["tools"]}
     assert names == {
@@ -484,6 +493,8 @@ async def test_tools_are_the_documented_six(mcp: McpEnv) -> None:
         "list_queryable_files",
         "download_document",
         "find_documents",
+        "list_images",
+        "get_image",
     }
 
 
@@ -905,6 +916,8 @@ async def test_the_row_tool_is_absent_when_no_reader_is_configured(
         "list_queryable_files",
         "download_document",
         "find_documents",
+        "list_images",
+        "get_image",
     }
     assert listing["isError"] is False
 
@@ -947,3 +960,156 @@ async def _seed_document(mcp: McpEnv, *, filename: str, workspace: str = "legal"
         document_id = document.id
     mcp.storage.objects[("raw-documents", object_key)] = SEED_BYTES
     return SeededDocument(document_id=document_id, object_key=object_key)
+
+
+async def _seed_picture(mcp: "McpEnv", *, described: bool = True) -> tuple[UUID, UUID, str]:
+    """A processed document with one stored picture, as the worker leaves all three."""
+    seeded = await _seed_document(mcp, filename="report.pdf")
+    import pymupdf
+
+    painter = pymupdf.open()
+    page = painter.new_page(width=300, height=200)
+    page.draw_rect(page.rect, color=None, fill=(0.9, 0.3, 0.1))
+    png = page.get_pixmap().tobytes("png")
+    painter.close()
+    workspace_id = mcp.entities.legal.id
+    prefix = (
+        f"workspaces/{workspace_id}/documents/{seeded.document_id}"
+        f"/runs/{uuid4()}/attempts/{uuid4()}/images"
+    )
+    object_key = f"{prefix}/image-p1-0.png"
+    async with mcp.session_factory() as session, session.begin():
+        run = ProcessingRun(
+            id=uuid4(),
+            document_id=seeded.document_id,
+            origin_workspace_id=workspace_id,
+            job_kind=JOB_EXTRACT,
+            pipeline_version="2026.1",
+            status=1,
+        )
+        session.add(run)
+        await session.flush()
+        session.add(
+            DocumentImage(
+                origin_workspace_id=workspace_id,
+                document_id=seeded.document_id,
+                processing_run_id=run.id,
+                ref="image-p1-0",
+                bucket=mcp.settings.s3_artifact_bucket,
+                object_key=object_key,
+                media_type="image/png",
+                size_bytes=len(png),
+                sha256=hashlib.sha256(png).hexdigest(),
+                page_number=1,
+                describe_hint="picture",
+                caption="Figure 1: Revenue.",
+                description="A bar chart of quarterly revenue." if described else "",
+                described=described,
+            )
+        )
+    mcp.storage.objects[(mcp.settings.s3_artifact_bucket, object_key)] = png
+    return seeded.document_id, workspace_id, "image-p1-0"
+
+
+async def test_get_image_serves_the_picture_with_its_words(mcp: McpEnv) -> None:
+    document_id, workspace_id, ref = await _seed_picture(mcp)
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "get_image",
+        workspace_id=str(workspace_id),
+        document_id=str(document_id),
+        ref=ref,
+    )
+    assert result["isError"] is False
+    blocks = result["content"]
+    assert blocks[0]["type"] == "image"
+    assert blocks[0]["mimeType"] == "image/png"
+    data = base64.b64decode(blocks[0]["data"])
+    assert hashlib.sha256(data).hexdigest() in text_of(result) or data
+    body = text_of(result)
+    assert "ref=image-p1-0" in body
+    assert "described=true" in body
+    assert "description=A bar chart of quarterly revenue." in body
+
+
+async def test_get_image_round_trips_the_exact_bytes(mcp: McpEnv) -> None:
+    document_id, workspace_id, ref = await _seed_picture(mcp)
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "get_image",
+        workspace_id=str(workspace_id),
+        document_id=str(document_id),
+        ref=ref,
+    )
+    image_block = next(b for b in result["content"] if b["type"] == "image")
+    data = base64.b64decode(image_block["data"])
+    keys = [
+        key
+        for (bucket, key), value in mcp.storage.objects.items()
+        if bucket == mcp.settings.s3_artifact_bucket and value == data
+    ]
+    assert keys, "the served bytes must be one of the stored objects"
+
+
+async def test_get_image_refuses_an_unknown_ref(mcp: McpEnv) -> None:
+    document_id, workspace_id, _ref = await _seed_picture(mcp)
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "get_image",
+        workspace_id=str(workspace_id),
+        document_id=str(document_id),
+        ref="image-p9-9",
+    )
+    assert result["isError"] is True
+    assert "No such picture" in text_of(result)
+
+
+async def test_get_image_refuses_a_key_without_the_workspace(mcp: McpEnv) -> None:
+    document_id, workspace_id, ref = await _seed_picture(mcp)
+    result = await mcp.session.call(
+        mcp.admin_key,
+        "get_image",
+        workspace_id=str(workspace_id),
+        document_id=str(document_id),
+        ref=ref,
+    )
+    assert result["isError"] is True
+    assert "does not exist or is not accessible" in text_of(result)
+
+
+async def test_list_images_names_the_pictures(mcp: McpEnv) -> None:
+    document_id, workspace_id, _ref = await _seed_picture(mcp)
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "list_images",
+        workspace_id=str(workspace_id),
+        document_id=str(document_id),
+    )
+    body = text_of(result)
+    assert "1 picture(s)" in body
+    assert "image-p1-0 page=1 image/png" in body
+    assert "described" in body
+    assert "caption=Figure 1: Revenue." in body
+
+
+async def test_list_images_of_a_document_without_pictures(mcp: McpEnv) -> None:
+    seeded = await _seed_document(mcp, filename="plain.pdf")
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "list_images",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(seeded.document_id),
+    )
+    assert "no extracted pictures" in text_of(result)
+
+
+async def test_list_images_refuses_a_key_without_the_workspace(mcp: McpEnv) -> None:
+    seeded = await _seed_document(mcp, filename="plain.pdf")
+    result = await mcp.session.call(
+        mcp.admin_key,
+        "list_images",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(seeded.document_id),
+    )
+    assert result["isError"] is True
+    assert "does not exist or is not accessible" in text_of(result)

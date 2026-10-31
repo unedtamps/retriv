@@ -22,15 +22,19 @@ Two rules shape every tool here:
   deliberately withholds the text of an unexpected failure.
 """
 
+import base64
+import tempfile
 from collections.abc import Awaitable, Callable, Mapping
 from functools import partial, wraps
-from typing import Annotated
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from anyio import to_thread
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ImageContent, TextContent
 from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -38,8 +42,8 @@ from starlette.applications import Starlette
 
 from app.core.config import Settings
 from app.core.errors import AppError
-from app.db.models import Document, DocumentWorkspace
-from app.infrastructure.storage import StorageError
+from app.db.models import Document, DocumentImage, DocumentWorkspace
+from app.infrastructure.storage import ObjectNotFoundError, ObjectTooLargeError, StorageError
 from app.mcp.auth import McpPrincipal, principal_from_headers, require_workspace
 from app.mcp.documents import find_documents as search_documents
 from app.mcp.documents import format_documents
@@ -55,6 +59,9 @@ from app.retrieval.format import (
 from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import Catalogue, RowQueryError
+
+if TYPE_CHECKING:
+    from app.infrastructure.storage import ArtifactStorage
 
 
 def _instructions(*, row_queries: bool) -> str:
@@ -140,6 +147,46 @@ def _scope(principal: McpPrincipal, workspace_id: UUID | None) -> list[UUID]:
     if workspace_id not in principal.workspace_ids:
         raise ToolError("That workspace is not in scope for this API key.")
     return [workspace_id]
+
+
+async def _scoped_document(
+    session: AsyncSession, workspace_id: UUID, document_id: UUID
+) -> Document:
+    """The document a workspace-scoped tool may touch, or the error to raise.
+
+    The document must be linked into the named workspace through
+    ``document_workspaces``, and neither link nor document may be under
+    deletion. The failure is the same for "not yours" and "does not exist".
+    """
+    row = (
+        await session.execute(
+            select(Document, DocumentWorkspace)
+            .join(
+                DocumentWorkspace,
+                DocumentWorkspace.document_id == Document.id,
+            )
+            .where(
+                Document.id == document_id,
+                DocumentWorkspace.workspace_id == workspace_id,
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        raise ToolError("No such document in that workspace.")
+    document, document_link = row
+    if document.deleted_at is not None or document_link.deleted_at is not None:
+        raise ToolError("That document is being deleted and can no longer be read.")
+    return document
+
+
+def _artifact_bytes(
+    storage: "ArtifactStorage", bucket: str, key: str, max_bytes: int
+) -> bytes:
+    """One artifact object fully in memory, bounded by the picture cap."""
+    with tempfile.TemporaryDirectory(prefix="mcp-image-") as folder:
+        path = Path(folder) / "artifact"
+        storage.download_file(path, bucket=bucket, key=key, max_bytes=max_bytes)
+        return path.read_bytes()
 
 
 async def _catalogue_for(
@@ -497,6 +544,140 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
                 f"size_bytes={document.size_bytes}",
             )
         )
+
+    @mcp.tool()
+    @_guarded
+    async def list_images(ctx: Context, workspace_id: UUID, document_id: UUID) -> str:
+        """List the pictures extracted from a document, by ref.
+
+        The document text names a picture by ref wherever the prose sat next
+        to it, and each ref is exactly what get_image takes. Use this when
+        you want to see what a document depicts before choosing one. A CSV
+        has no pictures, and neither does a document that was processed
+        without the vision stage.
+        """
+        runtime = box.runtime
+        async with runtime.session_factory() as session:
+            principal = await principal_from_headers(ctx.headers, session)
+            await require_workspace(
+                session,
+                user=principal.user,
+                workspace_id=workspace_id,
+                permission="read",
+            )
+            document = await _scoped_document(session, workspace_id, document_id)
+            images = (
+                (
+                    await session.execute(
+                        select(DocumentImage)
+                        .where(DocumentImage.document_id == document.id)
+                        .order_by(DocumentImage.page_number, DocumentImage.ref)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        if not images:
+            return "This document has no extracted pictures."
+        lines = [f"{len(images)} picture(s):"]
+        for image in images:
+            state = "described" if image.described else "undescribed"
+            line = (
+                f"{image.ref} page={image.page_number} {image.media_type} "
+                f"{image.size_bytes}B {state}"
+            )
+            if image.caption:
+                line += f" caption={image.caption}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    @mcp.tool()
+    @_guarded
+    async def get_image(
+        ctx: Context,
+        workspace_id: UUID,
+        document_id: UUID,
+        ref: Annotated[str, Field(max_length=100)],
+    ) -> list[TextContent | ImageContent]:
+        """Show one extracted picture: the graph, chart or figure itself.
+
+        search_context and read_document describe pictures in words, but a
+        description is the extractor's reading, not the pixels. When the
+        question turns on what a picture actually shows -- the shape of a
+        line, the numbers on a chart -- call this with the ref the text
+        named. You get the image itself to look at, plus its caption and
+        the extraction-time description.
+
+        The ref comes from a chunk's image refs or from list_images. The
+        picture is stored at the largest size a vision model reads at -- a
+        model downscales past that itself, so there is nothing bigger to
+        send. One picture per call, so look at the ones the question
+        actually turns on.
+        """
+        runtime = box.runtime
+        async with runtime.session_factory() as session:
+            principal = await principal_from_headers(ctx.headers, session)
+            await require_workspace(
+                session,
+                user=principal.user,
+                workspace_id=workspace_id,
+                permission="read",
+            )
+            document = await _scoped_document(session, workspace_id, document_id)
+            image = await session.scalar(
+                select(DocumentImage).where(
+                    DocumentImage.document_id == document.id,
+                    DocumentImage.ref == ref,
+                )
+            )
+            if image is None:
+                raise ToolError(
+                    "No such picture in that document; list_images names the ones it has."
+                )
+
+        key = image.object_key
+        try:
+            data = await to_thread.run_sync(
+                partial(
+                    _artifact_bytes,
+                    runtime.artifact_storage,
+                    image.bucket,
+                    key,
+                    runtime.settings.max_image_bytes,
+                )
+            )
+        except ObjectNotFoundError as exc:
+            raise ToolError(
+                "That picture's bytes are missing from storage; the document may "
+                "need re-ingesting."
+            ) from exc
+        except ObjectTooLargeError as exc:
+            raise ToolError(
+                "That picture exceeds the serving size limit and cannot be sent."
+            ) from exc
+        except StorageError as exc:
+            raise ToolError("The picture could not be read from storage.") from exc
+
+        media_type = image.media_type
+        parts = [
+            f"ref={image.ref}",
+            f"page={image.page_number}",
+            f"media_type={media_type}",
+            f"size_bytes={len(data)}",
+            f"described={str(image.described).lower()}",
+        ]
+        if image.caption:
+            parts.append(f"caption={image.caption}")
+        if image.description:
+            parts.append(f"description={image.description}")
+        return [
+            ImageContent(
+                type="image",
+                data=base64.b64encode(data).decode("ascii"),
+                mime_type=media_type,
+            ),
+            TextContent(type="text", text="\n".join(parts)),
+        ]
 
     app = mcp.streamable_http_app(
         streamable_http_path="/mcp",

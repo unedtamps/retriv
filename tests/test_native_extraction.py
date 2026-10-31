@@ -33,6 +33,10 @@ from tests.document_samples import (
     scanned_pdf_bytes,
     table_pdf_bytes,
     two_column_pdf_bytes,
+    vector_bar_chart_pdf_bytes,
+    vector_chart_pdf_bytes,
+    vector_table_pdf_bytes,
+    vector_zebra_table_pdf_bytes,
 )
 
 
@@ -410,6 +414,82 @@ def test_the_image_caps_bound_what_is_collected(tmp_path: Path) -> None:
     assert not any(picture_refs(c.text) for c in result.chunks)
 
 
+def test_a_vector_chart_is_rendered_and_marked(tmp_path: Path) -> None:
+    """Line-art is a picture even though the source holds no image.
+
+    A 10-K's stock-performance graph is drawn as paths: nothing in the PDF
+    declares it an image, so ``get_image_info`` cannot see it and the curve's
+    shape never reaches a reader. Clustering the line-art is what recovers it.
+    """
+    path = write_sample(tmp_path, vector_chart_pdf_bytes(), "chart.pdf")
+    result = an_extractor(picture_images_enabled=True).extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert len(result.images) == 1
+    image = result.images[0]
+    assert image.ref == "chart-p1-0"
+    assert image.page_number == 1
+    assert image.media_type == "image/png"
+    assert image.data.startswith(b"\x89PNG")
+    assert image.width > 0 and image.height > 0
+    assert any(picture_refs(c.text) == [image.ref] for c in result.chunks)
+
+
+def test_a_ruled_table_is_not_mistaken_for_a_chart(tmp_path: Path) -> None:
+    """A table's grid is line-art too, and admitting it is the expensive error.
+
+    Every cell holds text and no line runs diagonally, which is exactly the
+    combination the score exists to reject.
+    """
+    path = write_sample(tmp_path, vector_table_pdf_bytes(), "table.pdf")
+    result = an_extractor(picture_images_enabled=True).extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert [image for image in result.images if image.ref.startswith("chart-")] == []
+    assert not any(picture_refs(c.text) for c in result.chunks)
+
+
+def test_vector_chart_detection_is_off_with_image_processing(tmp_path: Path) -> None:
+    path = write_sample(tmp_path, vector_chart_pdf_bytes(), "chart.pdf")
+    result = an_extractor(picture_images_enabled=False).extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert result.images == []
+
+
+def test_a_page_with_a_lifted_picture_is_not_searched_for_charts(tmp_path: Path) -> None:
+    """One picture per shape: a bitmap page is not re-drawn as line-art."""
+    path = write_sample(tmp_path, image_pdf_bytes(), "image.pdf")
+    result = an_extractor(picture_images_enabled=True).extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert len(result.images) == 1
+    assert result.images[0].describe_hint == "picture"
+
+
+def test_a_bar_chart_is_found_without_a_single_diagonal(tmp_path: Path) -> None:
+    """A bar chart is all verticals: the trend-line test alone would miss it.
+
+    Its value labels also make the interior denser than a line chart's, so the
+    density gate pushes it down too. The bar signal is what recovers it, and
+    without it five charts on the annual-report corpus were lost.
+    """
+    path = write_sample(tmp_path, vector_bar_chart_pdf_bytes(), "bars.pdf")
+    result = an_extractor(picture_images_enabled=True).extract(path, media_type=PDF_MEDIA_TYPE)
+
+    charts = [image for image in result.images if image.ref.startswith("chart-")]
+    assert len(charts) == 1
+    assert charts[0].data.startswith(b"\x89PNG")
+
+
+def test_zebra_striping_alone_does_not_make_a_chart(tmp_path: Path) -> None:
+    """Alternating row fills give one width and two heights -- not enough.
+
+    This is the shape that made a four-point bar bonus admit forty-three table
+    cells; three points and a three-height floor is what holds it out.
+    """
+    path = write_sample(tmp_path, vector_zebra_table_pdf_bytes(), "zebra.pdf")
+    result = an_extractor(picture_images_enabled=True).extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert [image for image in result.images if image.ref.startswith("chart-")] == []
+
+
 def test_an_unsupported_media_type_is_an_extraction_error(tmp_path: Path) -> None:
     from app.extraction.base import ExtractionError
 
@@ -756,6 +836,32 @@ def test_a_scanned_page_is_read_by_ocr(tmp_path: Path) -> None:
     joined = " ".join(c.text for c in result.chunks)
     assert "Pasal" in joined
     assert "arsip" in joined.lower()
+    body = [c for c in result.chunks if not c.is_heading_only]
+    assert body and body[0].section_path == ["Pasal 16"], (
+        "a landmark on a scanned page must open its own section, not spill "
+        "into whatever came before"
+    )
+
+
+def test_ocr_noise_never_becomes_a_heading() -> None:
+    """OCR mangles words in ways the landmark patterns must not forgive."""
+    promoted = promote_landmarks(
+        [
+            "pasal 16",  # clean: the one shape that earns promotion
+            "p a sal 16 arsip",  # split letters fail the pattern
+            "arsip wajib disimpan di Item 7",  # landmark not at line start
+            "Item untuk rapat",  # no number after the keyword
+            "x" * 200 + " Pasal 1",  # too long to be a heading
+        ]
+    )
+
+    assert promoted == [
+        "## pasal 16",
+        "p a sal 16 arsip",
+        "arsip wajib disimpan di Item 7",
+        "Item untuk rapat",
+        "x" * 200 + " Pasal 1",
+    ]
 
 
 @pytest.mark.integration
@@ -800,3 +906,91 @@ def test_a_scanned_page_is_offered_to_the_vision_stage(tmp_path: Path) -> None:
     assert scan_images[0].page_number == 1
     assert scan_images[0].media_type == "image/jpeg"
     assert any(picture_refs(c.text) == [scan_images[0].ref] for c in result.chunks)
+
+
+def a_large_jpeg_photo(width: int = 3000, height: int = 2000) -> bytes:
+    import numpy as np
+    import pymupdf
+
+    rng = np.random.default_rng(13)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, width, height), False)
+    pix.samples_mv[:] = rng.integers(
+        0, 256, size=(height, width, 3), dtype=np.uint8
+    ).tobytes()
+    return pix.tobytes("jpeg", jpg_quality=95)
+
+
+def test_an_oversized_docx_picture_is_shrunk_not_dropped(tmp_path: Path) -> None:
+    """A picture over the byte cap must still reach the vision stage.
+
+    Dropping it left the document looking complete with the figure missing
+    entirely: no image, no marker, no row. Shrinking keeps the content.
+    """
+    import docx
+
+    photo = a_large_jpeg_photo()
+    cap = 512 * 1024
+    assert len(photo) > cap, "the sample must start over the cap"
+
+    document = docx.Document()
+    document.add_paragraph("Foto tim.")
+    document.add_picture(BytesIO(photo))
+    buffer = BytesIO()
+    document.save(buffer)
+    path = write_sample(tmp_path, buffer.getvalue(), "big-photo.docx")
+
+    result = an_extractor(
+        picture_images_enabled=True,
+        max_image_bytes=cap,
+    ).extract(path, media_type=DOCX_MEDIA_TYPE)
+
+    assert len(result.images) == 1, "the oversized picture must survive the cap"
+    image = result.images[0]
+    assert len(image.data) <= cap
+    assert image.media_type == "image/jpeg", "the source format is carried over"
+    assert any(picture_refs(c.text) for c in result.chunks), "a marker must exist"
+
+
+def test_the_shared_resizer_lands_under_the_cap_and_keeps_the_format() -> None:
+    from app.extraction.images import fit_image_to_limit, image_format_of
+
+    photo = a_large_jpeg_photo()
+    cap = 256 * 1024
+
+    fitted = fit_image_to_limit(photo, "image/jpeg", cap, 1568)
+
+    assert fitted is not None
+    data, media_type = fitted
+    assert len(data) <= cap
+    assert media_type == "image/jpeg"
+    assert image_format_of(data) == b"jpeg"
+
+
+def test_the_shared_resizer_leaves_a_small_picture_untouched() -> None:
+    import pymupdf
+
+    from app.extraction.images import fit_image_to_limit
+
+    painter = pymupdf.open()
+    page = painter.new_page(width=120, height=90)
+    page.draw_rect(page.rect, color=None, fill=(0.2, 0.4, 0.9))
+    small = page.get_pixmap().tobytes("png")
+    painter.close()
+
+    fitted = fit_image_to_limit(small, "image/png", 5 * 1024 * 1024, 1568)
+
+    assert fitted is not None
+    assert fitted[0] is small, "an in-limits picture must not be re-encoded"
+
+
+def test_an_oversized_pdf_crop_is_shrunk_not_dropped(tmp_path: Path) -> None:
+    """The PDF path re-renders smaller instead of discarding the figure."""
+    path = write_sample(tmp_path, image_pdf_bytes(), "image.pdf")
+
+    result = an_extractor(
+        picture_images_enabled=True,
+        max_image_bytes=2_000,
+    ).extract(path, media_type=PDF_MEDIA_TYPE)
+
+    assert result.images, "a capped crop must still produce a picture"
+    assert all(len(image.data) <= 2_000 for image in result.images)

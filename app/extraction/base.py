@@ -80,6 +80,13 @@ class ExtractionResult:
     source_text_chars: int = 0
     page_count: int = 0
     images: list[ExtractedImage] = field(default_factory=list)
+    image_descriptions: dict[str, str] | None = None
+    """Per-picture description the vision stage produced, ref-keyed.
+
+    The chunk text carries the words inline, but it cannot say which ref
+    they belonged to once the markers are replaced; the persistence stage
+    needs the mapping to store each picture's description beside it.
+    """
 
 
 class DocumentExtractor(Protocol):
