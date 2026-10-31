@@ -45,7 +45,11 @@ class VectorStore(Protocol):
     async def delete_document(self, document_id: UUID) -> None: ...
 
     async def set_document_workspaces(
-        self, document_id: UUID, workspace_ids: list[UUID]
+        self,
+        document_id: UUID,
+        workspace_ids: list[UUID],
+        *,
+        processing_run_id: UUID | None = None,
     ) -> None: ...
 
     async def search(

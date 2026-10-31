@@ -38,19 +38,29 @@ def navigation_hint(sources: list[ContextSource], indices: dict[UUID, int]) -> s
     Only rendered when a heading-only chunk was actually returned. A hint shown
     on every search would be background noise within two queries, and a reader
     that learns to ignore it cannot be taught anything by the version that matters.
+
+    The wording agrees with the count in all four combinations. The total is
+    already stated, so the hint names only the first heading's position rather
+    than repeating how many others there are: a reader that reads "3 of 3
+    sources" and then "and 2 more" cannot tell which number to trust.
     """
     headings = [source for source in sources if source.is_heading_only]
     if not headings:
         return ""
     first = headings[0]
     label = f"source [{indices[first.chunk_id]}]"
-    plural = "s are" if len(headings) > 1 else " is"
-    others = f" and {len(headings) - 1} more" if len(headings) > 1 else ""
+    count = len(headings)
+    total = len(sources)
+    if count == 1:
+        subject = f"1 of {total} sources is a heading with no text of its own"
+        verb = "this source is"
+    else:
+        subject = f"{count} of {total} sources are headings with no text of their own"
+        verb = "these sources are"
     return (
-        f"{len(headings)} of {len(sources)} sources{plural} a heading with no text "
-        f"of its own{others}. A heading is a signpost: the wording it points at is "
-        f"elsewhere in the document, so this source is not evidence that the "
-        f"document is silent on the subject. Call "
+        f"{subject}. A heading is a signpost: the wording it points at is "
+        f"elsewhere in the document, so {verb} not evidence that the document is "
+        f"silent on the subject. Call "
         f"read_document(document_id={first.document_id}, "
         f"start_ordinal={first.ordinal}) to read forward from {label}."
     )

@@ -442,7 +442,14 @@ async def test_qdrant_metadata_mismatch_aborts_retrieval() -> None:
         await retriever.aclose()
 
 
-async def test_inactive_document_run_is_never_returned() -> None:
+async def test_an_inactive_run_match_is_skipped_not_fatal() -> None:
+    """A superseded run's point must cost its own slot, not the whole search.
+
+    The point is unreachable by design -- retrieval only serves the active run
+    -- but the vector search still returns it, and every run leaves its points
+    behind until they are swept. Raising here made one reindexed document
+    enough to blank out its entire workspace.
+    """
     settings = make_settings().model_copy(
         update={
             "embedding_model": "test-embedding-model",
@@ -468,10 +475,52 @@ async def test_inactive_document_run_is_never_returned() -> None:
     }
     retriever, _, _ = await make_retriever(settings, engine, point)
     try:
-        with pytest.raises(RetrievalUnavailable):
-            await retriever.retrieve("question", [workspace_id], 2)
+        sources = await retriever.retrieve("question", [workspace_id], 2)
     finally:
         await retriever.aclose()
+    assert sources == []
+
+
+async def test_a_stale_match_beside_a_live_one_keeps_the_live_one() -> None:
+    """The live match survives when a stale point shares the result set.
+
+    This is the shape of the production failure: one document in a workspace
+    had been reindexed, so its old points came back alongside good ones, and
+    the good ones were thrown away with them.
+    """
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings, links = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    live = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
+    stale = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
+    async with engine.begin() as connection:
+        await connection.execute(
+            update(documents)
+            .where(documents.c.id == stale["document_id"])
+            .values(active_processing_run_id=uuid4())
+        )
+    points = [
+        {"id": str(stale["qdrant_point_id"]), "score": 0.95, "payload": qdrant_payload(stale)},
+        {"id": str(live["qdrant_point_id"]), "score": 0.90, "payload": qdrant_payload(live)},
+    ]
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"result": {"points": points}})
+
+    retriever, _, _ = await make_retriever(settings, engine, None, qdrant_handler=handler)
+    try:
+        sources = await retriever.retrieve("question", [workspace_id], 5)
+    finally:
+        await retriever.aclose()
+    assert [source.chunk_id for source in sources] == [live["chunk_id"]]
 
 
 async def test_chunk_text_must_match_persisted_content_hash() -> None:

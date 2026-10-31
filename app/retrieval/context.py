@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import math
 from collections.abc import Sequence
 from typing import Any
@@ -31,6 +32,8 @@ from app.db.models import (
 )
 from app.retrieval.schemas import ContextSource
 from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
+
+logger = logging.getLogger(__name__)
 
 PAYLOAD_FIELDS = (
     "origin_workspace_id",
@@ -342,6 +345,20 @@ class ContextRetriever:
     async def _load_validated_chunks(
         self, matches: Sequence[dict[str, Any]], workspace_ids: list[UUID]
     ) -> list[ContextSource]:
+        """Return the matches PostgreSQL still vouches for, dropping the rest.
+
+        A match with no active, indexed chunk is skipped rather than raised on.
+        The common cause is benign: a superseded run's points linger in the
+        collection until a sweep removes them, and failing the whole search
+        over one of those makes every document in that workspace unsearchable.
+        Dropping it costs nothing, because the chunk it stood for is not part
+        of any run retrieval is allowed to serve.
+
+        The checks below are a different matter and still abort. They fire when
+        a point and the row it claims to belong to disagree -- metadata, point
+        id, or the text's own hash -- which is evidence of a substituted or
+        corrupted index, not of ordinary lag between the two stores.
+        """
         if not matches:
             return []
         candidate_ids = [UUID(str(match["payload"]["chunk_id"])) for match in matches]
@@ -359,14 +376,14 @@ class ContextRetriever:
             rows = {UUID(str(row["chunk_id"])): row for row in result.mappings()}
 
         sources: list[ContextSource] = []
+        skipped = 0
         for match in matches:
             point_payload = match["payload"]
             chunk_id = UUID(str(point_payload["chunk_id"]))
             row = rows.get(chunk_id)
             if row is None:
-                raise RetrievalUnavailable(
-                    "A Qdrant point has no matching active, indexed PostgreSQL chunk"
-                )
+                skipped += 1
+                continue
             point_id = UUID(str(match["id"]))
             expected_metadata = {
                 "origin_workspace_id": str(UUID(str(row["origin_workspace_id"]))),
@@ -402,6 +419,15 @@ class ContextRetriever:
                     text=str(row["text"]),
                     token_count=int(row["token_count"]),
                 )
+            )
+        if skipped:
+            logger.warning(
+                "Skipped vector matches with no active indexed chunk",
+                extra={
+                    "skipped_matches": skipped,
+                    "returned_sources": len(sources),
+                    "workspace_ids": [str(value) for value in workspace_ids],
+                },
             )
         return sources
 

@@ -139,8 +139,30 @@ class QdrantVectorStore:
         )
         self._validate_completed_update(response)
 
-    async def set_document_workspaces(self, document_id: UUID, workspace_ids: list[UUID]) -> None:
+    async def set_document_workspaces(
+        self, document_id: UUID, workspace_ids: list[UUID], *, processing_run_id: UUID | None = None
+    ) -> None:
+        """Relabel every point of a document with the workspaces it belongs to.
+
+        ``processing_run_id`` narrows the filter to one run. Without it the
+        relabel reaches the points a superseded run left behind, which hands
+        them the current workspace scope and keeps them inside every search
+        for the document -- the one thing that makes them reachable at all.
+        """
         await self.ensure_collection()
+        must: list[dict[str, Any]] = [
+            {
+                "key": "document_id",
+                "match": {"value": str(document_id)},
+            }
+        ]
+        if processing_run_id is not None:
+            must.append(
+                {
+                    "key": "processing_run_id",
+                    "match": {"value": str(processing_run_id)},
+                }
+            )
         response = await self._request(
             "POST",
             f"collections/{self._collection}/points/payload",
@@ -149,14 +171,7 @@ class QdrantVectorStore:
                 "payload": {
                     "workspace_ids": sorted({str(workspace_id) for workspace_id in workspace_ids})
                 },
-                "filter": {
-                    "must": [
-                        {
-                            "key": "document_id",
-                            "match": {"value": str(document_id)},
-                        },
-                    ]
-                },
+                "filter": {"must": must},
             },
         )
         self._validate_completed_update(response)
