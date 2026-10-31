@@ -12,6 +12,22 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"  # noqa: S105 - OAuth2 token type, not a credential
     expires_in: int
+    refresh_token: str
+    refresh_expires_in: int
+
+
+class RefreshRequest(BaseModel):
+    # Deliberately loose: a JWT is longer than a refresh token, and a wrong
+    # credential must be refused by the auth check (401), not by the schema.
+    refresh_token: str = Field(min_length=1, max_length=4096)
+
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"  # noqa: S105 - OAuth2 token type, not a credential
+    expires_in: int
+    refresh_token: str
+    refresh_expires_in: int
 
 
 class CurrentUserResponse(BaseModel):
@@ -207,6 +223,23 @@ class ProcessingRunSummary(BaseModel):
 
 class ProcessingActivityResponse(BaseModel):
     items: list[ProcessingRunSummary]
+    total: int
+
+
+class DocumentSearchHit(BaseModel):
+    document_id: UUID
+    workspace_id: UUID
+    workspace_name: str
+    filename: str
+    media_type: str
+    size_bytes: int
+    status: str
+    row_count: int
+    created_at: datetime
+
+
+class DocumentSearchResponse(BaseModel):
+    items: list[DocumentSearchHit]
     total: int
 
 

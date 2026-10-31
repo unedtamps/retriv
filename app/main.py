@@ -13,7 +13,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.session import engine, session_factory
 from app.http.middleware import UploadSizeLimitMiddleware
-from app.infrastructure.storage import get_object_storage
+from app.infrastructure.storage import get_artifact_storage, get_object_storage
 from app.mcp.endpoint import McpEndpointMiddleware
 from app.mcp.runtime import McpRuntime, McpRuntimeBox
 from app.mcp.server import build_mcp_server
@@ -26,6 +26,7 @@ from app.routes import (
     api_keys,
     auth,
     documents,
+    documents_search,
     health,
     processing_runs,
     workspaces,
@@ -67,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 row_query=rows,
                 catalogue_reader=catalogue_reader,
                 storage=get_object_storage(),
+                artifact_storage=get_artifact_storage(),
             )
         )
         try:
@@ -116,6 +118,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(admin.router)
     application.include_router(workspaces.router)
     application.include_router(documents.router)
+    application.include_router(documents_search.router)
     application.include_router(api_keys.router)
     application.include_router(processing_runs.router)
 
