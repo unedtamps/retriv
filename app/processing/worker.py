@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import struct
 import tempfile
 from collections.abc import Iterator
 from contextlib import suppress
@@ -47,6 +48,7 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentImage,
     DocumentRow,
     DocumentWorkspace,
     ProcessingRun,
@@ -74,7 +76,12 @@ from app.extraction.base import (
     ExtractionResourceError,
     ExtractionResult,
 )
-from app.extraction.images import is_no_figure_reply, merge_descriptions, picture_refs
+from app.extraction.images import (
+    IMAGE_SUFFIXES,
+    is_no_figure_reply,
+    merge_descriptions,
+    picture_refs,
+)
 from app.infrastructure.storage import (
     ArtifactStorage,
     ObjectNotFoundError,
@@ -93,6 +100,87 @@ _SOURCE_SUFFIX = {
 }
 
 _ROW_INSERT_BATCH = 1_000
+
+_IMAGE_PREVIEW_EDGE = 1568
+"""Longest side of the preview an agent is served by default.
+
+Vision models tokenize by pixels and downscale beyond this edge themselves,
+so a larger file buys nothing but transfer time."""
+
+_PREVIEW_JPEG_QUALITY = 85
+"""Quality for a re-encoded JPEG preview. Visually indistinguishable from the
+source at this level, and several times smaller than the lossless PNG that
+storing photographic pixels exactly would produce."""
+
+_LOSSY_IMAGE_FORMATS = frozenset({b"jpeg"})
+"""Source formats that stay lossy on the way out. PNG, GIF and TIFF are kept
+lossless: they are what screenshots, charts and diagrams arrive as, and the
+compression artefacts of a lossy re-encode blur exactly the small text a
+reader needs."""
+
+_IMAGE_SIGNATURES: tuple[tuple[bytes, bytes], ...] = (
+    (b"\xff\xd8\xff", b"jpeg"),
+    (b"\x89PNG\r\n\x1a\n", b"png"),
+    (b"GIF8", b"gif"),
+    (b"II*\x00", b"tiff"),
+    (b"MM\x00*", b"tiff"),
+)
+
+
+def _image_format_of(data: bytes) -> bytes | None:
+    """The picture's own format, read from its signature bytes."""
+    for signature, name in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return name
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return b"webp"
+    return None
+
+
+def _image_pixel_size(data: bytes, image_format: bytes) -> tuple[int, int] | None:
+    """The bitmap's width and height in pixels, straight from its header.
+
+    pymupdf answers in points scaled by the embedded DPI, which is off by the
+    ratio between the two; the header carries the real pixel count.
+    """
+    if image_format == b"png" and len(data) >= 24:
+        width, height = struct.unpack(">II", data[16:24])
+        return (width, height) if width and height else None
+    if image_format == b"gif" and len(data) >= 10:
+        width, height = struct.unpack("<HH", data[6:10])
+        return (width, height) if width and height else None
+    if image_format == b"jpeg":
+        return _jpeg_pixel_size(data)
+    return None
+
+
+def _jpeg_pixel_size(data: bytes) -> tuple[int, int] | None:
+    """Walk the JPEG marker chain to the frame header, which holds the size."""
+    index = 2
+    length = len(data)
+    while index + 9 < length:
+        if data[index] != 0xFF:
+            index += 1
+            continue
+        marker = data[index + 1]
+        if marker in (0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:
+            index += 2
+            continue
+        segment_length = struct.unpack(">H", data[index + 2 : index + 4])[0]
+        # SOF0..SOF15, excluding the non-frame markers DHT/JPG/DAC.
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            height, width = struct.unpack(">HH", data[index + 5 : index + 9])
+            return (width, height) if width and height else None
+        index += 2 + segment_length
+    return None
+
+
+def image_object_keys(ref: str, media_type: str, images_prefix: str) -> str:
+    """The artifact key a picture is stored under: a render within the edge
+    a vision model reads at, or the untouched bytes when it cannot be
+    re-read."""
+    suffix = IMAGE_SUFFIXES.get(media_type, ".bin")
+    return f"{images_prefix}/images/{ref}{suffix}"
 
 
 class PermanentProcessingError(Exception):
@@ -130,6 +218,7 @@ class ProcessingWorker:
         self._extraction_slots = asyncio.Semaphore(settings.parser_max_concurrent_extractions)
         self._vlm_slots = asyncio.Semaphore(settings.vlm_max_concurrency)
         self._in_flight: set[asyncio.Task[None]] = set()
+        self._held_leases: dict[UUID, UUID] = {}
 
     async def run_once(self) -> bool:
         await self._recover_expired_leases()
@@ -158,6 +247,8 @@ class ProcessingWorker:
         ) as span:
             stopped = asyncio.Event()
             heartbeat = asyncio.create_task(self._heartbeat_lease(run.id, run.lease_token, stopped))
+            if run.lease_token is not None:
+                self._held_leases[run.id] = run.lease_token
             try:
                 if run.job_kind == JOB_DELETE:
                     await self._process_delete(run)
@@ -191,17 +282,55 @@ class ProcessingWorker:
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
                 await self._record_failure(run, exc, permanent=False)
             finally:
+                self._held_leases.pop(run.id, None)
                 stopped.set()
                 await heartbeat
 
-    async def run(self, stop_event: asyncio.Event) -> None:
+    async def run(
+        self, stop_event: asyncio.Event, *, shutdown_grace_seconds: float | None = None
+    ) -> None:
         """Claim and carry runs concurrently until asked to stop.
 
         The sweeps run only here, on the loop: the reconciliation
         timestamps they advance are not safe to touch from two places.
-        Stopping drains -- no new claims, in-flight runs finish.
+
+        Stopping drains -- no new claims. With ``shutdown_grace_seconds`` unset
+        the loop waits for every in-flight run, which is what a test or a
+        deliberate stop wants. The container passes a number, because Docker
+        stops waiting after its own grace period: anything still running then
+        is abandoned and its lease handed back, instead of dying with the lease
+        still written to the row.
         """
-        while not stop_event.is_set() or self._in_flight:
+        abandoned = False
+        while not stop_event.is_set() or (self._in_flight and not abandoned):
+            if stop_event.is_set() and self._in_flight and not abandoned:
+                pending = asyncio.shield(
+                    asyncio.gather(*self._in_flight, return_exceptions=True)
+                )
+                try:
+                    if shutdown_grace_seconds is None:
+                        await pending
+                    else:
+                        await asyncio.wait_for(pending, timeout=shutdown_grace_seconds)
+                except TimeoutError:
+                    logger.warning(
+                        "Shutdown grace expired with %s run(s) still in flight; "
+                        "handing their leases back",
+                        len(self._in_flight),
+                        extra={"retriv.abandoned_runs": len(self._in_flight)},
+                    )
+                    # Hand the leases back BEFORE cancelling. A run blocked in
+                    # the extraction sandbox sits in a worker thread that cannot
+                    # be interrupted, so awaiting the cancelled tasks would wait
+                    # for the sandbox to finish and the container would be
+                    # SIGKILLed first -- leaving the lease written. Cancelling
+                    # afterwards is best-effort: the process is about to exit and
+                    # any writer that still wakes finds its lease gone.
+                    await self.release_held_leases()
+                    for task in list(self._in_flight):
+                        task.cancel()
+                    abandoned = True
+                continue
             if not stop_event.is_set():
                 await self._recover_expired_leases()
                 await self._reconcile_deleted_artifacts()
@@ -235,6 +364,55 @@ class ProcessingWorker:
                         "Processing task failed unexpectedly",
                         exc_info=task.exception(),
                     )
+
+    async def release_held_leases(self, *, held: dict[UUID, UUID] | None = None) -> int:
+        """Hand back every lease this process still holds, without finishing it.
+
+        A deployment restarts the worker, and Docker sends SIGTERM with a ten
+        second grace period before SIGKILL. An extraction sandbox runs far
+        longer than that, so the process dies mid-stage with the lease still
+        written to the row: the run sits in an active status for the full
+        ``processing_lease_seconds`` while no worker owns it -- half an hour
+        of a document that looks stuck in `fetching`.
+
+        Returning the row to the queue shortens that to however long the next
+        claim takes. The lease token is the guard: only the attempt that still
+        owns the row can release it, so a worker that lost its lease to a
+        recovery sweep cannot knock the new owner off.
+        """
+        released = 0
+        leases = dict(self._held_leases) if held is None else held
+        for run_id, lease_token in leases.items():
+            try:
+                async with self._session_factory() as session:
+                    result = await session.execute(
+                        update(ProcessingRun)
+                        .where(
+                            ProcessingRun.id == run_id,
+                            ProcessingRun.lease_token == lease_token,
+                            ProcessingRun.status.in_(ACTIVE_RUN_STATUSES),
+                        )
+                        .values(
+                            status=RUN_RETRY_WAIT,
+                            available_at=utcnow(),
+                            lease_until=None,
+                            lease_token=None,
+                            last_error="Worker stopped before finishing",
+                        )
+                    )
+                    await session.commit()
+                    if getattr(result, "rowcount", 0) == 1:
+                        released += 1
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.warning(
+                    "Could not release the lease of a run being abandoned",
+                    extra={"run_id": str(run_id)},
+                    exc_info=True,
+                )
+            finally:
+                if held is None:
+                    self._held_leases.pop(run_id, None)
+        return released
 
     async def _recover_expired_leases(self) -> None:
         now = utcnow()
@@ -624,6 +802,12 @@ class ProcessingWorker:
                     sha256=hashlib.sha256(manifest_bytes).hexdigest(),
                 )
             )
+            stored_images: list[DocumentImage] = []
+            if extraction.images:
+                await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
+                stored_images = await self._persist_images(
+                    claimed_run.id, document, extraction, artifact_prefix
+                )
 
             await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
             chunks_persisted = await self._persist_chunks(
@@ -633,6 +817,7 @@ class ProcessingWorker:
                 extraction,
                 artifact_key=artifact_key,
                 manifest_key=manifest_key,
+                stored_images=stored_images,
             )
             if not chunks_persisted:
                 await self._delete_artifacts(artifact_key, manifest_key)
@@ -644,6 +829,121 @@ class ProcessingWorker:
             await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
         if chunks_persisted:
             await self._process_embeddings(claimed_run, lease_token)
+
+    async def _persist_images(
+        self,
+        run_id: UUID,
+        document: Document,
+        extraction: ExtractionResult,
+        artifact_prefix: str,
+    ) -> list[DocumentImage]:
+        """Ship the document's pictures to the artifact bucket, sized for a model.
+
+        One object per picture: a render bounded to the edge a vision model
+        reads at. A model downscales past that edge itself, so the larger
+        render buys nothing -- and when a picture cannot be re-read at all,
+        its own bytes are stored as they came rather than failing the run.
+        The rows returned here are written by ``_persist_chunks`` inside the
+        run's committing transaction, so a crashed attempt leaves objects no
+        database row points at and the folder sweep reclaims them.
+        """
+        stored: list[DocumentImage] = []
+        for image in extraction.images:
+            data, media_type = self._preview_png(image.data, image.media_type)
+            object_key = image_object_keys(image.ref, media_type, artifact_prefix)
+            await to_thread.run_sync(
+                partial(
+                    self._storage.put_bytes,
+                    data,
+                    bucket=self._settings.s3_artifact_bucket,
+                    key=object_key,
+                    content_type=media_type,
+                    content_encoding=None,
+                    sha256=hashlib.sha256(data).hexdigest(),
+                )
+            )
+            description = (extraction.image_descriptions or {}).get(image.ref, "")
+            stored.append(
+                DocumentImage(
+                    origin_workspace_id=document.origin_workspace_id,
+                    document_id=document.id,
+                    processing_run_id=run_id,
+                    ref=image.ref,
+                    bucket=self._settings.s3_artifact_bucket,
+                    object_key=object_key,
+                    media_type=media_type,
+                    size_bytes=len(data),
+                    sha256=hashlib.sha256(data).hexdigest(),
+                    page_number=image.page_number,
+                    describe_hint=image.describe_hint,
+                    caption=image.caption,
+                    description=description,
+                    described=bool(description),
+                )
+            )
+        return stored
+
+    def _preview_png(self, data: bytes, media_type: str) -> tuple[bytes, str]:
+        """The picture, shrunk to the edge a vision model reads at.
+
+        The format is carried over rather than normalised. A JPEG stays a
+        JPEG because storing photographic pixels losslessly multiplies the
+        file -- a 150 KB photo grows past a megabyte as PNG, since every
+        gradient the camera compressed cheaply is then stored exactly. A PNG
+        stays a PNG, because that is what charts and screenshots arrive as
+        and a lossy re-encode would blur the small labels.
+
+        The shrink target comes from the file header rather than from
+        pymupdf, whose page size is reported in DPI-scaled points. A picture
+        that cannot be decoded keeps its own bytes: a bad file must not fail
+        a run at the artifact stage.
+        """
+        import pymupdf
+
+        image_format = _image_format_of(data)
+        if image_format is None:
+            return data, media_type
+        size = _image_pixel_size(data, image_format)
+        if size is None:
+            return data, media_type
+        long_edge = max(size)
+        if long_edge <= _IMAGE_PREVIEW_EDGE:
+            # Already inside the edge: send the picture untouched. Decoding and
+            # re-encoding only loses quality (a second lossy generation) or
+            # grows the file (a PNG re-packed by a different encoder), and there
+            # is nothing to gain because no pixels need discarding.
+            return data, media_type
+        factor = _IMAGE_PREVIEW_EDGE / long_edge
+
+        try:
+            source = pymupdf.open(stream=data)
+        except Exception:
+            return data, media_type
+        try:
+            page = source[0]
+            # get_pixmap scales the bitmap by the DPI in its metadata, so a
+            # plain call is not the header's pixel count. The scale is written
+            # against page points to land on the pixel target exactly:
+            # scale = (header_pixels * factor) / page_points.
+            scale_x = size[0] * factor / max(page.rect.width, 1e-6)
+            scale_y = size[1] * factor / max(page.rect.height, 1e-6)
+            rendered = page.get_pixmap(matrix=pymupdf.Matrix(scale_x, scale_y), alpha=False)
+            if image_format in _LOSSY_IMAGE_FORMATS:
+                preview = rendered.tobytes("jpeg", jpg_quality=_PREVIEW_JPEG_QUALITY)
+                preview_media_type = "image/jpeg"
+            else:
+                preview = rendered.tobytes("png")
+                preview_media_type = "image/png"
+            # A shrink that grew the file is not worth its quality loss: a
+            # chart of flat colours compresses better at full size than the
+            # antialiased edges a resample introduces.
+            if len(preview) >= len(data):
+                return data, media_type
+            return preview, preview_media_type
+        except Exception:
+            return data, media_type
+        finally:
+            source.close()
 
     async def _process_csv_extract(
         self, claimed_run: ProcessingRun, lease_token: UUID, document: Document
@@ -749,6 +1049,8 @@ class ProcessingWorker:
             )
             if not rows_persisted:
                 await self._delete_artifacts(None, manifest_key)
+            else:
+                await self._sweep_superseded_artifacts(document.id, claimed_run.id)
         except Exception:
             if manifest_key is not None:
                 await self._delete_artifacts(None, manifest_key)
@@ -1138,6 +1440,7 @@ class ProcessingWorker:
                         UUID(value)
                         for value in await self._document_workspace_ids(claimed_run.document_id)
                     ],
+                    processing_run_id=claimed_run.id,
                 )
         finally:
             stop_event.set()
@@ -1223,6 +1526,7 @@ class ProcessingWorker:
 
     async def _activate_embedded_run(self, run_id: UUID, lease_token: UUID) -> bool:
         now = utcnow()
+        document_id: UUID | None = None
         async with self._session_factory() as session, session.begin():
             run = await session.get(ProcessingRun, run_id)
             if run is None or run.lease_token != lease_token:
@@ -1267,7 +1571,87 @@ class ProcessingWorker:
             run.embedded_chunk_count = int(indexed_count or 0)
             run.completed_at = now
             document.active_processing_run_id = run.id
-            return True
+            document_id = run.document_id
+        if document_id is not None:
+            await self._sweep_superseded_artifacts(document_id, run_id)
+            await self._sweep_superseded_vectors(document_id, run_id)
+        return True
+
+    async def _sweep_superseded_vectors(self, document_id: UUID, keep_run_id: UUID) -> None:
+        """Remove the Qdrant points of runs this run superseded.
+
+        Retrieval validates every vector match against the active processing
+        run, so a superseded run's points can never be served -- but they are
+        still returned by the vector search, and a search that hits one fails
+        as a whole rather than skipping it. Leaving them behind therefore
+        makes the document's whole workspace unsearchable until they are gone.
+
+        The rows in PostgreSQL stay as history, exactly as they do for the
+        artifacts; only the vectors go.
+        """
+        async with self._session_factory() as session:
+            point_ids = list(
+                (
+                    await session.scalars(
+                        select(ChunkEmbedding.qdrant_point_id).where(
+                            ChunkEmbedding.document_id == document_id,
+                            ChunkEmbedding.processing_run_id != keep_run_id,
+                        )
+                    )
+                ).all()
+            )
+        if not point_ids:
+            return
+        try:
+            await self._vector_store.delete_points(point_ids)
+            logger.info(
+                "Superseded vector sweep removed points",
+                extra={
+                    "document_id": str(document_id),
+                    "kept_run_id": str(keep_run_id),
+                    "point_count": len(point_ids),
+                },
+            )
+        except VectorStoreError:
+            logger.warning(
+                "Superseded vector sweep failed",
+                extra={
+                    "document_id": str(document_id),
+                    "point_count": len(point_ids),
+                },
+                exc_info=True,
+            )
+
+    async def _sweep_superseded_artifacts(self, document_id: UUID, keep_run_id: UUID) -> None:
+        """Remove the artifact folders of runs this run superseded.
+
+        Reindexing piles up one folder per run; the winning run's activation
+        is the moment the older ones stop mattering. Their database rows
+        stay as history -- only the bucket folders go.
+        """
+        async with self._session_factory() as session:
+            keys = (
+                await session.execute(
+                    select(ProcessingRun.artifact_key, ProcessingRun.manifest_key).where(
+                        ProcessingRun.document_id == document_id,
+                        ProcessingRun.id != keep_run_id,
+                        or_(
+                            ProcessingRun.artifact_key.is_not(None),
+                            ProcessingRun.manifest_key.is_not(None),
+                        ),
+                    )
+                )
+            ).all()
+        prefixes = {key.rsplit("/", 1)[0] for row in keys for key in row if key is not None}
+        for prefix in prefixes:
+            with suppress(StorageError):
+                await to_thread.run_sync(
+                    partial(
+                        self._storage.delete_prefix,
+                        bucket=self._settings.s3_artifact_bucket,
+                        prefix=f"{prefix}/",
+                    )
+                )
 
     async def _persist_chunks(
         self,
@@ -1278,6 +1662,7 @@ class ProcessingWorker:
         *,
         artifact_key: str,
         manifest_key: str,
+        stored_images: list[DocumentImage],
     ) -> bool:
         now = utcnow()
         async with self._session_factory() as session, session.begin():
@@ -1302,6 +1687,10 @@ class ProcessingWorker:
             await session.execute(
                 delete(DocumentChunk).where(DocumentChunk.processing_run_id == run_id)
             )
+            await session.execute(
+                delete(DocumentImage).where(DocumentImage.document_id == document.id)
+            )
+            session.add_all(stored_images)
             stored_chunks: list[DocumentChunk] = []
             for ordinal, chunk in enumerate(extraction.chunks):
                 content_hash = hashlib.sha256(chunk.text.encode()).hexdigest()
@@ -1600,6 +1989,11 @@ class ProcessingWorker:
             finally:
                 stop_event.set()
                 await heartbeat
+        usable = {
+            ref: description
+            for ref, description in descriptions.items()
+            if not is_no_figure_reply(description)
+        }
         chunks = merge_descriptions(
             extraction.chunks,
             {
@@ -1610,7 +2004,7 @@ class ProcessingWorker:
             tokenizer_name=self._settings.chunk_tokenizer,
             model=self._settings.vlm_model,
         )
-        return replace(extraction, chunks=chunks)
+        return replace(extraction, chunks=chunks, image_descriptions=usable)
 
     async def _describe_all(
         self,
@@ -1670,15 +2064,18 @@ class ProcessingWorker:
     ) -> None:
         if run.artifact_key is None and run.manifest_key is None:
             return
-        for key in (run.artifact_key, run.manifest_key):
-            if key is not None:
-                await to_thread.run_sync(
-                    partial(
-                        self._storage.delete_object,
-                        bucket=self._settings.s3_artifact_bucket,
-                        key=key,
-                    )
+        prefix = next(
+            (key.rsplit("/", 1)[0] for key in (run.artifact_key, run.manifest_key) if key),
+            None,
+        )
+        if prefix is not None:
+            await to_thread.run_sync(
+                partial(
+                    self._storage.delete_prefix,
+                    bucket=self._settings.s3_artifact_bucket,
+                    prefix=f"{prefix}/",
                 )
+            )
         async with self._session_factory() as session:
             result = await session.execute(
                 update(ProcessingRun)
@@ -1731,14 +2128,17 @@ class ProcessingWorker:
         return run.lease_token
 
     async def _delete_artifacts(self, artifact_key: str | None, manifest_key: str | None) -> None:
-        for key in (artifact_key, manifest_key):
-            if key is None:
-                continue
-            with suppress(StorageError):
-                await to_thread.run_sync(
-                    partial(
-                        self._storage.delete_object,
-                        bucket=self._settings.s3_artifact_bucket,
-                        key=key,
-                    )
+        prefix = next(
+            (key.rsplit("/", 1)[0] for key in (artifact_key, manifest_key) if key is not None),
+            None,
+        )
+        if prefix is None:
+            return
+        with suppress(StorageError):
+            await to_thread.run_sync(
+                partial(
+                    self._storage.delete_prefix,
+                    bucket=self._settings.s3_artifact_bucket,
+                    prefix=f"{prefix}/",
                 )
+            )
