@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { CheckCircle2, CircleSlash2, X } from 'lucide-react'
 import type {
   AppRoute,
@@ -9,9 +9,16 @@ import type {
   Workspace,
 } from '../types'
 import { api, getErrorMessage, isUnauthorized } from '../api'
+import {
+  WORKSPACE_VIEWS,
+  dashboardHref,
+  readDashboardView,
+  readDashboardWorkspaceId,
+} from '../lib/dashboardLocation'
 import { useProcessingRuns } from '../hooks/useProcessingRuns'
 import { useWorkspaceDocuments } from '../hooks/useWorkspaceDocuments'
 import { AdminUserPanel } from './AdminUserPanel'
+import { AdminWorkspacesPage } from './AdminWorkspaces'
 import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
 import { ConfirmDialog, Dialog } from './Dialog'
@@ -50,8 +57,15 @@ export function Dashboard({
   onLogout,
 }: DashboardProps) {
   const isAdmin = user.role === 'admin'
-  const [activeView, setActiveView] = useState<DashboardView>('overview')
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+  const adminMode = isAdmin && workspaces.every((workspace) => workspace.membership_role === null)
+  const [activeView, setActiveView] = useState<DashboardView>(
+    () =>
+      readDashboardView(window.location.search, isAdmin, adminMode) ??
+      (adminMode ? 'admin-overview' : 'overview'),
+  )
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(() =>
+    readDashboardWorkspaceId(window.location.search, workspaces),
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -68,6 +82,18 @@ export function Dashboard({
   const documents = useWorkspaceDocuments(token, selectedWorkspace, onUnauthorized)
   const runs = useProcessingRuns(token, onUnauthorized)
 
+  useEffect(() => {
+    if (route !== '/dashboard') return
+    const target = dashboardHref(
+      activeView,
+      adminMode ? null : selectedWorkspaceId,
+      adminMode,
+    )
+    if (`${window.location.pathname}${window.location.search}` !== target) {
+      window.history.replaceState(null, '', target)
+    }
+  }, [route, activeView, selectedWorkspaceId, adminMode])
+
   function showNotice(message: string, tone: 'success' | 'error' = 'success') {
     setNotice({ message, tone })
   }
@@ -78,10 +104,11 @@ export function Dashboard({
   }
 
   function selectWorkspace(workspaceId: string) {
-    if (route !== '/dashboard') onNavigate('/dashboard')
     setSelectedWorkspaceId(workspaceId)
     setSearchQuery('')
-    setActiveView('overview')
+    if (route === '/upload-context') return
+    if (adminMode) return
+    setActiveView((current) => (WORKSPACE_VIEWS.includes(current) ? current : 'overview'))
   }
 
   function openUpload() {
@@ -121,17 +148,22 @@ export function Dashboard({
       onSelectView={selectView}
       onSelectWorkspace={selectWorkspace}
       onCreateWorkspace={() => setCreateWorkspaceOpen(true)}
-      token={token}
+      adminMode={adminMode}
       user={user}
       workspaces={workspaces}
+      runs={runs}
       selectedWorkspace={selectedWorkspace}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
-      onUnauthorized={onUnauthorized}
       onLogout={onLogout}
     >
       {route === '/upload-context' ? (
-        <UploadContext token={token} workspaces={workspaces} onUnauthorized={onUnauthorized} />
+        <UploadContext
+          token={token}
+          workspaces={workspaces}
+          selectedWorkspaceId={selectedWorkspaceId}
+          onUnauthorized={onUnauthorized}
+        />
       ) : activeView === 'api-keys' ? (
         <PlatformPage
           eyebrow="Programmatic access"
@@ -148,11 +180,18 @@ export function Dashboard({
         >
           <AdminUserPanel
             token={token}
+            currentUserId={user.id}
             onCredential={setCredential}
             onUnauthorized={onUnauthorized}
             onNotice={showNotice}
           />
         </PlatformPage>
+      ) : adminMode ? (
+        <AdminWorkspacesPage
+          token={token}
+          onUnauthorized={onUnauthorized}
+          onNotice={showNotice}
+        />
       ) : selectedWorkspace === null ? (
         <EmptyWorkspace onCreate={isAdmin ? () => setCreateWorkspaceOpen(true) : undefined} />
       ) : activeView === 'documents' ? (
@@ -178,7 +217,6 @@ export function Dashboard({
           token={token}
           isAdmin={isAdmin}
           documents={documents}
-          runs={runs}
           searchQuery={searchQuery}
           onUpload={openUpload}
           onViewDocuments={() => setActiveView('documents')}
@@ -284,7 +322,7 @@ function PlatformPage({
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <header className="border-b border-line pb-5">
         <p className="eyebrow">{eyebrow}</p>
-        <h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.025em] text-ink">{title}</h1>
+        <h1 className="mt-1.5 font-display text-2xl font-medium text-ink">{title}</h1>
         <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-muted">{description}</p>
       </header>
       <div className="mt-5">{children}</div>

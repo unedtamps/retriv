@@ -1,10 +1,13 @@
-import { useState, type FormEvent } from 'react'
-import { Trash2, UserPlus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Pencil, Trash2, UserPlus } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
-import type { MemberCandidate, Workspace, WorkspaceMember, WorkspaceRole } from '../types'
+import type { Workspace, WorkspaceMember, WorkspaceRole } from '../types'
+import { ChangeMemberAccessDialog } from './ChangeMemberAccessDialog'
 import { ConfirmDialog } from './Dialog'
+import { Avatar } from './ui/Avatar'
 import { EmptyState } from './ui/Feedback'
-import { SearchField } from './ui/SearchField'
+import { RoleTiles } from './ui/RoleTiles'
+import { UserSearchRoster, type UserRosterEntry } from './ui/UserSearchRoster'
 import { useApiResource } from '../hooks/useApiResource'
 
 interface WorkspaceMembersProps {
@@ -32,12 +35,15 @@ export function WorkspaceMembers({
   onNotice,
 }: WorkspaceMembersProps) {
   const [candidateSearch, setCandidateSearch] = useState('')
-  const [candidates, setCandidates] = useState<MemberCandidate[]>([])
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null)
+  const [entries, setEntries] = useState<UserRosterEntry[]>([])
+  const [total, setTotal] = useState(0)
   const [selectedCandidateId, setSelectedCandidateId] = useState('')
-  const [newRole, setNewRole] = useState<WorkspaceRole>('editor')
-  const [searching, setSearching] = useState(false)
+  const [newRole, setNewRole] = useState<WorkspaceRole>('viewer')
   const [adding, setAdding] = useState(false)
-  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [editTarget, setEditTarget] = useState<WorkspaceMember | null>(null)
   const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
   const [removing, setRemoving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,44 +54,58 @@ export function WorkspaceMembers({
     { onUnauthorized },
   )
 
-  async function searchCandidates(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const normalized = candidateSearch.trim()
-    if (normalized.length < 2) {
-      setError('Enter at least two characters to search for a user.')
-      return
-    }
-    setSearching(true)
-    setError(null)
-    try {
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(candidateSearch.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [candidateSearch])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const load = async () => {
       if (isAdmin) {
-        const result = await api.listAdminUsers(token, { search: normalized })
-        const existingIds = new Set(
-          (members.data?.items ?? []).map((member) => member.user_id),
-        )
-        setCandidates(
+        const result = await api.listAdminUsers(token, {
+          search: debouncedSearch,
+          signal: controller.signal,
+        })
+        setEntries(
           result.items
-            .filter((user) => user.is_active && !existingIds.has(user.id))
-            .map((user) => ({ id: user.id, username: user.username })),
+            .filter((user) => user.is_active && user.role !== 'admin')
+            .map((user) => ({ id: user.id, username: user.username, role: user.role })),
         )
+        setTotal(result.total)
       } else {
-        const result = await api.searchMemberCandidates(token, workspace.id, normalized)
-        setCandidates(result.items)
+        if (debouncedSearch.length < 2) {
+          setEntries([])
+          setTotal(0)
+        } else {
+          const result = await api.searchMemberCandidates(token, workspace.id, debouncedSearch)
+          setEntries(result.items)
+          setTotal(result.items.length)
+        }
       }
-      setSelectedCandidateId('')
-    } catch (caught) {
+      setLoadedQuery(debouncedSearch)
+    }
+    load().catch((caught: unknown) => {
+      if (caught instanceof Error && caught.name === 'AbortError') return
+      setLoadedQuery(debouncedSearch)
       if (isUnauthorized(caught)) onUnauthorized()
       else setError(getErrorMessage(caught))
-    } finally {
-      setSearching(false)
-    }
-  }
+    })
+    return () => controller.abort()
+  }, [debouncedSearch, isAdmin, token, workspace.id, onUnauthorized])
 
-  async function addMember(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  const existingIds = useMemo(
+    () => new Set((members.data?.items ?? []).map((member) => member.user_id)),
+    [members.data],
+  )
+  const candidates = entries.filter((entry) => !existingIds.has(entry.id))
+  const searching = loadedQuery !== debouncedSearch
+  const items = members.data?.items ?? []
+
+  async function addMember() {
     if (selectedCandidateId === '') return
     setAdding(true)
-    setError(null)
+    setAddError(null)
     try {
       const member = await api.setMemberRole(
         token,
@@ -104,49 +124,15 @@ export function WorkspaceMembers({
               ),
             },
       )
-      setCandidates((current) =>
-        current.filter((candidate) => candidate.id !== selectedCandidateId),
-      )
       setSelectedCandidateId('')
       setCandidateSearch('')
       onNotice(`${member.username} added as ${member.role}.`)
       await onChanged()
     } catch (caught) {
       if (isUnauthorized(caught)) onUnauthorized()
-      else setError(getErrorMessage(caught))
+      else setAddError(getErrorMessage(caught))
     } finally {
       setAdding(false)
-    }
-  }
-
-  async function changeRole(member: WorkspaceMember, role: WorkspaceRole) {
-    setUpdatingUserId(member.user_id)
-    setError(null)
-    try {
-      const updated = await api.setMemberRole(
-        token,
-        workspace.id,
-        member.user_id,
-        role,
-        isAdmin,
-      )
-      members.setData((current) =>
-        current === null
-          ? current
-          : {
-              ...current,
-              items: current.items.map((item) =>
-                item.user_id === updated.user_id ? updated : item,
-              ),
-            },
-      )
-      onNotice(`${updated.username} is now ${updated.role}.`)
-      await onChanged()
-    } catch (caught) {
-      if (isUnauthorized(caught)) onUnauthorized()
-      else setError(getErrorMessage(caught))
-    } finally {
-      setUpdatingUserId(null)
     }
   }
 
@@ -174,68 +160,56 @@ export function WorkspaceMembers({
     }
   }
 
-  const items = members.data?.items ?? []
+  const emptyHint =
+    !isAdmin && debouncedSearch.length < 2
+      ? 'Type at least two characters to search for a user.'
+      : 'No matching user.'
 
   return (
     <>
-      <section className="border-b border-line px-5 py-5 sm:px-6">
+      <section className="border-b border-line px-6 py-6">
         <p className="eyebrow">Add a member</p>
-        <form className="mt-3 flex gap-2" role="search" onSubmit={searchCandidates}>
-          <SearchField
+        <div className="mt-4">
+          <UserSearchRoster
             id="candidate-search"
-            label="Search user candidates"
-            value={candidateSearch}
-            onChange={setCandidateSearch}
-            placeholder="Search username"
-            className="min-w-0 flex-1"
+            label="Search users"
+            search={candidateSearch}
+            onSearchChange={setCandidateSearch}
+            candidates={candidates}
+            searching={searching}
+            selectedId={selectedCandidateId}
+            onSelect={setSelectedCandidateId}
+            emptyMessage={emptyHint}
+            total={total}
           />
-          <button type="submit" className="btn btn-secondary" disabled={searching}>
-            {searching ? 'Searching…' : 'Search'}
-          </button>
-        </form>
-        {candidates.length === 0 ? null : (
-          <form
-            className="mt-3 grid gap-2 sm:grid-cols-[1fr_9rem_auto]"
-            onSubmit={addMember}
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end">
+          <RoleTiles
+            label="Workspace role"
+            labelId="candidate-role-label"
+            value={newRole}
+            onChange={setNewRole}
+            roles={isAdmin ? ['owner', 'editor', 'viewer'] : ['editor', 'viewer']}
+          />
+          <button
+            type="button"
+            className="btn btn-primary sm:mb-0.5"
+            disabled={adding || selectedCandidateId === ''}
+            onClick={addMember}
           >
-            <select
-              className="field"
-              aria-label="Candidate user"
-              required
-              value={selectedCandidateId}
-              onChange={(event) => setSelectedCandidateId(event.target.value)}
-            >
-              <option value="">Select a user</option>
-              {candidates.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.username}
-                </option>
-              ))}
-            </select>
-            <select
-              className="field"
-              aria-label="Workspace role"
-              value={newRole}
-              onChange={(event) => setNewRole(event.target.value as WorkspaceRole)}
-            >
-              {isAdmin ? <option value="owner">Owner</option> : null}
-              <option value="editor">Editor</option>
-              <option value="viewer">Viewer</option>
-            </select>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={adding || selectedCandidateId === ''}
-            >
-              <UserPlus aria-hidden="true" size={16} />
-              {adding ? 'Adding…' : 'Add'}
-            </button>
-          </form>
+            <UserPlus aria-hidden="true" size={16} />
+            {adding ? 'Adding…' : 'Add member'}
+          </button>
+        </div>
+        {addError === null ? null : (
+          <p className="error-note mt-4" role="alert">
+            {addError}
+          </p>
         )}
       </section>
 
-      <section className="px-5 py-5 sm:px-6">
-        <div className="mb-3 flex items-center justify-between gap-4">
+      <section className="px-6 py-6">
+        <div className="mb-4 flex items-center justify-between gap-4">
           <div>
             <p className="eyebrow">Access policy</p>
             <h3 className="mt-1 text-base font-semibold text-ink">Workspace members</h3>
@@ -265,37 +239,32 @@ export function WorkspaceMembers({
             {items.map((member) => {
               const ownerLocked = !isAdmin && member.role === 'owner'
               return (
-                <li
-                  key={member.user_id}
-                  className="grid gap-3 px-4 py-3.5 sm:grid-cols-[1fr_9rem_auto] sm:items-center"
-                >
-                  <div className="min-w-0">
+                <li key={member.user_id} className="flex items-center gap-4 px-5 py-4">
+                  <Avatar name={member.username} seed={member.user_id} size="xs" />
+                  <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-ink">{member.username}</p>
                     <p className="mt-0.5 font-mono text-meta text-ink-faint">
                       {member.user_id.slice(0, 8)}
                     </p>
                   </div>
-                  <select
-                    className="field text-sm"
-                    aria-label={`Role for ${member.username}`}
-                    value={member.role}
-                    disabled={ownerLocked || updatingUserId === member.user_id}
-                    onChange={(event) => changeRole(member, event.target.value as WorkspaceRole)}
-                  >
-                    {isAdmin || member.role === 'owner' ? (
-                      <option value="owner">Owner</option>
-                    ) : null}
-                    <option value="editor">Editor</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
+                  <span className="stamp shrink-0">{member.role}</span>
                   <button
                     type="button"
-                    className="btn-icon justify-self-end text-danger hover:text-danger"
+                    className="btn-icon h-8 w-8 border-transparent bg-transparent hover:border-line disabled:opacity-40"
+                    aria-label={`Change access for ${member.username}`}
+                    disabled={ownerLocked}
+                    onClick={() => setEditTarget(member)}
+                  >
+                    <Pencil aria-hidden="true" size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon h-8 w-8 border-transparent bg-transparent text-danger hover:border-line disabled:opacity-40"
                     aria-label={`Remove ${member.username}`}
                     disabled={ownerLocked}
                     onClick={() => setRemoveTarget(member)}
                   >
-                    <Trash2 aria-hidden="true" size={16} />
+                    <Trash2 aria-hidden="true" size={15} />
                   </button>
                 </li>
               )
@@ -303,6 +272,33 @@ export function WorkspaceMembers({
           </ul>
         )}
       </section>
+
+      {editTarget === null ? null : (
+        <ChangeMemberAccessDialog
+          open
+          workspace={workspace}
+          token={token}
+          member={editTarget}
+          isAdmin={isAdmin}
+          onUnauthorized={onUnauthorized}
+          onSaved={(updated) => {
+            members.setData((current) =>
+              current === null
+                ? current
+                : {
+                    ...current,
+                    items: current.items.map((item) =>
+                      item.user_id === updated.user_id ? updated : item,
+                    ),
+                  },
+            )
+            onNotice(`${updated.username} is now ${updated.role}.`)
+            setEditTarget(null)
+            void onChanged()
+          }}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={removeTarget !== null}

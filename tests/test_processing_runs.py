@@ -1,10 +1,10 @@
-"""Processing-status routes, scoped by the caller's own memberships.
+"""Processing-status route, scoped by the caller's own memberships.
 
 These used to assert the scope sent to an upstream service over HTTP.
 There is no upstream now, so the scope is enforced in the query itself,
 and that is what these tests check: a run in a workspace the caller
 cannot read is simply never selected, rather than being fetched and then
-rejected.
+rejected. The feed is in-flight only — a finished run leaves it.
 """
 
 from datetime import UTC, datetime
@@ -36,7 +36,7 @@ async def seed_run(
     workspace_id: UUID,
     document_id: UUID | None = None,
     filename: str = "report.pdf",
-    status: str = RUN_READY,
+    status: str = RUN_EMBEDDING,
 ) -> ProcessingRun:
     document = Document(
         id=document_id or uuid4(),
@@ -80,7 +80,7 @@ async def viewer_headers(client: httpx.AsyncClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-async def test_processing_routes_aggregate_only_the_callers_workspaces(
+async def test_processing_activity_aggregates_only_the_callers_workspaces(
     client: httpx.AsyncClient,
     db_session_factory: async_sessionmaker[AsyncSession],
     auth_headers: dict[str, str],
@@ -96,23 +96,25 @@ async def test_processing_routes_aggregate_only_the_callers_workspaces(
         db_session_factory,
         workspace_id=entities.legal.id,
         filename="legal.pdf",
+        status=RUN_EMBEDDING,
+    )
+    await seed_run(
+        db_session_factory,
+        workspace_id=entities.finance.id,
+        filename="finished.pdf",
+        status=RUN_READY,
     )
 
-    active = await client.get("/v1/processing-runs/active", headers=auth_headers)
-    recent = await client.get("/v1/processing-runs/recent", headers=auth_headers)
+    response = await client.get("/v1/processing-runs", headers=auth_headers)
 
-    assert active.status_code == recent.status_code == 200
-    assert active.json()["item"]["workspace_id"] == str(entities.finance.id)
-    assert active.json()["item"]["filename"] == "finance.pdf"
-    assert recent.json()["total"] == 2
-    assert {item["workspace_id"] for item in recent.json()["items"]} == {
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert {item["workspace_id"] for item in body["items"]} == {
         str(entities.finance.id),
         str(entities.legal.id),
     }
-    assert {item["filename"] for item in recent.json()["items"]} == {
-        "finance.pdf",
-        "legal.pdf",
-    }
+    assert {item["filename"] for item in body["items"]} == {"finance.pdf", "legal.pdf"}
 
 
 async def test_a_viewer_sees_only_their_own_workspace(
@@ -121,19 +123,27 @@ async def test_a_viewer_sees_only_their_own_workspace(
     entities: SeededEntities,
 ) -> None:
     """Bob is a viewer of legal only, so finance runs are not his to see."""
-    await seed_run(db_session_factory, workspace_id=entities.legal.id, filename="legal.pdf")
+    await seed_run(
+        db_session_factory,
+        workspace_id=entities.legal.id,
+        filename="legal.pdf",
+        status=RUN_EMBEDDING,
+    )
     await seed_run(
         db_session_factory,
         workspace_id=entities.finance.id,
         filename="finance.pdf",
+        status=RUN_EMBEDDING,
     )
 
     headers = await viewer_headers(client)
-    recent = await client.get("/v1/processing-runs/recent", headers=headers)
+    response = await client.get("/v1/processing-runs", headers=headers)
 
-    assert recent.status_code == 200
-    assert recent.json()["total"] == 1
-    assert [item["workspace_id"] for item in recent.json()["items"]] == [str(entities.legal.id)]
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert [item["workspace_id"] for item in response.json()["items"]] == [
+        str(entities.legal.id)
+    ]
 
 
 async def test_a_run_outside_the_callers_scope_is_never_returned(
@@ -143,15 +153,18 @@ async def test_a_run_outside_the_callers_scope_is_never_returned(
 ) -> None:
     """The filter is in the query, so there is no window where a
     cross-workspace row is fetched and only then rejected."""
-    await seed_run(db_session_factory, workspace_id=entities.finance.id, filename="finance.pdf")
+    await seed_run(
+        db_session_factory,
+        workspace_id=entities.finance.id,
+        filename="finance.pdf",
+        status=RUN_EMBEDDING,
+    )
 
     headers = await viewer_headers(client)
-    active = await client.get("/v1/processing-runs/active", headers=headers)
-    recent = await client.get("/v1/processing-runs/recent", headers=headers)
+    response = await client.get("/v1/processing-runs", headers=headers)
 
-    assert active.status_code == recent.status_code == 200
-    assert active.json()["item"] is None
-    assert recent.json()["items"] == []
+    assert response.status_code == 200
+    assert response.json()["items"] == []
 
 
 async def test_a_user_with_no_workspaces_sees_nothing(
@@ -174,15 +187,19 @@ async def test_a_user_with_no_workspaces_sees_nothing(
     assert response.status_code == 200
     headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
 
-    await seed_run(db_session_factory, workspace_id=entities.finance.id, filename="finance.pdf")
-    active = await client.get("/v1/processing-runs/active", headers=headers)
-    recent = await client.get("/v1/processing-runs/recent", headers=headers)
+    await seed_run(
+        db_session_factory,
+        workspace_id=entities.finance.id,
+        filename="finance.pdf",
+        status=RUN_EMBEDDING,
+    )
+    response = await client.get("/v1/processing-runs", headers=headers)
 
-    assert active.json()["item"] is None
-    assert recent.json()["items"] == []
+    assert response.json()["items"] == []
+    assert response.json()["total"] == 0
 
 
-async def test_queued_runs_are_reported_as_active(
+async def test_queued_runs_are_reported_as_in_flight(
     client: httpx.AsyncClient,
     db_session_factory: async_sessionmaker[AsyncSession],
     auth_headers: dict[str, str],
@@ -196,7 +213,7 @@ async def test_queued_runs_are_reported_as_active(
         filename="just-uploaded.pdf",
         status=RUN_QUEUED,
     )
-    response = await client.get("/v1/processing-runs/active", headers=auth_headers)
+    response = await client.get("/v1/processing-runs", headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["item"]["status"] == RUN_QUEUED
-    assert response.json()["item"]["embedded_chunk_count"] == 0
+    assert response.json()["items"][0]["status"] == RUN_QUEUED
+    assert response.json()["items"][0]["embedded_chunk_count"] == 0

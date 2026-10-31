@@ -1,19 +1,11 @@
-import {
-  ArrowRight,
-  Plus,
-  FileUp,
-  LoaderCircle,
-  LockKeyhole,
-  Sparkles,
-  UploadCloud,
-} from 'lucide-react'
+import { ArrowRight, Plus, FileUp, LockKeyhole, Sparkles, UploadCloud } from 'lucide-react'
 import type { ApiResource } from '../hooks/useApiResource'
 import type { WorkspaceDocumentsData } from '../hooks/useWorkspaceDocuments'
-import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import { formatBytes, isActiveStatus } from '../lib/visuals'
 import type { DocumentUpload, Workspace } from '../types'
 import { DocumentTable } from './DocumentTable'
 import { Avatar } from './ui/Avatar'
+import { RefreshButton } from './ui/RefreshButton'
 import { WorkspaceAccessSummary } from './WorkspaceAccessSummary'
 
 interface WorkspaceOverviewProps {
@@ -21,7 +13,6 @@ interface WorkspaceOverviewProps {
   token: string
   isAdmin: boolean
   documents: ApiResource<WorkspaceDocumentsData>
-  runs: ProcessingRuns
   searchQuery: string
   onUpload: () => void
   onViewDocuments: () => void
@@ -35,7 +26,6 @@ export function WorkspaceOverview({
   token,
   isAdmin,
   documents,
-  runs,
   searchQuery,
   onUpload,
   onViewDocuments,
@@ -59,9 +49,9 @@ export function WorkspaceOverview({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="eyebrow">Workspace overview</p>
-              <span className="badge">{workspace.membership_role ?? 'catalog only'}</span>
+              <span className="stamp">{workspace.membership_role ?? 'catalog only'}</span>
             </div>
-            <h1 className="mt-1.5 truncate text-2xl font-semibold tracking-[-0.025em] text-ink">
+            <h1 className="mt-1.5 truncate font-display text-2xl font-medium text-ink">
               {workspace.name}
             </h1>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-muted">
@@ -86,31 +76,29 @@ export function WorkspaceOverview({
         </div>
       </header>
 
-      <section className="mt-6 grid grid-cols-2 gap-2.5 xl:grid-cols-4" aria-label="Workspace summary">
-        <StatCard
-          label="Documents"
-          value={restricted ? '—' : String(total)}
-          detail={restricted ? 'Members only' : total === 1 ? 'in this workspace' : 'in this workspace'}
-          accent="bg-blue"
-        />
-        <StatCard
-          label="Ready"
-          value={restricted ? '—' : String(ready)}
-          detail="searchable context"
-          accent="bg-success"
-        />
-        <StatCard
-          label="In pipeline"
-          value={restricted ? '—' : String(active)}
-          detail="queued or processing"
-          accent="bg-amber"
-        />
-        <StatCard
-          label="Storage"
-          value={restricted ? '—' : formatBytes(storage)}
-          detail={documents.data?.complete === false ? 'loaded files' : 'total file size'}
-          accent="bg-violet"
-        />
+      <section className="mt-6" aria-label="Workspace summary">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line xl:grid-cols-4">
+          <StatCell
+            label="Documents"
+            value={restricted ? '—' : String(total)}
+            detail={restricted ? 'Members only' : 'in this workspace'}
+          />
+          <StatCell
+            label="Ready"
+            value={restricted ? '—' : String(ready)}
+            detail="searchable context"
+          />
+          <StatCell
+            label="In pipeline"
+            value={restricted ? '—' : String(active)}
+            detail="queued or processing"
+          />
+          <StatCell
+            label="Storage"
+            value={restricted ? '—' : formatBytes(storage)}
+            detail="total file size"
+          />
+        </div>
       </section>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
@@ -122,14 +110,23 @@ export function WorkspaceOverview({
                 Recent documents
               </h2>
             </div>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted transition-colors hover:text-ink"
-              onClick={onViewDocuments}
-            >
-              View all
-              <ArrowRight aria-hidden="true" size={13} />
-            </button>
+            <div className="flex items-center gap-1">
+              {restricted ? null : (
+                <RefreshButton
+                  label="Refresh recent documents"
+                  loading={documents.loading}
+                  onRefresh={documents.reload}
+                />
+              )}
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted transition-colors hover:text-ink"
+                onClick={onViewDocuments}
+              >
+                View all
+                <ArrowRight aria-hidden="true" size={13} />
+              </button>
+            </div>
           </div>
           {restricted ? (
             <div className="rounded-card border border-dashed border-line-strong bg-surface px-6 py-12 text-center">
@@ -156,7 +153,6 @@ export function WorkspaceOverview({
 
         <aside className="grid gap-3.5" aria-label="Workspace activity">
           <QuickUpload workspace={workspace} onUpload={onUpload} />
-          <PipelineCard runs={runs} workspaceId={workspace.id} />
           <WorkspaceAccessSummary
             workspace={workspace}
             token={token}
@@ -170,26 +166,19 @@ export function WorkspaceOverview({
   )
 }
 
-function StatCard({
+function StatCell({
   label,
   value,
   detail,
-  accent,
 }: {
   label: string
   value: string
   detail: string
-  accent: string
 }) {
   return (
-    <div className="rounded-card border border-line bg-surface px-4 py-3.5">
-      <div className="flex items-center gap-2">
-        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${accent}`} />
-        <p className="font-mono text-[0.62rem] uppercase tracking-eyebrow text-ink-faint">
-          {label}
-        </p>
-      </div>
-      <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">{value}</p>
+    <div className="bg-surface px-5 py-4">
+      <p className="text-xs text-ink-faint">{label}</p>
+      <p className="mt-1.5 text-[1.75rem] font-medium leading-7 text-ink">{value}</p>
       <p className="mt-0.5 text-xs text-ink-muted">{detail}</p>
     </div>
   )
@@ -220,7 +209,7 @@ function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: 
           <p className="eyebrow">Quick upload</p>
           <p className="mt-2 text-sm font-semibold text-ink">Add context to this workspace</p>
         </div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-card border border-line bg-sunken text-ink-muted transition-colors group-hover:border-accent-ink group-hover:bg-accent group-hover:text-white">
+        <span className="flex h-9 w-9 items-center justify-center rounded-control border border-line bg-sunken text-ink-muted transition-colors group-hover:border-accent-ink group-hover:text-accent-ink">
           <UploadCloud aria-hidden="true" size={17} />
         </span>
       </div>
@@ -228,74 +217,6 @@ function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: 
         Drop a PDF, DOCX or CSV, or browse. Indexing continues in the background.
       </p>
     </button>
-  )
-}
-
-function PipelineCard({ runs, workspaceId }: { runs: ProcessingRuns; workspaceId: string }) {
-  const workspaceRuns = Array.from(
-    new Map(
-      [...(runs.activeRun === null ? [] : [runs.activeRun]), ...runs.recentRuns]
-        .filter((run) => run.workspace_id === workspaceId)
-        .map((run) => [run.id, run]),
-    ).values(),
-  )
-  const active = workspaceRuns.filter((run) => isActiveStatus(run.status)).length
-  const ready = workspaceRuns.filter((run) => run.status === 'ready').length
-  const failed = workspaceRuns.filter((run) => run.status === 'failed').length
-  const sync = workspaceRuns.filter((run) => run.job_kind === 'access_sync').length
-
-  return (
-    <section className="rounded-card border border-line bg-surface p-5">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="eyebrow">Pipeline</p>
-          <h2 className="mt-1.5 text-sm font-semibold text-ink">Recent activity</h2>
-        </div>
-        {runs.loading ? (
-          <LoaderCircle aria-hidden="true" className="animate-spin text-ink-faint" size={15} />
-        ) : (
-          <span className="flex items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-eyebrow text-ink-faint">
-            <span
-              aria-hidden="true"
-              className={`h-1.5 w-1.5 rounded-full ${active > 0 ? 'bg-blue' : 'bg-line-strong'}`}
-            />
-            {active > 0 ? 'Active' : 'Idle'}
-          </span>
-        )}
-      </div>
-      {runs.error === null ? null : (
-        <p className="mt-3 text-xs leading-5 text-danger" role="alert">
-          {runs.error}
-        </p>
-      )}
-      <dl className="mt-4 space-y-2.5">
-        <PipelineRow label="In progress" value={active} dot="bg-blue" />
-        <PipelineRow label="Ready" value={ready} dot="bg-success" />
-        <PipelineRow label="Failed" value={failed} dot="bg-coral" />
-        {sync > 0 ? <PipelineRow label="Access updates" value={sync} dot="bg-violet" /> : null}
-      </dl>
-      {workspaceRuns.length === 0 && !runs.loading ? (
-        <p className="mt-4 border-t border-line pt-3 text-xs leading-5 text-ink-muted">
-          No processing runs in the recent activity window.
-        </p>
-      ) : (
-        <p className="mt-4 border-t border-line pt-3 font-mono text-[0.6rem] uppercase tracking-eyebrow text-ink-faint">
-          Last hour · {workspaceRuns.length} run{workspaceRuns.length === 1 ? '' : 's'}
-        </p>
-      )}
-    </section>
-  )
-}
-
-function PipelineRow({ label, value, dot }: { label: string; value: number; dot: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-xs">
-      <dt className="flex items-center gap-2 text-ink-muted">
-        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-        {label}
-      </dt>
-      <dd className="font-mono font-medium text-ink">{value}</dd>
-    </div>
   )
 }
 

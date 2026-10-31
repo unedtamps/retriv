@@ -1,98 +1,205 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bell } from 'lucide-react'
-import type { Workspace } from '../types'
-import { NotificationsPanel } from './NotificationsPanel'
-import { useProcessingRuns } from '../hooks/useProcessingRuns'
+import { Bell, FileText, LoaderCircle, RefreshCw } from 'lucide-react'
+import type { ProcessingRun, Workspace } from '../types'
+import type { ProcessingRuns } from '../hooks/useProcessingRuns'
+import { documentStatusTone, runStatusLabel, STATUS_TONE_CLASSES } from '../lib/visuals'
 
 interface ProcessingNotificationsProps {
-  token: string
   workspaces: Workspace[]
-  onUnauthorized: () => void
+  runs: ProcessingRuns
   onOpenChange: (open: boolean) => void
 }
 
 /**
- * The bell, and the panel it opens.
+ * The bell, and the floating panel it opens.
  *
- * The button and the panel are separate because the button is in the header
- * and the panel is a portal over the page, and because the panel has its own
- * focus management.
+ * The panel is a small popover anchored under the bell, not a drawer: the
+ * feed only ever holds what is running right now, so a whole column of the
+ * screen was never its proportion. The runs state is owned by the dashboard
+ * and passed in, so the bell, the panel and the pipeline popover show one
+ * shared picture.
  */
 export function ProcessingNotifications({
-  token,
   workspaces,
-  onUnauthorized,
+  runs,
   onOpenChange,
 }: ProcessingNotificationsProps) {
   const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const bellButtonRef = useRef<HTMLButtonElement>(null)
-  const runs = useProcessingRuns(token, onUnauthorized)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  function changeOpen(next: boolean) {
+    if (next) {
+      const rect = bellButtonRef.current?.getBoundingClientRect()
+      if (rect) setAnchor({ top: rect.bottom + 8, right: window.innerWidth - rect.right })
+    }
+    setOpen(next)
+    onOpenChange(next)
+  }
 
   useEffect(() => {
     if (!open) return
-    const bellButton = bellButtonRef.current
-    return () => {
-      window.requestAnimationFrame(() => bellButton?.focus())
+    panelRef.current?.focus()
+
+    function close() {
+      setOpen(false)
+      onOpenChange(false)
     }
-  }, [open])
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') close()
+    }
+    function closeOnPointerDown(event: PointerEvent) {
+      const target = event.target as Node
+      if (panelRef.current?.contains(target) || bellButtonRef.current?.contains(target)) return
+      close()
+    }
 
-  function changeOpen(nextOpen: boolean) {
-    setOpen(nextOpen)
-    onOpenChange(nextOpen)
-  }
+    window.addEventListener('keydown', closeOnEscape)
+    document.addEventListener('pointerdown', closeOnPointerDown)
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape)
+      document.removeEventListener('pointerdown', closeOnPointerDown)
+    }
+  }, [open, onOpenChange])
 
-  const notificationCount = new Set([
-    ...runs.recentRuns.map((run) => run.id),
-    ...(runs.activeRun === null ? [] : [runs.activeRun.id]),
-  ]).size
+  const count = runs.runs.length
 
   return (
     <>
       <button
         ref={bellButtonRef}
         type="button"
-        className="relative inline-flex h-8 items-center gap-2 rounded-full border border-line bg-surface px-2.5 text-ink-muted transition-colors hover:border-line-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
         aria-label={
-          notificationCount === 0
+          count === 0
             ? 'Open processing notifications'
-            : `Open processing notifications, ${notificationCount} recent runs`
+            : `Open processing notifications, ${count} active ${count === 1 ? 'run' : 'runs'}`
         }
-        aria-controls="processing-notifications-panel"
+        aria-controls="processing-activity-panel"
         aria-expanded={open}
-        onClick={() => changeOpen(true)}
+        onClick={() => changeOpen(!open)}
       >
-        <span
-          aria-hidden="true"
-          className={`h-1.5 w-1.5 rounded-full ${runs.activeRun === null ? 'bg-ink-faint' : 'bg-success'}`}
-        />
-        <span className="hidden font-mono text-[0.6rem] uppercase tracking-eyebrow sm:inline">
-          {runs.activeRun === null ? 'Pipeline idle' : 'Pipeline active'}
-        </span>
-        <Bell aria-hidden="true" size={14} />
-        {notificationCount === 0 ? null : (
+        <Bell aria-hidden="true" size={17} />
+        {count === 0 ? null : (
           <span
             aria-hidden="true"
-            className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 font-mono text-[0.58rem] leading-none text-white"
+            className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-1 font-mono text-[0.55rem] leading-none text-white"
           >
-            {notificationCount > 99 ? '99+' : notificationCount}
+            {count > 99 ? '99+' : count}
           </span>
         )}
       </button>
       {open
         ? createPortal(
-            <NotificationsPanel
-              activeRun={runs.activeRun}
-              recentRuns={runs.recentRuns}
-              loading={runs.loading}
-              error={runs.error}
-              workspaces={workspaces}
-              onRefresh={runs.reload}
-              onClose={() => changeOpen(false)}
-            />,
+            <div
+              ref={panelRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-label="Processing activity"
+              style={anchor ?? undefined}
+              className={`popover-enter fixed z-[60] w-96 rounded-card border border-line bg-surface shadow-raised outline-none`}
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[0.9375rem] font-medium text-ink">Processing activity</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">
+                    {count === 0
+                      ? 'Nothing is running right now'
+                      : `${count} in flight across your workspaces`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-icon shrink-0"
+                  aria-label="Refresh processing activity"
+                  disabled={runs.loading}
+                  onClick={runs.reload}
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={runs.loading ? 'animate-spin' : undefined}
+                    size={17}
+                  />
+                </button>
+              </div>
+
+              <div className="max-h-96 space-y-2 overflow-y-auto overscroll-contain p-3">
+                {runs.error === null ? null : (
+                  <p className="error-note" role="alert">
+                    {runs.error}
+                  </p>
+                )}
+                {runs.loading && count === 0 ? (
+                  <div
+                    className="flex items-center gap-2 px-1 py-2 text-sm text-ink-muted"
+                    role="status"
+                  >
+                    <LoaderCircle className="animate-spin" size={17} />
+                    Loading processing activity…
+                  </div>
+                ) : count === 0 ? (
+                  <p className="rounded-card border border-line bg-paper px-4 py-3 text-sm text-ink-muted">
+                    No unfinished processes across your workspaces.
+                  </p>
+                ) : (
+                  runs.runs.map((run) => (
+                    <ProcessingRunCard key={run.id} run={run} workspaces={workspaces} />
+                  ))
+                )}
+              </div>
+            </div>,
             document.body,
           )
         : null}
     </>
+  )
+}
+
+function ProcessingRunCard({
+  run,
+  workspaces,
+}: {
+  run: ProcessingRun
+  workspaces: Workspace[]
+}) {
+  const workspaceName =
+    workspaces.find((workspace) => workspace.id === run.workspace_id)?.name ?? 'Workspace'
+  const filename = run.filename ?? `Document ${run.document_id.slice(0, 8)}`
+  const progress =
+    run.chunk_count > 0
+      ? `${run.embedded_chunk_count}/${run.chunk_count} embeddings`
+      : run.attempts > 1
+        ? `Attempt ${run.attempts}`
+        : null
+
+  return (
+    <article className="rounded-card border border-line bg-surface p-3.5">
+      <div className="flex items-start gap-3">
+        <FileText className="mt-0.5 shrink-0 text-accent-ink" aria-hidden="true" size={17} />
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-sm font-medium text-ink">{filename}</p>
+          <p className="mt-1 text-xs text-ink-muted">
+            {workspaceName} ·{' '}
+            {run.job_kind === 'delete' ? 'Document cleanup' : 'Document extraction'}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={`stamp ${STATUS_TONE_CLASSES[documentStatusTone(run.status)]}`}>
+              {runStatusLabel(run.status)}
+            </span>
+            {progress === null ? null : (
+              <span className="font-mono text-meta text-ink-faint">{progress}</span>
+            )}
+          </div>
+          <time
+            className="mt-1.5 block font-mono text-meta text-ink-faint"
+            dateTime={run.created_at}
+          >
+            {new Date(run.created_at).toLocaleTimeString()}
+          </time>
+        </div>
+      </div>
+    </article>
   )
 }

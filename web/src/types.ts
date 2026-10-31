@@ -1,7 +1,13 @@
 export type PlatformRole = 'admin' | 'user' | string
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 export type AppRoute = '/dashboard' | '/upload-context'
-export type DashboardView = 'overview' | 'documents' | 'members' | 'api-keys' | 'users'
+export type DashboardView =
+  | 'overview'
+  | 'documents'
+  | 'members'
+  | 'admin-overview'
+  | 'api-keys'
+  | 'users'
 
 export interface SessionToken {
   access_token: string
@@ -23,6 +29,7 @@ export interface Workspace {
   description: string | null
   created_at: string
   membership_role: WorkspaceRole | null
+  member_count: number
   can_upload: boolean
   can_search_context: boolean
   can_manage_members: boolean
@@ -37,6 +44,23 @@ export interface Workspace {
 
 export interface WorkspaceList {
   items: Workspace[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export interface AdminWorkspace {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  created_at: string
+  member_count: number
+  members: WorkspaceMember[]
+}
+
+export interface AdminWorkspaceList {
+  items: AdminWorkspace[]
   total: number
   offset: number
   limit: number
@@ -81,14 +105,9 @@ export interface ProcessingRun {
   completed_at: string | null
 }
 
-export interface ActiveProcessingRun {
-  item: ProcessingRun | null
-}
-
-export interface ProcessingRunList {
+export interface ProcessingActivity {
   items: ProcessingRun[]
   total: number
-  since: string
 }
 
 export interface AdminUser {

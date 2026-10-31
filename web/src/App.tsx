@@ -163,9 +163,7 @@ function BootScreen() {
           <BrandMark size={19} />
         </span>
         <LoaderCircle className="mx-auto mt-4 animate-spin text-ink-faint" aria-hidden="true" size={22} />
-        <p className="mt-3 font-mono text-eyebrow uppercase tracking-eyebrow text-ink-faint">
-          Resolving access policy
-        </p>
+        <p className="mt-3 text-xs text-ink-faint">Resolving access policy</p>
       </div>
     </main>
   )

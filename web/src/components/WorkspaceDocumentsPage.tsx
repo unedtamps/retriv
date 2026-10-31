@@ -5,6 +5,7 @@ import { formatBytes } from '../lib/visuals'
 import type { DocumentUpload, Workspace } from '../types'
 import { DocumentTable } from './DocumentTable'
 import { Avatar } from './ui/Avatar'
+import { RefreshButton } from './ui/RefreshButton'
 
 interface WorkspaceDocumentsPageProps {
   workspace: Workspace
@@ -43,12 +44,21 @@ export function WorkspaceDocumentsPage({
             </p>
           </div>
         </div>
-        {workspace.can_upload ? (
-          <button type="button" className="btn btn-primary shrink-0" onClick={onUpload}>
-            <FileUp aria-hidden="true" size={16} />
-            Upload document
-          </button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {restricted ? null : (
+            <RefreshButton
+              label="Refresh document status"
+              loading={documents.loading}
+              onRefresh={documents.reload}
+            />
+          )}
+          {workspace.can_upload ? (
+            <button type="button" className="btn btn-primary shrink-0" onClick={onUpload}>
+              <FileUp aria-hidden="true" size={16} />
+              Upload document
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div className="mt-6">

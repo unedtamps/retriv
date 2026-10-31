@@ -3,42 +3,34 @@ import type { ProcessingRun } from '../types'
 import { useApiResource } from './useApiResource'
 
 export interface ProcessingRuns {
-  activeRun: ProcessingRun | null
-  recentRuns: ProcessingRun[]
+  runs: ProcessingRun[]
   loading: boolean
   error: string | null
   reload: () => void
 }
 
 /**
- * The runs the pipeline is working on, and the ones it worked on recently.
+ * The runs the pipeline is working on, across every readable workspace.
  *
- * There is no polling timer. An idle page used to re-request both endpoints
- * every ten seconds forever, which is a request per user per ten seconds for
- * data that usually has not changed. This fetches once, and again only when
+ * There is no polling timer. An idle page used to re-request the feed every
+ * ten seconds forever, which is a request per user per ten seconds for data
+ * that usually has not changed. This fetches once, and again only when
  * someone asks for it.
  */
 export function useProcessingRuns(
   token: string,
   onUnauthorized: () => void,
 ): ProcessingRuns {
-  const runs = useApiResource(
-    async (signal) => {
-      const [active, recent] = await Promise.all([
-        api.getActiveProcessingRun(token, signal),
-        api.listRecentProcessingRuns(token, signal),
-      ])
-      return { activeRun: active.item, recentRuns: recent.items }
-    },
+  const resource = useApiResource(
+    (signal) => api.listProcessingActivity(token, signal),
     [token],
     { onUnauthorized },
   )
 
   return {
-    activeRun: runs.data?.activeRun ?? null,
-    recentRuns: runs.data?.recentRuns ?? [],
-    loading: runs.loading,
-    error: runs.error,
-    reload: runs.reload,
+    runs: resource.data?.items ?? [],
+    loading: resource.loading,
+    error: resource.error,
+    reload: resource.reload,
   }
 }

@@ -6,11 +6,21 @@ import { Panel, PanelHeader } from './ui/Panel'
 interface UploadContextProps {
   token: string
   workspaces: Workspace[]
+  selectedWorkspaceId?: string | null
   onUnauthorized: () => void
 }
 
-export function UploadContext({ token, workspaces, onUnauthorized }: UploadContextProps) {
+export function UploadContext({
+  token,
+  workspaces,
+  selectedWorkspaceId,
+  onUnauthorized,
+}: UploadContextProps) {
   const availableWorkspaces = workspaces.filter((workspace) => workspace.can_upload)
+  const followsSidebar =
+    selectedWorkspaceId !== null &&
+    selectedWorkspaceId !== undefined &&
+    availableWorkspaces.some((workspace) => workspace.id === selectedWorkspaceId)
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
@@ -48,6 +58,7 @@ export function UploadContext({ token, workspaces, onUnauthorized }: UploadConte
               <UploadForm
                 token={token}
                 workspaces={workspaces}
+                initialWorkspaceId={followsSidebar ? selectedWorkspaceId : undefined}
                 onUnauthorized={onUnauthorized}
               />
             </div>

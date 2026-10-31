@@ -78,6 +78,49 @@ export function documentStatusLabel(status: string): string {
   return DOCUMENT_STATUS_LABELS[status] ?? status.replaceAll('_', ' ')
 }
 
+const RUN_STATUS_LABELS: Record<string, string> = {
+  fetching: 'Fetching',
+  describing: 'Describing',
+  storing_artifact: 'Storing',
+  chunking: 'Chunking',
+  syncing: 'Syncing',
+  retry_wait: 'Retry wait',
+}
+
+export function runStatusLabel(status: string): string {
+  return RUN_STATUS_LABELS[status] ?? documentStatusLabel(status)
+}
+
+export type PipelineStage = 'scan' | 'extract' | 'chunk' | 'embed' | 'index'
+
+export function pipelineStage(status: string): PipelineStage {
+  if (status === 'fetching') return 'scan'
+  if (status === 'extracting' || status === 'describing' || status === 'storing_artifact') {
+    return 'extract'
+  }
+  if (status === 'chunking') return 'chunk'
+  if (status === 'embedding') return 'embed'
+  return 'index'
+}
+
+export function formatClock(value: string): string {
+  return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+export function formatDuration(
+  startedAt: string | null,
+  completedAt: string | null,
+): string | null {
+  if (startedAt === null || completedAt === null) return null
+  const seconds = Math.max(
+    0,
+    Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000),
+  )
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`
+}
+
 export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 
 export function documentStatusTone(status: string): StatusTone {
@@ -85,19 +128,31 @@ export function documentStatusTone(status: string): StatusTone {
   if (status === 'failed' || status === 'cancelled' || status === 'unsupported_format') {
     return 'danger'
   }
-  if (status === 'deleting') return 'warning'
-  if (status === 'queued' || status === 'extracting' || status === 'embedding' || status === 'processing') {
+  if (status === 'deleting' || status === 'retry_wait') return 'warning'
+  if (
+    [
+      'queued',
+      'fetching',
+      'extracting',
+      'describing',
+      'storing_artifact',
+      'chunking',
+      'embedding',
+      'syncing',
+      'processing',
+    ].includes(status)
+  ) {
     return 'info'
   }
   return 'neutral'
 }
 
 export const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
-  success: 'border-success/20 bg-success-soft text-success',
-  warning: 'border-warn/20 bg-warn-soft text-warn',
-  danger: 'border-danger/20 bg-danger-soft text-danger',
-  info: 'border-blue/20 bg-blue-soft text-blue',
-  neutral: 'border-line-strong bg-sunken text-ink-muted',
+  success: 'bg-success-soft text-success',
+  warning: 'bg-warn-soft text-warn',
+  danger: 'bg-danger-soft text-danger',
+  info: 'bg-accent-soft text-accent-ink',
+  neutral: 'bg-sunken text-ink-muted',
 }
 
 export function formatBytes(size: number): string {

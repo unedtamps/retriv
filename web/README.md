@@ -8,7 +8,7 @@ owner or editor.
 ## Requirements
 
 - Node.js `^20.19.0` or `>=22.12.0`
-- The Retriv API running on `http://127.0.0.1:8000`
+- The Retriv API running on `http://127.0.0.1:9000`
 - An admin user provisioned in the Retriv database
 
 ## Local Development
@@ -21,11 +21,11 @@ npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173/dashboard`. The API must allow that exact origin. The default backend
+Open `http://127.0.0.1:9500/dashboard`. The API must allow that exact origin. The default backend
 example configuration already contains:
 
 ```dotenv
-APP_CORS_ALLOWED_ORIGINS='["http://127.0.0.1:5173","http://localhost:5173"]'
+APP_CORS_ALLOWED_ORIGINS='["http://127.0.0.1:9500","http://localhost:9500"]'
 ```
 
 ## Production API

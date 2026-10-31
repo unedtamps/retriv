@@ -4,7 +4,7 @@ from uuid import UUID
 
 from anyio import to_thread
 from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,15 +16,17 @@ from app.api.schemas import (
     AdminUserListItemResponse,
     AdminUserListResponse,
     AdminUserResponse,
+    AdminWorkspaceListResponse,
+    AdminWorkspaceResponse,
     WorkspaceCreateRequest,
     WorkspaceMemberListResponse,
     WorkspaceMemberResponse,
     WorkspaceResponse,
 )
 from app.core.errors import AppError
-from app.db.models import User, Workspace, WorkspaceMembership
+from app.db.models import Document, DocumentWorkspace, User, Workspace, WorkspaceMembership
 from app.db.session import get_session
-from app.routes.workspaces import member_response
+from app.routes.workspaces import admin_membership_error, member_response
 from app.security.auth import hash_password
 
 router = APIRouter(prefix="/v1/admin", tags=["administration"])
@@ -123,6 +125,97 @@ async def reset_user_password(
     return AdminPasswordResponse(user_id=user.id, initial_password=initial_password)
 
 
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: UUID,
+    admin: PlatformAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    if user_id == admin.id:
+        raise self_delete_error()
+    user = await session.get(User, user_id)
+    if user is None:
+        raise user_not_found_error()
+
+    await session.execute(
+        update(WorkspaceMembership)
+        .where(WorkspaceMembership.granted_by_user_id == user_id)
+        .values(granted_by_user_id=admin.id)
+    )
+    await session.execute(
+        update(Document)
+        .where(Document.created_by_user_id == user_id)
+        .values(created_by_user_id=None)
+    )
+    await session.execute(
+        update(DocumentWorkspace)
+        .where(DocumentWorkspace.created_by_user_id == user_id)
+        .values(created_by_user_id=None)
+    )
+    await session.delete(user)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/workspaces", response_model=AdminWorkspaceListResponse)
+async def list_admin_workspaces(
+    _admin: PlatformAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+) -> AdminWorkspaceListResponse:
+    total = await session.scalar(select(func.count()).select_from(Workspace))
+    member_count = (
+        select(func.count())
+        .select_from(WorkspaceMembership)
+        .where(WorkspaceMembership.workspace_id == Workspace.id)
+        .correlate(Workspace)
+        .scalar_subquery()
+    )
+    workspaces = (
+        await session.execute(
+            select(Workspace, member_count)
+            .order_by(Workspace.name, Workspace.id)
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    workspace_ids = [workspace.id for workspace, _ in workspaces]
+    membership_rows = (
+        await session.execute(
+            select(WorkspaceMembership, User)
+            .join(User, User.id == WorkspaceMembership.user_id)
+            .where(WorkspaceMembership.workspace_id.in_(workspace_ids))
+            .order_by(User.username, User.id)
+        )
+        if workspace_ids
+        else []
+    )
+    members_by_workspace: dict[UUID, list[WorkspaceMemberResponse]] = {}
+    for membership, user in membership_rows:
+        members_by_workspace.setdefault(membership.workspace_id, []).append(
+            member_response(membership, user)
+        )
+
+    return AdminWorkspaceListResponse(
+        items=[
+            AdminWorkspaceResponse(
+                id=workspace.id,
+                slug=workspace.slug,
+                name=workspace.name,
+                description=workspace.description,
+                created_at=workspace.created_at,
+                member_count=member_count or 0,
+                members=members_by_workspace.get(workspace.id, []),
+            )
+            for workspace, member_count in workspaces
+        ],
+        total=total or 0,
+        offset=offset,
+        limit=limit,
+    )
+
+
 @router.post("/workspaces", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED)
 async def create_workspace(
     payload: WorkspaceCreateRequest,
@@ -132,6 +225,8 @@ async def create_workspace(
     owner = await session.get(User, payload.owner_user_id)
     if owner is None or not owner.is_active:
         raise user_not_found_error()
+    if owner.role == "admin":
+        raise admin_membership_error()
 
     workspace = Workspace(
         slug=payload.slug,
@@ -209,6 +304,8 @@ async def set_member_role(
     user = await session.get(User, user_id)
     if user is None or not user.is_active:
         raise user_not_found_error()
+    if user.role == "admin":
+        raise admin_membership_error()
 
     membership = await session.scalar(
         select(WorkspaceMembership).where(
@@ -317,6 +414,15 @@ def workspace_conflict_error() -> AppError:
         code="workspace_slug_already_exists",
         title="Workspace slug already exists",
         detail="A workspace with the supplied slug already exists.",
+    )
+
+
+def self_delete_error() -> AppError:
+    return AppError(
+        status_code=409,
+        code="self_delete_restricted",
+        title="Self deletion restricted",
+        detail="A signed-in administrator cannot delete their own account.",
     )
 
 

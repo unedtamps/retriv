@@ -46,8 +46,14 @@ export function UploadForm({
   const fileInput = useRef<HTMLInputElement>(null)
   const uploadController = useRef<AbortController | null>(null)
   const uploadInProgress = useRef(false)
+  const [followedWorkspaceId, setFollowedWorkspaceId] = useState(initialWorkspaceId)
 
   useEffect(() => () => uploadController.current?.abort(), [])
+
+  if (initialWorkspaceId !== followedWorkspaceId) {
+    setFollowedWorkspaceId(initialWorkspaceId)
+    if (!lockWorkspace && initialWorkspaceId !== undefined) setWorkspaceId(initialWorkspaceId)
+  }
 
   const selectedWorkspace = availableWorkspaces.find((workspace) => workspace.id === workspaceId)
 
@@ -192,11 +198,15 @@ export function UploadForm({
             onDragLeave={() => setDragging(false)}
             onDrop={dropFile}
           >
-            <UploadCloud aria-hidden="true" className="text-ink-faint" size={25} strokeWidth={1.7} />
+            <UploadCloud aria-hidden="true" className="text-ink-faint" size={22} strokeWidth={1.7} />
             <p className="mt-2 text-sm font-medium text-ink">
               Drop a file here, or <span className="underline decoration-line-strong underline-offset-2">browse</span>
             </p>
-            <p className="mt-1 font-mono text-meta text-ink-faint">PDF · DOCX · CSV</p>
+            <div className="mt-2 flex gap-1.5">
+              <span className="stamp">PDF</span>
+              <span className="stamp">DOCX</span>
+              <span className="stamp">CSV</span>
+            </div>
             <input
               id={fileFieldId}
               ref={fileInput}
@@ -214,8 +224,8 @@ export function UploadForm({
             count, total and group its lines but not search their wording.
           </p>
           {file === null ? null : (
-            <div className="mt-3 flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-2.5 text-sm">
-              <FileText aria-hidden="true" className="shrink-0 text-blue" size={18} />
+            <div className="mt-3 flex items-center gap-3 rounded-control border border-line bg-surface px-3.5 py-2.5 text-sm">
+              <FileText aria-hidden="true" className="shrink-0 text-ink-muted" size={18} />
               <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
               <span className="shrink-0 font-mono text-meta text-ink-muted">
                 {formatBytes(file.size)}
@@ -223,6 +233,29 @@ export function UploadForm({
             </div>
           )}
         </div>
+
+        <section aria-label="What happens next">
+          <p className="label">What happens next</p>
+          <ol className="space-y-3">
+            {[
+              ['01', 'Scan', 'ClamAV checks the file before anything is stored.'],
+              ['02', 'Extract & chunk', 'The extractor reads pages, tables and pictures.'],
+              ['03', 'Embed & index', 'The text becomes searchable in the workspace.'],
+            ].map(([step, title, description]) => (
+              <li key={step} className="flex items-start gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-control bg-sunken font-mono text-[0.625rem] leading-none text-ink-muted">
+                  {step}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[0.8125rem] font-medium text-ink">{title}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-ink-muted">
+                    {description}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
 
         {error === null ? null : (
           <p className="error-note" role="alert">

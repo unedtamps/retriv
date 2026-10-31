@@ -35,6 +35,7 @@ class WorkspaceResponse(BaseModel):
     can_search_context: bool = False
     can_manage_members: bool = False
     can_delete: bool = False
+    member_count: int = 0
 
 
 class WorkspaceListResponse(BaseModel):
@@ -139,6 +140,23 @@ class WorkspaceMemberListResponse(BaseModel):
     items: list[WorkspaceMemberResponse]
 
 
+class AdminWorkspaceResponse(BaseModel):
+    id: UUID
+    slug: str
+    name: str
+    description: str | None
+    created_at: datetime
+    member_count: int
+    members: list[WorkspaceMemberResponse] = []
+
+
+class AdminWorkspaceListResponse(BaseModel):
+    items: list[AdminWorkspaceResponse]
+    total: int
+    offset: int
+    limit: int
+
+
 class WorkspaceMemberCandidateResponse(BaseModel):
     id: UUID
     username: str
@@ -187,14 +205,9 @@ class ProcessingRunSummary(BaseModel):
     completed_at: datetime | None
 
 
-class ActiveProcessingRunResponse(BaseModel):
-    item: ProcessingRunSummary | None
-
-
-class ProcessingRunListResponse(BaseModel):
+class ProcessingActivityResponse(BaseModel):
     items: list[ProcessingRunSummary]
     total: int
-    since: datetime
 
 
 class ApiKeyCreateRequest(BaseModel):

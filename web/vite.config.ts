@@ -6,10 +6,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     host: "127.0.0.1",
-    port: 5173,
+    port: 9500,
     proxy: {
       "/v1": {
-        target: "http://127.0.0.1:8000",
+        target: "http://127.0.0.1:9000",
         changeOrigin: true,
       },
     },

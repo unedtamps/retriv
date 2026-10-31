@@ -3,7 +3,7 @@ import { Building2 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import type { AdminUser, Workspace } from '../types'
 import { Dialog, DialogActions } from './Dialog'
-import { SearchField } from './ui/SearchField'
+import { UserSearchRoster } from './ui/UserSearchRoster'
 
 interface CreateWorkspaceDialogProps {
   open: boolean
@@ -25,42 +25,38 @@ export function CreateWorkspaceDialog({
   const [slugEdited, setSlugEdited] = useState(false)
   const [description, setDescription] = useState('')
   const [ownerId, setOwnerId] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
-  const [userSearch, setUserSearch] = useState('')
-  const [loadingUsers, setLoadingUsers] = useState(true)
+  const [total, setTotal] = useState(0)
   const [status, setStatus] = useState<'idle' | 'submitting'>('idle')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
     const controller = new AbortController()
     api
-      .listAdminUsers(token, { signal: controller.signal })
+      .listAdminUsers(token, { search: debouncedSearch, signal: controller.signal })
       .then((result) => {
-        setUsers(result.items.filter((user) => user.is_active))
-        setLoadingUsers(false)
+        setUsers(result.items.filter((user) => user.is_active && user.role !== 'admin'))
+        setTotal(result.total)
+        setLoadedQuery(debouncedSearch)
       })
       .catch((caught: unknown) => {
         if (caught instanceof Error && caught.name === 'AbortError') return
+        setLoadedQuery(debouncedSearch)
         if (isUnauthorized(caught)) onUnauthorized()
         else setError(getErrorMessage(caught))
-        setLoadingUsers(false)
       })
     return () => controller.abort()
-  }, [open, token, onUnauthorized])
+  }, [debouncedSearch, token, onUnauthorized])
 
-  async function searchUsers() {
-    setLoadingUsers(true)
-    try {
-      const result = await api.listAdminUsers(token, { search: userSearch })
-      setUsers(result.items.filter((user) => user.is_active))
-    } catch (caught) {
-      if (isUnauthorized(caught)) onUnauthorized()
-      else setError(getErrorMessage(caught))
-    } finally {
-      setLoadingUsers(false)
-    }
-  }
+  const searching = loadedQuery !== debouncedSearch
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -78,6 +74,7 @@ export function CreateWorkspaceDialog({
       setSlugEdited(false)
       setDescription('')
       setOwnerId('')
+      setSearch('')
       setStatus('idle')
       onCreated(workspace)
     } catch (caught) {
@@ -155,41 +152,21 @@ export function CreateWorkspaceDialog({
           </div>
           <div>
             <div className="mb-2 flex items-end justify-between gap-4">
-              <label className="label mb-0" htmlFor="workspace-owner">
-                Initial owner
-              </label>
-              <span className="text-xs text-ink-faint">Active users only</span>
+              <p className="label mb-0">Initial owner</p>
+              <span className="text-xs text-ink-faint">Active non-admin users</span>
             </div>
-            <div className="mb-2 flex gap-2" role="search">
-              <SearchField
-                id="workspace-owner-search"
-                label="Search owner candidates"
-                value={userSearch}
-                onChange={setUserSearch}
-                placeholder="Filter users"
-                className="min-w-0 flex-1"
-              />
-              <button type="button" className="btn btn-secondary" onClick={searchUsers}>
-                Search
-              </button>
-            </div>
-            <select
-              id="workspace-owner"
-              className="field"
-              value={ownerId}
-              required
-              disabled={loadingUsers}
-              onChange={(event) => setOwnerId(event.target.value)}
-            >
-              <option value="">
-                {loadingUsers ? 'Loading users…' : 'Select an owner'}
-              </option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.username} · {user.role}
-                </option>
-              ))}
-            </select>
+            <UserSearchRoster
+              id="workspace-owner-search"
+              label="Search platform users"
+              search={search}
+              onSearchChange={setSearch}
+              candidates={users}
+              searching={searching}
+              selectedId={ownerId}
+              onSelect={setOwnerId}
+              emptyMessage="No matching active user."
+              total={total}
+            />
           </div>
           {error === null ? null : (
             <p className="error-note" role="alert">

@@ -33,8 +33,15 @@ async def list_workspaces(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> WorkspaceListResponse:
     total = await session.scalar(select(func.count()).select_from(Workspace))
+    member_count = (
+        select(func.count())
+        .select_from(WorkspaceMembership)
+        .where(WorkspaceMembership.workspace_id == Workspace.id)
+        .correlate(Workspace)
+        .scalar_subquery()
+    )
     result = await session.execute(
-        select(Workspace, WorkspaceMembership)
+        select(Workspace, WorkspaceMembership, member_count)
         .outerjoin(
             WorkspaceMembership,
             and_(
@@ -47,7 +54,10 @@ async def list_workspaces(
         .limit(limit)
     )
     return WorkspaceListResponse(
-        items=[workspace_response(workspace, membership) for workspace, membership in result.all()],
+        items=[
+            workspace_response(workspace, membership, member_count or 0)
+            for workspace, membership, member_count in result.all()
+        ],
         total=total or 0,
         offset=offset,
         limit=limit,
@@ -81,6 +91,7 @@ async def list_workspace_member_candidates(
         select(User)
         .where(
             User.is_active.is_(True),
+            User.role != "admin",
             User.username.contains(normalized_search, autoescape=True),
             User.id.not_in(existing_members),
         )
@@ -133,6 +144,8 @@ async def upsert_workspace_member(
     user = await session.get(User, user_id)
     if user is None or not user.is_active:
         raise member_user_not_found_error()
+    if user.role == "admin":
+        raise admin_membership_error()
 
     membership = await session.scalar(
         select(WorkspaceMembership).where(
@@ -189,7 +202,9 @@ async def remove_workspace_member(
 
 
 def workspace_response(
-    workspace: Workspace, membership: WorkspaceMembership | None
+    workspace: Workspace,
+    membership: WorkspaceMembership | None,
+    member_count: int = 0,
 ) -> WorkspaceResponse:
     role = cast(WorkspaceRole, membership.role) if membership is not None else None
     permissions = ROLE_PERMISSIONS.get(role or "", frozenset())
@@ -205,6 +220,7 @@ def workspace_response(
         can_search_context="search_context" in permissions,
         can_manage_members="manage_members" in permissions,
         can_delete="delete" in permissions,
+        member_count=member_count,
     )
 
 
@@ -243,4 +259,13 @@ def owner_assignment_error() -> AppError:
         code="owner_assignment_restricted",
         title="Owner assignment restricted",
         detail="Only a platform administrator can assign or remove workspace owners.",
+    )
+
+
+def admin_membership_error() -> AppError:
+    return AppError(
+        status_code=409,
+        code="admin_membership_restricted",
+        title="Admins hold no workspace membership",
+        detail="Platform administrators cannot become workspace members, including as owners.",
     )

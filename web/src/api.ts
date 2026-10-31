@@ -1,6 +1,7 @@
 import type {
   AdminUserList,
-  ActiveProcessingRun,
+  AdminWorkspaceList,
+  ProcessingActivity,
   ApiKeyList,
   CreatedApiKey,
   CreatedUser,
@@ -9,7 +10,6 @@ import type {
   DocumentUpload,
   GeneratedPassword,
   MemberCandidateList,
-  ProcessingRunList,
   ProblemDetail,
   SessionToken,
   Workspace,
@@ -116,6 +116,17 @@ export const api = {
     })
   },
 
+  listAdminWorkspaces(token: string, options: PageOptions = {}): Promise<AdminWorkspaceList> {
+    const params = new URLSearchParams({
+      offset: String(options.offset ?? 0),
+      limit: String(options.limit ?? 100),
+    })
+    return request<AdminWorkspaceList>(`/v1/admin/workspaces?${params}`, {
+      token,
+      signal: options.signal,
+    })
+  },
+
   uploadDocument(
     token: string,
     workspaceId: string,
@@ -158,12 +169,8 @@ export const api = {
     )
   },
 
-  getActiveProcessingRun(token: string, signal?: AbortSignal): Promise<ActiveProcessingRun> {
-    return request<ActiveProcessingRun>('/v1/processing-runs/active', { token, signal })
-  },
-
-  listRecentProcessingRuns(token: string, signal?: AbortSignal): Promise<ProcessingRunList> {
-    return request<ProcessingRunList>('/v1/processing-runs/recent', { token, signal })
+  listProcessingActivity(token: string, signal?: AbortSignal): Promise<ProcessingActivity> {
+    return request<ProcessingActivity>('/v1/processing-runs', { token, signal })
   },
 
   listAdminUsers(token: string, options: UserPageOptions = {}): Promise<AdminUserList> {
@@ -189,6 +196,13 @@ export const api = {
       `/v1/admin/users/${encodeURIComponent(userId)}/password`,
       { token, method: 'POST' },
     )
+  },
+
+  deleteAdminUser(token: string, userId: string): Promise<void> {
+    return request<void>(`/v1/admin/users/${encodeURIComponent(userId)}`, {
+      token,
+      method: 'DELETE',
+    })
   },
 
   createWorkspace(

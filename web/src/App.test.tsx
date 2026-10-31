@@ -26,6 +26,7 @@ const workspace: Workspace = {
   description: 'Product planning and release research.',
   created_at: '2026-09-23T08:00:00Z',
   membership_role: 'owner' as const,
+  member_count: 3,
   can_upload: true,
   can_search_context: true,
   can_manage_members: true,
@@ -43,8 +44,9 @@ function installApi(
   user: CurrentUser = admin,
   workspaces: Workspace[] = [workspace],
   uploadResponse?: Response,
-  processingResponses: { active?: unknown; recent?: unknown } = {},
+  processingResponses: { runs?: unknown } = {},
   documents: { list?: unknown; deleted?: string[] } = {},
+  members: { list?: unknown } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -55,6 +57,41 @@ function installApi(
     if (url === '/v1/auth/me') return json(user)
     if (url.startsWith('/v1/workspaces?')) {
       return json({ items: workspaces, total: workspaces.length, offset: 0, limit: 100 })
+    }
+    if (url === '/v1/api-keys') {
+      return json({ items: [], total: 0, offset: 0, limit: 50 })
+    }
+    if (url.startsWith('/v1/admin/workspaces?') || url === '/v1/admin/workspaces') {
+      if (init?.method === 'POST') throw new Error(`Unexpected request: ${url}`)
+      return json({
+        items: workspaces.map((workspace) => ({
+          ...workspace,
+          members: [
+            {
+              user_id: 'member-1',
+              username: 'workspace-owner',
+              role: 'owner' as const,
+              granted_by_user_id: user.id,
+              created_at: '2026-09-23T08:00:00Z',
+              updated_at: '2026-09-23T08:00:00Z',
+            },
+          ],
+        })),
+        total: workspaces.length,
+        offset: 0,
+        limit: 100,
+      })
+    }
+    const adminMemberPut = url.match(/^\/v1\/admin\/workspaces\/[^/]+\/members\/([^/]+)$/)
+    if (adminMemberPut !== null && init?.method === 'PUT') {
+      return json({
+        user_id: adminMemberPut[1],
+        username: 'workspace-owner',
+        role: 'viewer',
+        granted_by_user_id: user.id,
+        created_at: '2026-09-23T08:00:00Z',
+        updated_at: '2026-09-23T08:00:00Z',
+      })
     }
     const documentList = url.match(/^\/v1\/workspaces\/[^/]+\/documents(\?|$)/)
     if (documentList !== null && (init?.method === undefined || init.method === 'GET')) {
@@ -69,15 +106,8 @@ function installApi(
       }
       return new Response(null, { status: 204 })
     }
-    if (url === '/v1/processing-runs/active') {
-      return json(processingResponses.active ?? { item: null })
-    }
-    if (url === '/v1/processing-runs/recent') {
-      return json(processingResponses.recent ?? {
-        items: [],
-        total: 0,
-        since: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-      })
+    if (url === '/v1/processing-runs') {
+      return json(processingResponses.runs ?? { items: [], total: 0 })
     }
     if (url === '/v1/workspaces/workspace-1/documents' && init?.method === 'POST') {
       return uploadResponse ?? json({
@@ -93,8 +123,43 @@ function installApi(
         duplicate: false,
       }, 201)
     }
-    if (url === '/v1/workspaces/workspace-1/members') return json({ items: [] })
-    if (url.startsWith('/v1/admin/users')) return json({ items: [], total: 0, offset: 0, limit: 50 })
+    const ownerMemberPut = url.match(/^\/v1\/workspaces\/[^/]+\/members\/([^/]+)$/)
+    if (ownerMemberPut !== null && init?.method === 'PUT') {
+      return json({
+        user_id: ownerMemberPut[1],
+        username: 'nada',
+        role: 'editor',
+        granted_by_user_id: user.id,
+        created_at: '2026-09-23T08:00:00Z',
+        updated_at: '2026-09-23T09:00:00Z',
+      })
+    }
+    if (url === '/v1/workspaces/workspace-1/members') {
+      return json(members.list ?? { items: [] })
+    }
+    if (url.startsWith('/v1/admin/users')) {
+      return json({
+        items: [
+          {
+            id: 'user-second',
+            username: 'workspace-owner',
+            role: 'user',
+            is_active: true,
+            created_at: '2026-09-23T08:00:00Z',
+          },
+          {
+            id: 'user-admin-entry',
+            username: 'root',
+            role: 'admin',
+            is_active: true,
+            created_at: '2026-09-23T08:00:00Z',
+          },
+        ],
+        total: 2,
+        offset: 0,
+        limit: 50,
+      })
+    }
     throw new Error(`Unexpected request: ${url}`)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -185,10 +250,301 @@ describe('dashboard application', () => {
     expect(screen.queryByRole('button', { name: 'New workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Users' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open Shared reference workspace' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Company catalog workspace' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show catalogued workspaces' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Close navigation drawer' }))
     await user.click(screen.getByRole('button', { name: 'Manage access' }))
     expect(await screen.findByRole('heading', { name: 'Workspace members' })).toBeInTheDocument()
+  })
+
+  it('expands catalogued workspaces inline without granting access', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    installApi(owner, [
+      workspace,
+      {
+        ...workspace,
+        id: 'workspace-3',
+        slug: 'company-catalog',
+        name: 'Company catalog',
+        membership_role: null,
+        member_count: 7,
+        can_upload: false,
+        can_search_context: false,
+        can_manage_members: false,
+        can_delete: false,
+      },
+    ])
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+
+    const expander = screen.getByRole('button', { name: 'Show catalogued workspaces' })
+    expect(expander).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
+
+    await user.click(expander)
+    expect(screen.getByRole('button', { name: 'Collapse catalogued workspaces' })).toHaveAttribute('aria-expanded', 'true')
+    const catalogRow = screen.getByRole('button', { name: 'Open Company catalog workspace' })
+    expect(within(catalogRow).getByText('Company catalog')).toBeInTheDocument()
+
+    await user.click(catalogRow)
+    expect(await screen.findByRole('heading', { name: 'Company catalog', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Documents are members-only')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: 'Collapse catalogued workspaces' }))
+    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
+  })
+
+  it('gives an admin without memberships a platform overview instead of workspace navigation', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('admin-token')
+    const fetchMock = installApi(admin, [
+      {
+        ...workspace,
+        membership_role: null,
+        can_upload: false,
+        can_search_context: false,
+        can_manage_members: false,
+        can_delete: false,
+      },
+    ])
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Workspaces', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    expect(screen.queryByRole('button', { name: 'Overview' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Documents' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Upload context' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Current workspace')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'API keys' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New workspace' })).toBeInTheDocument()
+
+    const platformSection = screen.getByRole('region', { name: 'All workspaces' })
+    expect(within(platformSection).getAllByText('Launch notes').length).toBeGreaterThanOrEqual(1)
+
+    await user.click(
+      within(platformSection).getByRole('button', { name: 'View members of Launch notes' }),
+    )
+    const register = screen.getByRole('dialog', { name: 'Workspace members' })
+    expect(within(register).getByText('workspace-owner')).toBeInTheDocument()
+    expect(within(register).getByText('owner')).toBeInTheDocument()
+    await user.click(within(register).getByRole('button', { name: 'Close Workspace members' }))
+    expect(screen.queryByRole('dialog', { name: 'Workspace members' })).not.toBeInTheDocument()
+
+    await user.click(
+      within(platformSection).getByRole('button', { name: 'Add a member to Launch notes' }),
+    )
+    const grant = screen.getByRole('dialog', { name: 'Add a member' })
+    expect(await within(grant).findByRole('button', { name: /workspace-owner/ })).toBeInTheDocument()
+    expect(within(grant).queryByRole('button', { name: /root/ })).not.toBeInTheDocument()
+    expect(within(grant).getByText('1 of 2 users')).toBeInTheDocument()
+    await user.click(within(grant).getByRole('button', { name: /workspace-owner/ }))
+    expect(within(grant).getByRole('radio', { name: /^viewer$/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    await user.click(within(grant).getByRole('radio', { name: /^viewer$/i }))
+    expect(within(grant).getByRole('radio', { name: /^viewer$/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(within(grant).getByText('workspace-owner → viewer')).toBeInTheDocument()
+    await user.click(within(grant).getByRole('button', { name: 'Add member' }))
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input) === '/v1/admin/workspaces/workspace-1/members/user-second' &&
+          init?.method === 'PUT',
+      ),
+    ).toBe(true)
+    expect(
+      await screen.findByText('workspace-owner added to Launch notes as viewer.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Add a member' })).not.toBeInTheDocument()
+
+    expect(screen.queryByRole('button', { name: 'Show catalogued workspaces' })).not.toBeInTheDocument()
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(navigation).getByText('Launch notes')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Users' }))
+    expect(await screen.findByRole('heading', { name: 'Users', level: 1 })).toBeInTheDocument()
+    const directoryTable = screen.getByRole('table', { name: 'User directory' })
+    await user.click(
+      within(directoryTable).getByRole('button', { name: 'More actions for workspace-owner' }),
+    )
+    const menu = screen.getByRole('menu', { name: 'Actions for workspace-owner' })
+    expect(within(menu).getByText('Reset password')).toBeInTheDocument()
+    expect(within(menu).getByText('Delete user')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu', { name: 'Actions for workspace-owner' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(screen.getByRole('button', { name: 'All workspaces' }))
+    expect(await screen.findByRole('heading', { name: 'Workspaces', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    expect(screen.getByRole('button', { name: 'All workspaces' })).toHaveClass('nav-link-active')
+  })
+
+  it('restores the users view for an admin refreshing the dashboard', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=users')
+    writeSessionToken('admin-token')
+    installApi(admin, [
+      {
+        ...workspace,
+        membership_role: null,
+        can_upload: false,
+        can_search_context: false,
+        can_manage_members: false,
+        can_delete: false,
+      },
+    ])
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Users', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(navigation).getByRole('button', { name: 'Users' })).toHaveClass('nav-link-active')
+    expect(window.location.search).toContain('view=users')
+  })
+
+  it('restores the documents view and workspace for a member refreshing the dashboard', async () => {
+    window.history.replaceState(null, '', `/dashboard?view=documents&ws=${workspace.id}`)
+    writeSessionToken('member-token')
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(navigation).getByRole('button', { name: 'Documents' })).toHaveClass('nav-link-active')
+    expect(window.location.search).toContain('view=documents')
+    expect(window.location.search).toContain(`ws=${workspace.id}`)
+  })
+
+  it('keeps the documents view when switching workspaces', async () => {
+    window.history.replaceState(null, '', `/dashboard?view=documents&ws=${workspace.id}`)
+    writeSessionToken('member-token')
+    installApi(owner, [
+      workspace,
+      {
+        ...workspace,
+        id: 'workspace-2',
+        name: 'Read only',
+        membership_role: 'viewer',
+        can_upload: false,
+      },
+    ])
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
+        name: 'Open Read only workspace',
+      }),
+    )
+    expect(await screen.findByRole('heading', { name: 'Read only', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(navigation).getByRole('button', { name: 'Documents' })).toHaveClass('nav-link-active')
+    expect(window.location.search).toContain('ws=workspace-2')
+  })
+
+  it('stays on the upload page and follows the picked workspace', async () => {
+    window.history.replaceState(null, '', '/upload-context')
+    writeSessionToken('member-token')
+    installApi(owner, [
+      workspace,
+      {
+        ...workspace,
+        id: 'workspace-2',
+        name: 'Second space',
+        membership_role: 'editor',
+      },
+    ])
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
+        name: 'Open Second space workspace',
+      }),
+    )
+    expect(screen.getByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Workspace' })).toHaveValue('workspace-2')
+    expect(window.location.pathname).toBe('/upload-context')
+  })
+
+  it('changes a member role through the edit dialog with an explicit save', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    const fetchMock = installApi(owner, [workspace], undefined, {}, {}, {
+      list: {
+        items: [
+          {
+            user_id: 'member-9',
+            username: 'nada',
+            role: 'viewer',
+            granted_by_user_id: owner.id,
+            created_at: '2026-09-23T08:00:00Z',
+            updated_at: '2026-09-23T08:00:00Z',
+          },
+        ],
+      },
+    })
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Manage access' }))
+    expect(await screen.findByText('nada')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Change access for nada' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'Change access for nada' }))
+    const dialog = screen.getByRole('dialog', { name: 'Change access' })
+    expect(within(dialog).getByRole('radio', { name: /^viewer$/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    await user.click(within(dialog).getByRole('radio', { name: /^editor$/i }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save access' }))
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input) === '/v1/workspaces/workspace-1/members/member-9' && init?.method === 'PUT',
+      ),
+    ).toBe(true)
+    expect(await screen.findByText('nada is now editor.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Change access' })).not.toBeInTheDocument()
+    const memberRow = screen.getByText('nada').closest('li')
+    if (memberRow === null) throw new Error('member row missing')
+    expect(within(memberRow as HTMLElement).getByText('editor')).toBeInTheDocument()
+  })
+
+  it('ignores an admin-only view in a deep link for a regular user', async () => {
+    window.history.replaceState(null, '', `/dashboard?view=users&ws=${workspace.id}`)
+    writeSessionToken('member-token')
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(navigation).queryByRole('button', { name: 'Users' })).not.toBeInTheDocument()
+    expect(window.location.search).toContain('view=overview')
   })
 
   it('clears an expired session and returns to sign in', async () => {
@@ -418,7 +774,7 @@ describe('dashboard application', () => {
     expect(window.location.pathname).toBe('/upload-context')
   })
 
-  it('shows the active process and recent workspace activity in notifications', async () => {
+  it('shows the in-flight processes in the notifications popover', async () => {
     window.history.replaceState(null, '', '/dashboard')
     writeSessionToken('member-token')
     const activeRun = {
@@ -435,22 +791,8 @@ describe('dashboard application', () => {
       started_at: '2026-09-24T08:00:01Z',
       completed_at: null,
     }
-    const completedRun = {
-      ...activeRun,
-      id: 'run-complete',
-      document_id: 'document-complete',
-      filename: 'finished-report.pdf',
-      status: 'ready',
-      embedded_chunk_count: 4,
-      completed_at: '2026-09-24T08:01:00Z',
-    }
     installApi(owner, [workspace], undefined, {
-      active: { item: activeRun },
-      recent: {
-        items: [activeRun, completedRun],
-        total: 2,
-        since: '2026-09-24T07:00:00Z',
-      },
+      runs: { items: [activeRun], total: 1 },
     })
     const user = userEvent.setup()
 
@@ -458,18 +800,17 @@ describe('dashboard application', () => {
 
     await screen.findByRole('heading', { name: 'Launch notes', level: 1 })
     const notificationButton = await screen.findByRole('button', {
-      name: 'Open processing notifications, 2 recent runs',
+      name: 'Open processing notifications, 1 active run',
     })
     await user.click(notificationButton)
 
-    const notifications = screen.getByRole('dialog', { name: 'Processing notifications' })
-    expect(notifications).toBeInTheDocument()
-    expect(within(notifications).getByText('Currently processing')).toBeInTheDocument()
-    expect(within(notifications).getByText('Recent activity')).toBeInTheDocument()
-    expect(screen.getByText('report-processing.pdf')).toBeInTheDocument()
-    expect(screen.getByText('finished-report.pdf')).toBeInTheDocument()
-    expect(screen.getByText('2/4 embeddings')).toBeInTheDocument()
-    expect(screen.getAllByText('report-processing.pdf')).toHaveLength(1)
+    const panel = screen.getByRole('dialog', { name: 'Processing activity' })
+    expect(within(panel).getByText('report-processing.pdf')).toBeInTheDocument()
+    expect(within(panel).getByText('2/4 embeddings')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Refresh processing activity' })).toBeEnabled()
+    expect(
+      within(panel).queryByText('No unfinished processes across your workspaces.'),
+    ).not.toBeInTheDocument()
   })
 
   it('stops requesting processing runs once loaded instead of polling', async () => {
@@ -478,10 +819,8 @@ describe('dashboard application', () => {
       window.history.replaceState(null, '', '/dashboard')
       writeSessionToken('member-token')
       const fetchMock = installApi(owner, [workspace])
-      const countProcessingRequests = () => fetchMock.mock.calls.filter(([input]) => {
-        const url = String(input)
-        return url === '/v1/processing-runs/active' || url === '/v1/processing-runs/recent'
-      }).length
+      const countProcessingRequests = () =>
+        fetchMock.mock.calls.filter(([input]) => String(input) === '/v1/processing-runs').length
 
       render(<App />)
 
@@ -507,21 +846,16 @@ describe('dashboard application', () => {
       document_id: 'document-first',
       filename: 'first-upload.pdf',
       job_kind: 'extract',
-      status: 'ready',
+      status: 'embedding',
       attempts: 1,
-      chunk_count: 2,
-      embedded_chunk_count: 2,
+      chunk_count: 0,
+      embedded_chunk_count: 0,
       created_at: '2026-09-24T08:00:00Z',
       started_at: '2026-09-24T08:00:01Z',
-      completed_at: '2026-09-24T08:00:30Z',
+      completed_at: null,
     }
     const processingResponses = {
-      active: { item: null },
-      recent: {
-        items: [firstRun],
-        total: 1,
-        since: '2026-09-24T07:00:00Z',
-      },
+      runs: { items: [firstRun], total: 1 },
     }
     installApi(owner, [workspace], undefined, processingResponses)
     const user = userEvent.setup()
@@ -529,11 +863,11 @@ describe('dashboard application', () => {
     render(<App />)
 
     await user.click(await screen.findByRole('button', {
-      name: 'Open processing notifications, 1 recent runs',
+      name: 'Open processing notifications, 1 active run',
     }))
-    expect(await screen.findByText('first-upload.pdf')).toBeInTheDocument()
+    expect((await screen.findAllByText('first-upload.pdf')).length).toBeGreaterThanOrEqual(1)
 
-    processingResponses.recent = {
+    processingResponses.runs = {
       items: [{
         ...firstRun,
         id: 'run-second',
@@ -541,12 +875,11 @@ describe('dashboard application', () => {
         filename: 'second-upload.pdf',
       }],
       total: 1,
-      since: '2026-09-24T07:00:00Z',
     }
 
     await user.click(screen.getByRole('button', { name: 'Refresh processing activity' }))
 
-    expect(await screen.findByText('second-upload.pdf')).toBeInTheDocument()
+    expect((await screen.findAllByText('second-upload.pdf')).length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText('first-upload.pdf')).not.toBeInTheDocument()
   })
 

@@ -3,25 +3,27 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Fira Code", ui-monospace, monospace;
+  --font-display: "Newsreader", ui-serif, Georgia, serif;
 
-  
-  --color-paper: #ffffff;
+
+  --color-paper: #edf1f6;
   --color-surface: #ffffff;
-  --color-sunken: #f4f6f8;
+  --color-sunken: #e3e8ef;
 
-  
-  --color-line: #e2e6ea;
-  --color-line-strong: #c6cdd4;
 
-  
+  --color-line: #dde3eb;
+  --color-line-strong: #bfc8d4;
+
+
   --color-ink: #15222e;
   --color-ink-muted: #4a5561;
-  --color-ink-faint: #8593a0;
+  --color-ink-faint: #78859a;
 
-  
+
   --color-accent: #1f3a5c;
-  --color-accent-soft: #eef2f6;
+  --color-accent-soft: #e9edf2;
   --color-accent-ink: #16304d;
+  --color-panel-dark: #101c27;
 
   
   --color-blue: #2f6aae;
@@ -50,7 +52,9 @@
   --text-meta: 0.75rem;
   --text-meta--line-height: 1.1rem;
 
-  --radius-card: 0.375rem;
+  --radius-stamp: 0.25rem;
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
   --shadow-card: 0 1px 2px rgb(21 34 46 / 0.06);
   --shadow-raised: 0 16px 40px rgb(21 34 46 / 0.16);
 }
@@ -107,7 +111,7 @@
   .btn-quiet,
   .btn-danger,
   .btn-icon {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 border text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-control border text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn {
@@ -139,7 +143,7 @@
   }
 
   .field {
-    @apply block w-full rounded-card border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-ink-faint focus:border-accent-ink focus:ring-1 focus:ring-accent-ink disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-faint;
+    @apply block w-full rounded-control border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-ink-faint focus:border-accent-ink focus:ring-1 focus:ring-accent-ink disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-faint;
   }
 
   .panel {
@@ -151,7 +155,7 @@
   }
 
   .table th {
-    @apply border-b border-line-strong bg-sunken px-5 py-2.5 font-mono text-eyebrow font-semibold uppercase tracking-eyebrow text-ink-muted;
+    @apply border-b border-line px-5 py-2.5 text-xs font-medium text-ink-muted;
   }
 
   .table td {
@@ -163,15 +167,19 @@
   }
 
   .eyebrow {
-    @apply font-mono text-eyebrow font-semibold uppercase tracking-eyebrow text-ink-faint;
+    @apply text-xs text-ink-faint;
+  }
+
+  .stamp {
+    @apply inline-flex items-center rounded-stamp bg-sunken px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase leading-4 tracking-[0.04em] text-ink-muted;
   }
 
   .nav-link {
-    @apply flex cursor-pointer items-center gap-3 rounded-[0.25rem] px-2.5 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
+    @apply flex cursor-pointer items-center gap-3 rounded-control px-2.5 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
   }
 
   .nav-link-active {
-    @apply border-l-2 border-accent bg-accent-soft pl-2 font-medium text-accent-ink;
+    @apply bg-accent-soft font-medium text-accent-ink;
   }
 
   .choice {
@@ -183,7 +191,7 @@
   }
 
   .badge {
-    @apply inline-flex items-center rounded-full border border-line-strong bg-sunken px-2 py-0.5 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-ink-muted;
+    @apply inline-flex items-center rounded-stamp bg-sunken px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase leading-4 tracking-[0.04em] text-ink-muted;
   }
 
   .error-note {
@@ -277,6 +285,36 @@
     bottom: 0.75rem;
     left: 0.75rem;
   }
+}
+
+@keyframes popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.popover-enter {
+  animation: popover-enter 200ms ease-out both;
+}
+
+@keyframes roster-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.roster-enter {
+  animation: roster-enter 180ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {

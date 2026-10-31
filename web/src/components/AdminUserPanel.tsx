@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
-import { Plus, RotateCcw, UserRound } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
+import { MoreVertical, Plus, RotateCcw, Trash2, UserRound } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import type { AdminUser, OneTimeCredential } from '../types'
 import { ConfirmDialog } from './Dialog'
@@ -12,6 +13,7 @@ import { useApiResource } from '../hooks/useApiResource'
 
 interface AdminUserPanelProps {
   token: string
+  currentUserId?: string
   onCredential: (credential: OneTimeCredential) => void
   onUnauthorized: () => void
   onNotice: (message: string, tone?: 'success' | 'error') => void
@@ -19,6 +21,7 @@ interface AdminUserPanelProps {
 
 export function AdminUserPanel({
   token,
+  currentUserId,
   onCredential,
   onUnauthorized,
   onNotice,
@@ -31,6 +34,10 @@ export function AdminUserPanel({
   const [createOpen, setCreateOpen] = useState(false)
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null)
   const [resetting, setResetting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [menu, setMenu] = useState<{ user: AdminUser; top: number; right: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const directory = useApiResource(
     (signal) => api.listAdminUsers(token, { search: appliedSearch, signal }),
@@ -62,6 +69,53 @@ export function AdminUserPanel({
       setResetting(false)
     }
   }
+
+  async function deleteUser() {
+    if (deleteTarget === null) return
+    setDeleting(true)
+    try {
+      await api.deleteAdminUser(token, deleteTarget.id)
+      setUsers((current) => current.filter((user) => user.id !== deleteTarget.id))
+      onNotice(`Deleted ${deleteTarget.username}.`)
+      setDeleteTarget(null)
+      directory.reload()
+    } catch (caught) {
+      if (isUnauthorized(caught)) onUnauthorized()
+      else onNotice(getErrorMessage(caught), 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  function toggleMenu(user: AdminUser, button: HTMLButtonElement) {
+    if (menu?.user.id === user.id) {
+      setMenu(null)
+      return
+    }
+    const rect = button.getBoundingClientRect()
+    setMenu({ user, top: rect.bottom + 6, right: window.innerWidth - rect.right })
+  }
+
+  useEffect(() => {
+    if (menu === null) return
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    function closeOnPointerDown(event: PointerEvent) {
+      const target = event.target as Element | null
+      if (target?.closest('[data-user-menu-anchor]')) return
+      if (menuRef.current?.contains(target)) return
+      setMenu(null)
+    }
+
+    window.addEventListener('keydown', closeOnEscape)
+    document.addEventListener('pointerdown', closeOnPointerDown)
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape)
+      document.removeEventListener('pointerdown', closeOnPointerDown)
+    }
+  }, [menu])
 
   async function loadMore() {
     setLoadingMore(true)
@@ -185,11 +239,14 @@ export function AdminUserPanel({
               render: (user) => (
                 <button
                   type="button"
-                  className="btn btn-quiet"
-                  onClick={() => setResetTarget(user)}
+                  data-user-menu-anchor={user.id}
+                  className="btn-icon h-8 w-8 border-transparent bg-transparent hover:border-line"
+                  aria-label={`More actions for ${user.username}`}
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.user.id === user.id}
+                  onClick={(event) => toggleMenu(user, event.currentTarget)}
                 >
-                  <RotateCcw aria-hidden="true" size={15} />
-                  Reset password
+                  <MoreVertical aria-hidden="true" size={16} />
                 </button>
               ),
             },
@@ -234,6 +291,55 @@ export function AdminUserPanel({
         onClose={() => setResetTarget(null)}
         onConfirm={resetPassword}
       />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete this user?"
+        description={`${deleteTarget?.username ?? 'This user'} will be permanently removed. Their memberships and API keys are deleted with the account; documents they uploaded stay in their workspaces. This cannot be undone.`}
+        confirmLabel="Delete user"
+        busy={deleting}
+        destructive
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={deleteUser}
+      />
+      {menu
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              aria-label={`Actions for ${menu.user.username}`}
+              style={{ top: menu.top, right: menu.right }}
+              className="fixed z-[60] w-44 rounded-control border border-line bg-surface py-1 shadow-raised"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-ink transition-colors hover:bg-sunken"
+                onClick={() => {
+                  setResetTarget(menu.user)
+                  setMenu(null)
+                }}
+              >
+                <RotateCcw aria-hidden="true" size={15} />
+                Reset password
+              </button>
+              {menu.user.id === currentUserId ? null : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger-soft"
+                  onClick={() => {
+                    setDeleteTarget(menu.user)
+                    setMenu(null)
+                  }}
+                >
+                  <Trash2 aria-hidden="true" size={15} />
+                  Delete user
+                </button>
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
     </Panel>
   )
 }

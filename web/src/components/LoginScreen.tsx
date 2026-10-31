@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { ArrowRight, KeyRound, LockKeyhole } from 'lucide-react'
 import { getErrorMessage } from '../api'
 import { BrandMark } from './ui/Brand'
+import loginScene from '../assets/login-scene.png'
 
 interface LoginScreenProps {
   onLogin: (username: string, password: string) => Promise<void>
@@ -33,46 +34,54 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   }
 
   return (
-    <main className="min-h-svh bg-paper p-4 sm:p-6">
-      <div className="mx-auto grid min-h-[calc(100svh-2rem)] max-w-5xl overflow-hidden rounded-card border border-line bg-surface shadow-card sm:min-h-[calc(100svh-3rem)] lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="hidden flex-col justify-between bg-ink p-8 text-white lg:flex xl:p-10">
-          <div className="flex items-center gap-3">
-            <BrandMark />
+    <main className="min-h-svh bg-paper">
+      <div className="grid min-h-svh bg-surface lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="relative hidden overflow-hidden bg-panel-dark text-white lg:flex">
+          <img
+            src={loginScene}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-gradient-to-b from-[#101c27f5] via-[#101c27c4] to-[#101c27f0]"
+          />
+          <div className="relative flex w-full flex-col justify-between p-8 xl:p-10">
+            <div className="flex items-center gap-3">
+              <BrandMark />
+              <div>
+                <p className="text-sm font-semibold">Retriv</p>
+                <p className="text-[11px] text-white/50">Control plane</p>
+              </div>
+            </div>
+
             <div>
-              <p className="text-sm font-semibold">Retriv</p>
-              <p className="font-mono text-eyebrow uppercase tracking-eyebrow text-white/50">
-                Control plane
+              <p className="text-xs text-white/60">Workspace control plane</p>
+              <h1 className="mt-4 font-display text-3xl font-medium leading-[1.12] xl:text-4xl">
+                Access is explicit
+                <br />
+                Context stays scoped
+              </h1>
+              <p className="mt-4 max-w-md text-sm leading-6 text-white/70">
+                Administer users, workspace ownership, and retrieval boundaries from one
+                deliberate surface.
               </p>
             </div>
-          </div>
 
-          <div>
-            <p className="font-mono text-eyebrow font-semibold uppercase tracking-eyebrow text-accent">
-              Workspace control plane
-            </p>
-            <h1 className="mt-4 text-3xl font-semibold leading-[1.1] tracking-[-0.03em] xl:text-4xl">
-              Access is explicit.
-              <br />
-              Context stays scoped.
-            </h1>
-            <p className="mt-4 max-w-md text-sm leading-6 text-white/70">
-              Administer users, workspace ownership, and retrieval boundaries from one
-              deliberate surface.
-            </p>
+            <ol className="grid grid-cols-3 gap-4 border-t border-white/10 pt-6">
+              {[
+                ['01', 'Identity'],
+                ['02', 'Membership'],
+                ['03', 'Context'],
+              ].map(([number, label]) => (
+                <li key={number}>
+                  <p className="font-mono text-eyebrow text-[#a9c0dc]">{number}</p>
+                  <p className="mt-1.5 text-sm text-white/80">{label}</p>
+                </li>
+              ))}
+            </ol>
           </div>
-
-          <ol className="grid grid-cols-3 gap-4 border-t border-white/10 pt-6">
-            {[
-              ['01', 'Identity'],
-              ['02', 'Membership'],
-              ['03', 'Context'],
-            ].map(([number, label]) => (
-              <li key={number}>
-                <p className="font-mono text-eyebrow text-accent">{number}</p>
-                <p className="mt-1.5 text-sm text-white/80">{label}</p>
-              </li>
-            ))}
-          </ol>
         </section>
 
         <section className="flex items-center justify-center px-5 py-10 sm:px-10">
@@ -82,12 +91,10 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               <p className="text-sm font-semibold text-ink">Retriv</p>
             </div>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-card border border-accent-ink/20 bg-accent-soft text-accent-ink">
+            <div className="flex h-10 w-10 items-center justify-center rounded-control border border-accent-ink/20 bg-accent-soft text-accent-ink">
               <LockKeyhole aria-hidden="true" size={19} strokeWidth={1.8} />
             </div>
-            <h2 className="mt-4 text-2xl font-semibold tracking-[-0.02em] text-ink">
-              Sign in to the dashboard
-            </h2>
+            <h2 className="mt-4 text-xl font-medium text-ink">Sign in to the dashboard</h2>
             <p className="mt-2 text-sm leading-6 text-ink-muted">
               Your workspace permissions are resolved from the current access policy after
               sign-in.

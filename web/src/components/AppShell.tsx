@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
-  BookOpenText,
+  ChevronsDown,
   FileText,
   FileUp,
   KeyRound,
   LayoutGrid,
+  LockKeyhole,
   LogOut,
   Menu,
   Plus,
@@ -13,6 +14,8 @@ import {
   X,
 } from 'lucide-react'
 import type { AppRoute, CurrentUser, DashboardView, Workspace } from '../types'
+import type { ProcessingRuns } from '../hooks/useProcessingRuns'
+import { PipelinePopover } from './PipelinePopover'
 import { ProcessingNotifications } from './ProcessingNotifications'
 import { Avatar } from './ui/Avatar'
 import { BrandLockup, BrandMark } from './ui/Brand'
@@ -25,13 +28,13 @@ interface AppShellProps {
   onSelectView: (view: DashboardView) => void
   onSelectWorkspace: (workspaceId: string) => void
   onCreateWorkspace: () => void
-  token: string
+  adminMode: boolean
   user: CurrentUser
   workspaces: Workspace[]
+  runs: ProcessingRuns
   selectedWorkspace: Workspace | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
-  onUnauthorized: () => void
   onLogout: () => void
   children: ReactNode
 }
@@ -53,13 +56,13 @@ export function AppShell({
   onSelectView,
   onSelectWorkspace,
   onCreateWorkspace,
-  token,
+  adminMode,
   user,
   workspaces,
+  runs,
   selectedWorkspace,
   searchQuery,
   onSearchQueryChange,
-  onUnauthorized,
   onLogout,
   children,
 }: AppShellProps) {
@@ -71,7 +74,10 @@ export function AppShell({
   const isDesktop = useIsDesktop()
   const isAdmin = user.role === 'admin'
   const showSearch =
-    route === '/dashboard' && activeView !== 'api-keys' && activeView !== 'users'
+    route === '/dashboard'
+    && !adminMode
+    && activeView !== 'api-keys'
+    && activeView !== 'users'
 
   useEffect(() => {
     if (!navigationOpen || isDesktop) return
@@ -163,6 +169,7 @@ export function AppShell({
             setNavigationOpen(false)
             onCreateWorkspace()
           }}
+          adminMode={adminMode}
           onClose={() => setNavigationOpen(false)}
           closeButtonRef={isDesktop ? undefined : drawerCloseButtonRef}
           onLogout={onLogout}
@@ -193,12 +200,16 @@ export function AppShell({
           <div className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
             <span className="text-ink-faint">Workspaces</span>
             <span className="text-line-strong">/</span>
-            <span className="truncate font-medium text-ink">
-              {selectedWorkspace?.name ?? 'Select a workspace'}
-            </span>
-            <span className="ml-1 rounded-full border border-line bg-surface px-2 py-0.5 font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-faint">
-              {selectedWorkspace?.membership_role ?? 'catalog'}
-            </span>
+            {adminMode ? (
+              <span className="truncate font-medium text-ink">All workspaces</span>
+            ) : (
+              <>
+                <span className="truncate font-medium text-ink">
+                  {selectedWorkspace?.name ?? 'Select a workspace'}
+                </span>
+                <span className="ml-1 stamp">{selectedWorkspace?.membership_role ?? 'catalog'}</span>
+              </>
+            )}
           </div>
 
           <div className="ml-auto flex min-w-0 items-center gap-2">
@@ -226,10 +237,10 @@ export function AppShell({
                 </kbd>
               </div>
             ) : null}
+            <PipelinePopover runs={runs} workspaceId={selectedWorkspace?.id ?? null} />
             <ProcessingNotifications
-              token={token}
               workspaces={workspaces}
-              onUnauthorized={onUnauthorized}
+              runs={runs}
               onOpenChange={setNotificationsOpen}
             />
             <span className="hidden h-8 w-px bg-line sm:block" aria-hidden="true" />
@@ -250,6 +261,7 @@ interface NavigationProps {
   activeView: DashboardView
   user: CurrentUser
   isAdmin: boolean
+  adminMode: boolean
   workspaces: Workspace[]
   selectedWorkspace: Workspace | null
   onSelectWorkspace: (workspaceId: string) => void
@@ -266,6 +278,7 @@ function Navigation({
   activeView,
   user,
   isAdmin,
+  adminMode,
   workspaces,
   selectedWorkspace,
   onSelectWorkspace,
@@ -276,6 +289,9 @@ function Navigation({
   closeButtonRef,
   onLogout,
 }: NavigationProps) {
+  const [directoryOpen, setDirectoryOpen] = useState(false)
+  const memberWorkspaces = workspaces.filter((workspace) => workspace.membership_role !== null)
+  const catalogWorkspaces = workspaces.filter((workspace) => workspace.membership_role === null)
   return (
     <>
       <div className="flex items-center gap-3 border-b border-line px-4 py-4">
@@ -293,71 +309,79 @@ function Navigation({
         )}
       </div>
 
-      <div className="border-b border-line px-3 py-3">
-        <p className="px-2 eyebrow">Current workspace</p>
-        <div className="mt-2 flex items-center gap-2.5 rounded-card bg-sunken/70 px-2.5 py-2">
-          <Avatar
-            name={selectedWorkspace?.name ?? 'Retriv'}
-            seed={selectedWorkspace?.id ?? 'retriv'}
-            size="sm"
-          />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-ink">
-              {selectedWorkspace?.name ?? 'No workspace'}
-            </p>
-            <p className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-faint">
-              {selectedWorkspace?.membership_role ?? 'Not assigned'}
-            </p>
+      {adminMode ? null : (
+        <div className="border-b border-line px-3 py-3">
+          <p className="px-2 eyebrow">Current workspace</p>
+          <div className="mt-2 flex items-center gap-2.5 rounded-control bg-sunken/70 px-2.5 py-2">
+            <Avatar
+              name={selectedWorkspace?.name ?? 'Retriv'}
+              seed={selectedWorkspace?.id ?? 'retriv'}
+              size="sm"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-ink">
+                {selectedWorkspace?.name ?? 'No workspace'}
+              </p>
+              <p className="font-mono text-[0.65rem] text-ink-faint">
+                {selectedWorkspace?.membership_role ?? 'Not assigned'}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="Main navigation">
-        <p className="px-2 eyebrow">Workspace</p>
-        <ul className="mt-1.5 space-y-0.5">
-          {WORKSPACE_NAV.map((item) => {
-            const active = route === '/dashboard' && item.view === activeView
-            const Icon = item.icon
-            return (
-              <li key={item.view}>
-                <button
-                  type="button"
-                  className={`nav-link w-full justify-start ${active ? 'nav-link-active' : ''}`}
-                  aria-current={active ? 'page' : undefined}
-                  onClick={() => onSelectView(item.view)}
+        {adminMode ? null : (
+          <>
+            <p className="px-2 eyebrow">Workspace</p>
+            <ul className="mt-1.5 space-y-0.5">
+              {WORKSPACE_NAV.map((item) => {
+                const active = route === '/dashboard' && item.view === activeView
+                const Icon = item.icon
+                return (
+                  <li key={item.view}>
+                    <button
+                      type="button"
+                      className={`nav-link w-full justify-start ${active ? 'nav-link-active' : ''}`}
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => onSelectView(item.view)}
+                    >
+                      <Icon aria-hidden="true" size={16} />
+                      {item.label}
+                    </button>
+                  </li>
+                )
+              })}
+              <li>
+                <a
+                  className={route === '/upload-context' ? 'nav-link nav-link-active' : 'nav-link'}
+                  href="/upload-context"
+                  aria-label="Upload context"
+                  aria-current={route === '/upload-context' ? 'page' : undefined}
+                  onClick={(event) => onNavigate(event, '/upload-context')}
                 >
-                  <Icon aria-hidden="true" size={16} />
-                  {item.label}
-                </button>
+                  <FileUp aria-hidden="true" size={16} />
+                  Upload
+                </a>
               </li>
-            )
-          })}
-          <li>
-            <a
-              className={route === '/upload-context' ? 'nav-link nav-link-active' : 'nav-link'}
-              href="/upload-context"
-              aria-label="Upload context"
-              aria-current={route === '/upload-context' ? 'page' : undefined}
-              onClick={(event) => onNavigate(event, '/upload-context')}
-            >
-              <FileUp aria-hidden="true" size={16} />
-              Upload
-            </a>
-          </li>
-        </ul>
+            </ul>
+          </>
+        )}
 
-        <p className="mt-5 px-2 eyebrow">Platform</p>
+        <p className={`px-2 eyebrow ${adminMode ? '' : 'mt-5'}`}>Platform</p>
         <ul className="mt-1.5 space-y-0.5">
-          <li>
-            <button
-              type="button"
-              className={`nav-link w-full justify-start ${activeView === 'api-keys' && route === '/dashboard' ? 'nav-link-active' : ''}`}
-              onClick={() => onSelectView('api-keys')}
-            >
-              <KeyRound aria-hidden="true" size={16} />
-              API keys
-            </button>
-          </li>
+          {adminMode ? null : (
+            <li>
+              <button
+                type="button"
+                className={`nav-link w-full justify-start ${activeView === 'api-keys' && route === '/dashboard' ? 'nav-link-active' : ''}`}
+                onClick={() => onSelectView('api-keys')}
+              >
+                <KeyRound aria-hidden="true" size={16} />
+                API keys
+              </button>
+            </li>
+          )}
           {isAdmin ? (
             <li>
               <button
@@ -374,44 +398,127 @@ function Navigation({
 
         <div className="mt-5 flex items-center justify-between px-2">
           <p className="eyebrow">Workspaces</p>
-          <span className="font-mono text-[0.65rem] text-ink-faint">{workspaces.length}</span>
+          <span className="font-mono text-[0.65rem] text-ink-faint">
+            {adminMode ? workspaces.length : memberWorkspaces.length}
+          </span>
         </div>
-        <ul className="mt-1.5 space-y-0.5">
-          {workspaces.map((workspace) => {
-            const selected = selectedWorkspace?.id === workspace.id
-            return (
-              <li key={workspace.id}>
-                <button
-                  type="button"
-                  className={`flex w-full items-center gap-2.5 rounded-card px-2.5 py-2 text-left text-sm transition-colors ${
-                    selected
-                      ? 'bg-accent-soft text-accent-ink'
-                      : 'text-ink-muted hover:bg-sunken hover:text-ink'
-                  }`}
-                  aria-label={`Open ${workspace.name} workspace`}
-                  aria-current={selected ? 'true' : undefined}
-                  onClick={() => onSelectWorkspace(workspace.id)}
-                >
-                  <Avatar name={workspace.name} seed={workspace.id} size="xs" />
-                  <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                  {workspace.membership_role === null ? (
-                    <BookOpenText aria-hidden="true" className="shrink-0 text-ink-faint" size={13} />
-                  ) : null}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
+        {adminMode ? (
+          <button
+            type="button"
+            className={`nav-link mt-1.5 w-full justify-start ${
+              route === '/dashboard' && activeView === 'admin-overview' ? 'nav-link-active' : ''
+            }`}
+            aria-current={
+              route === '/dashboard' && activeView === 'admin-overview' ? 'page' : undefined
+            }
+            onClick={() => onSelectView('admin-overview')}
+          >
+            <LayoutGrid aria-hidden="true" size={16} />
+            All workspaces
+          </button>
+        ) : null}
         {isAdmin ? (
           <button
             type="button"
-            className="btn btn-quiet mt-2 w-full justify-start px-2.5 text-xs"
+            className="mt-1.5 flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
             onClick={onCreateWorkspace}
           >
             <Plus aria-hidden="true" size={15} />
             New workspace
           </button>
         ) : null}
+        {adminMode ? (
+          <ul className="mt-1.5 space-y-0.5">
+            {workspaces.map((workspace) => (
+              <li
+                key={workspace.id}
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-ink-faint"
+              >
+                <Avatar name={workspace.name} seed={workspace.id} size="xs" />
+                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                <LockKeyhole aria-hidden="true" className="shrink-0" size={12} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <>
+            <ul className="mt-1.5 space-y-0.5">
+              {memberWorkspaces.map((workspace) => {
+                const selected = selectedWorkspace?.id === workspace.id
+                return (
+                  <li key={workspace.id}>
+                    <button
+                      type="button"
+                      className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors ${
+                        selected
+                          ? 'bg-accent-soft text-accent-ink'
+                          : 'text-ink-muted hover:bg-sunken hover:text-ink'
+                      }`}
+                      aria-label={`Open ${workspace.name} workspace`}
+                      aria-current={selected ? 'true' : undefined}
+                      onClick={() => onSelectWorkspace(workspace.id)}
+                    >
+                      <Avatar name={workspace.name} seed={workspace.id} size="xs" />
+                      <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            {catalogWorkspaces.length > 0 ? (
+              <>
+                <button
+                  type="button"
+                  className="mt-1 flex h-[22px] w-full items-center justify-center rounded-control text-ink-faint transition-colors hover:bg-sunken hover:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+                  aria-label={
+                    directoryOpen ? 'Collapse catalogued workspaces' : 'Show catalogued workspaces'
+                  }
+                  aria-expanded={directoryOpen}
+                  onClick={() => setDirectoryOpen((open) => !open)}
+                >
+                  <ChevronsDown
+                    aria-hidden="true"
+                    size={13}
+                    className={`transition-transform duration-300 ${directoryOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                <div
+                  aria-hidden={!directoryOpen}
+                  className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+                    directoryOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <ul className="space-y-0.5 pt-1">
+                      {catalogWorkspaces.map((workspace) => {
+                        const selected = selectedWorkspace?.id === workspace.id
+                        return (
+                          <li key={workspace.id}>
+                            <button
+                              type="button"
+                              className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors ${
+                                selected
+                                  ? 'bg-sunken text-ink-muted'
+                                  : 'text-ink-faint hover:bg-sunken hover:text-ink-muted'
+                              }`}
+                              aria-label={`Open ${workspace.name} workspace`}
+                              aria-current={selected ? 'true' : undefined}
+                              onClick={() => onSelectWorkspace(workspace.id)}
+                            >
+                              <Avatar name={workspace.name} seed={workspace.id} size="xs" />
+                              <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                              <LockKeyhole aria-hidden="true" className="shrink-0" size={12} />
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </>
+        )}
       </nav>
 
       <div className="border-t border-line p-3">

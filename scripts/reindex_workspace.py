@@ -21,7 +21,7 @@ from pathlib import Path
 
 import httpx
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:9000"
 
 
 async def token(client: httpx.AsyncClient, username: str, password: str) -> str:
@@ -40,7 +40,7 @@ async def documents(client: httpx.AsyncClient, workspace_id: str) -> list[dict]:
 
 
 async def delete_runs(client: httpx.AsyncClient, document_id: str) -> list[dict]:
-    response = await client.get("/v1/processing-runs/recent")
+    response = await client.get("/v1/processing-runs")
     response.raise_for_status()
     return [
         run

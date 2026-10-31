@@ -45,7 +45,7 @@ export function WorkspaceAccess({
         />
       </div>
 
-      <section className="border-b border-line px-5 py-5 sm:px-6">
+      <section className="border-b border-line px-6 py-6 sm:px-7">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="eyebrow">Your access</p>
@@ -79,10 +79,10 @@ interface CapabilityProps {
 
 function Capability({ icon, label, enabled }: CapabilityProps) {
   return (
-    <div className="border-r border-line px-4 py-3.5 last:border-r-0">
+    <div className="border-r border-line px-5 py-5 last:border-r-0">
       <div className={enabled ? 'text-accent-ink' : 'text-ink-faint'}>{icon}</div>
-      <p className="mt-1.5 text-xs font-medium text-ink">{label}</p>
-      <p className="mt-0.5 flex items-center gap-1 text-meta text-ink-muted">
+      <p className="mt-2 text-xs font-medium text-ink">{label}</p>
+      <p className="mt-1 flex items-center gap-1 text-meta text-ink-muted">
         {enabled ? (
           <CheckCircle2 aria-hidden="true" size={11} />
         ) : (

@@ -301,3 +301,165 @@ async def login_headers(client: httpx.AsyncClient, username: str, password: str)
     )
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+async def test_admin_can_delete_user_and_memberships_repoint(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    admin_headers = await login_headers(client, "admin", "admin-correct-password")
+
+    dave = await client.post(
+        "/v1/admin/users",
+        headers=admin_headers,
+        json={"username": "dave", "role": "user"},
+    )
+    dave_id = dave.json()["id"]
+    dave_password = dave.json()["initial_password"]
+    await client.post(
+        "/v1/admin/users",
+        headers=admin_headers,
+        json={"username": "erin", "role": "user"},
+    )
+    erin_headers = await login_headers(client, "admin", "admin-correct-password")
+    erin_listing = await client.get(
+        "/v1/admin/users?search=erin", headers=erin_headers
+    )
+    erin_id = erin_listing.json()["items"][0]["id"]
+
+    workspace = await client.post(
+        "/v1/admin/workspaces",
+        headers=admin_headers,
+        json={
+            "slug": "dave-room",
+            "name": "Dave room",
+            "description": None,
+            "owner_user_id": dave_id,
+        },
+    )
+    workspace_id = workspace.json()["id"]
+
+    dave_headers = await login_headers(client, "dave", dave_password)
+    granted = await client.put(
+        f"/v1/workspaces/{workspace_id}/members/{erin_id}",
+        headers=dave_headers,
+        json={"role": "viewer"},
+    )
+    assert granted.status_code == 200
+
+    deleted = await client.delete(f"/v1/admin/users/{dave_id}", headers=admin_headers)
+    assert deleted.status_code == 204
+
+    members = await client.get(
+        f"/v1/admin/workspaces/{workspace_id}/members", headers=admin_headers
+    )
+    by_username = {member["username"]: member for member in members.json()["items"]}
+    assert "dave" not in by_username
+    assert by_username["erin"]["granted_by_user_id"] == str(entities.admin_user.id)
+
+    dave_login = await client.post(
+        "/v1/auth/token",
+        data={"username": "dave", "password": dave_password},
+    )
+    assert dave_login.status_code == 401
+
+
+async def test_admin_cannot_delete_themselves(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    admin_headers = await login_headers(client, "admin", "admin-correct-password")
+
+    response = await client.delete(
+        f"/v1/admin/users/{entities.admin_user.id}", headers=admin_headers
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "self_delete_restricted"
+
+
+async def test_admin_delete_unknown_user_returns_404(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    admin_headers = await login_headers(client, "admin", "admin-correct-password")
+
+    response = await client.delete(
+        "/v1/admin/users/00000000-0000-0000-0000-000000000000", headers=admin_headers
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "user_not_found"
+
+
+async def test_admin_cannot_become_workspace_member(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    admin_headers = await login_headers(client, "admin", "admin-correct-password")
+
+    grant = await client.put(
+        f"/v1/admin/workspaces/{entities.finance.id}/members/{entities.admin_user.id}",
+        headers=admin_headers,
+        json={"role": "viewer"},
+    )
+
+    assert grant.status_code == 409
+    assert grant.json()["code"] == "admin_membership_restricted"
+
+    members = await client.get(
+        f"/v1/admin/workspaces/{entities.finance.id}/members", headers=admin_headers
+    )
+    assert [member["username"] for member in members.json()["items"]] == ["alice"]
+
+
+async def test_owner_cannot_grant_membership_to_admin(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    owner_headers = await login_headers(client, "alice", "correct-horse-battery-staple")
+
+    grant = await client.put(
+        f"/v1/workspaces/{entities.finance.id}/members/{entities.admin_user.id}",
+        headers=owner_headers,
+        json={"role": "editor"},
+    )
+
+    assert grant.status_code == 409
+    assert grant.json()["code"] == "admin_membership_restricted"
+
+
+async def test_admin_cannot_become_initial_owner(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    admin_headers = await login_headers(client, "admin", "admin-correct-password")
+
+    created = await client.post(
+        "/v1/admin/workspaces",
+        headers=admin_headers,
+        json={
+            "name": "Governance",
+            "slug": "governance",
+            "description": None,
+            "owner_user_id": str(entities.admin_user.id),
+        },
+    )
+
+    assert created.status_code == 409
+    assert created.json()["code"] == "admin_membership_restricted"
+
+
+async def test_owner_candidates_exclude_admins(
+    client: httpx.AsyncClient,
+    entities: SeededEntities,
+) -> None:
+    owner_headers = await login_headers(client, "alice", "correct-horse-battery-staple")
+
+    candidates = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/member-candidates?search=ad",
+        headers=owner_headers,
+    )
+
+    assert candidates.status_code == 200
+    assert [item["username"] for item in candidates.json()["items"]] == []

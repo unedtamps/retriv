@@ -64,45 +64,45 @@ export function DocumentTable({
 
   return (
     <div className="overflow-hidden rounded-card border border-line bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
-        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter documents">
-          {FILTERS.map((option) => {
-            const count =
-              option.id === 'all'
-                ? documents.length
-                : option.id === 'ready'
-                  ? documents.filter((document) => isReadyStatus(document.status)).length
-                  : option.id === 'active'
-                    ? documents.filter((document) => isActiveStatus(document.status)).length
-                    : documents.filter((document) => isFailedStatus(document.status)).length
-            return (
-              <button
-                key={option.id}
-                type="button"
-                className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
-                  filter === option.id
-                    ? 'bg-ink text-white'
-                    : 'text-ink-muted hover:bg-sunken hover:text-ink'
-                }`}
-                aria-pressed={filter === option.id}
-                onClick={() => setFilter(option.id)}
-              >
-                {option.label}
-                <span
-                  className={`ml-1.5 font-mono text-[0.6rem] ${
-                    filter === option.id ? 'text-white/70' : 'text-ink-faint'
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line px-4 py-2 sm:px-5">
+          <div className="flex flex-wrap items-center gap-5" role="group" aria-label="Filter documents">
+            {FILTERS.map((option) => {
+              const count =
+                option.id === 'all'
+                  ? documents.length
+                  : option.id === 'ready'
+                    ? documents.filter((document) => isReadyStatus(document.status)).length
+                    : option.id === 'active'
+                      ? documents.filter((document) => isActiveStatus(document.status)).length
+                      : documents.filter((document) => isFailedStatus(document.status)).length
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`relative px-0.5 pb-2 pt-1.5 text-[0.8125rem] transition-colors ${
+                    filter === option.id
+                      ? 'font-medium text-ink'
+                      : 'text-ink-muted hover:text-ink'
                   }`}
+                  aria-pressed={filter === option.id}
+                  onClick={() => setFilter(option.id)}
                 >
-                  {count}
-                </span>
-              </button>
-            )
-          })}
+                  {option.label}
+                  <span className="ml-1.5 font-mono text-[0.6rem] text-ink-faint">{count}</span>
+                  {filter === option.id ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-ink"
+                    />
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+          <p className="hidden pb-2 font-mono text-[0.65rem] text-ink-faint sm:block">
+            {filtered.length === total ? total : `${filtered.length} of ${total}`} documents
+          </p>
         </div>
-        <p className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-faint">
-          {filtered.length === total ? total : `${filtered.length} of ${total}`} documents
-        </p>
-      </div>
 
       {error === null ? null : (
         <p className="border-b border-line px-5 py-3 text-sm text-danger" role="alert">
@@ -134,16 +134,14 @@ export function DocumentTable({
             <caption className="sr-only">Documents</caption>
             <thead>
               <tr className="border-b border-line text-left">
-                <th className="px-4 py-2.5 font-mono text-[0.62rem] font-semibold uppercase tracking-eyebrow text-ink-faint sm:px-5">
+                <th className="px-4 py-2.5 text-xs font-medium text-ink-muted sm:px-5">
                   Document
                 </th>
-                <th className="px-3 py-2.5 font-mono text-[0.62rem] font-semibold uppercase tracking-eyebrow text-ink-faint">
-                  Status
-                </th>
-                <th className="hidden px-3 py-2.5 font-mono text-[0.62rem] font-semibold uppercase tracking-eyebrow text-ink-faint sm:table-cell">
+                <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">Status</th>
+                <th className="hidden px-3 py-2.5 text-xs font-medium text-ink-muted sm:table-cell">
                   Added
                 </th>
-                <th className="hidden px-3 py-2.5 font-mono text-[0.62rem] font-semibold uppercase tracking-eyebrow text-ink-faint md:table-cell">
+                <th className="hidden px-3 py-2.5 text-xs font-medium text-ink-muted md:table-cell">
                   Size
                 </th>
                 <th className="w-12 px-3 py-2.5">
@@ -159,28 +157,26 @@ export function DocumentTable({
                   <tr key={document.id} className="group border-b border-line last:border-b-0">
                     <td className="px-4 py-3 sm:px-5">
                       <div className="flex min-w-0 items-center gap-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-card border border-line bg-sunken text-ink-muted">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-line bg-sunken text-ink-muted">
                           <FileText aria-hidden="true" size={16} />
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-ink">
-                            {document.original_filename}
-                          </p>
-                          <p className="mt-0.5 font-mono text-[0.62rem] uppercase tracking-eyebrow text-ink-faint">
-                            {type}
-                            {document.row_count > 0 ? ` · ${document.row_count} rows` : ''}
-                          </p>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p className="truncate text-sm font-medium text-ink">
+                              {document.original_filename}
+                            </p>
+                            <span className="stamp shrink-0">{type}</span>
+                          </div>
+                          {document.row_count > 0 ? (
+                            <p className="mt-0.5 font-mono text-[0.62rem] text-ink-faint">
+                              {document.row_count} rows
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.68rem] font-medium ${STATUS_TONE_CLASSES[tone]}`}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="h-1.5 w-1.5 rounded-full bg-current opacity-70"
-                        />
+                      <span className={`stamp ${STATUS_TONE_CLASSES[tone]}`}>
                         {documentStatusLabel(document.status)}
                       </span>
                     </td>

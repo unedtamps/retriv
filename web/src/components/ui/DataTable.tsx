@@ -48,7 +48,7 @@ export function DataTable<T>({ caption, columns, rows, rowKey, empty }: DataTabl
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={rowKey(row)}>
+              <tr key={rowKey(row)} className="border-b border-line last:border-b-0">
                 {columns.map((column) => (
                   <td
                     key={column.key}

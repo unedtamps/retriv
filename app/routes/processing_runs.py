@@ -1,16 +1,11 @@
-from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import (
-    ActiveProcessingRunResponse,
-    ProcessingRunListResponse,
-    ProcessingRunSummary,
-)
+from app.api.schemas import ProcessingActivityResponse, ProcessingRunSummary
 from app.db.models import (
     JOB_ACCESS,
     NON_TERMINAL_RUN_STATUSES,
@@ -23,24 +18,25 @@ from app.security.auth import CurrentUser
 from app.security.authorization import ROLE_PERMISSIONS
 
 router = APIRouter(prefix="/v1/processing-runs", tags=["processing-runs"])
-PROCESSING_RUN_WINDOW = timedelta(hours=1)
 
 
-@router.get("/active", response_model=ActiveProcessingRunResponse)
-async def get_latest_active_processing_run(
+@router.get("", response_model=ProcessingActivityResponse)
+async def list_processing_activity(
     current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> ActiveProcessingRunResponse:
-    """The caller's newest in-flight run, across every readable workspace.
+) -> ProcessingActivityResponse:
+    """The caller's in-flight runs, across every readable workspace.
 
-    A direct query now. The scope is derived from the caller's own
+    One endpoint for the bell and the pipeline view: a run belongs to the
+    activity feed while it is non-terminal, which is exactly when its
+    document is not yet ready. The scope is derived from the caller's own
     memberships, so there is no upstream service to trust and no
     revalidation of its answer: the filter and the returned rows are
     built from the same set.
     """
     workspace_ids = await readable_workspace_ids(session, current_user.id)
     if not workspace_ids:
-        return ActiveProcessingRunResponse(item=None)
+        return ProcessingActivityResponse(items=[], total=0)
 
     link_workspace, link_filename = _link_columns(workspace_ids)
     result = await session.execute(
@@ -51,51 +47,13 @@ async def get_latest_active_processing_run(
             ProcessingRun.status.in_(NON_TERMINAL_RUN_STATUSES),
         )
         .order_by(ProcessingRun.created_at.desc(), ProcessingRun.id.desc())
-        .limit(1)
+        .limit(100)
     )
-    row = result.one_or_none()
-    return ActiveProcessingRunResponse(
-        item=processing_run_summary(row[0], row[1], row[2]) if row is not None else None
-    )
-
-
-@router.get("/recent", response_model=ProcessingRunListResponse)
-async def list_recent_processing_runs(
-    current_user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> ProcessingRunListResponse:
-    workspace_ids = await readable_workspace_ids(session, current_user.id)
-    if not workspace_ids:
-        return ProcessingRunListResponse(
-            items=[],
-            total=0,
-            since=datetime.now(UTC) - PROCESSING_RUN_WINDOW,
-        )
-
-    since = datetime.now(UTC) - PROCESSING_RUN_WINDOW
-    link_workspace, link_filename = _link_columns(workspace_ids)
-    conditions = (
-        link_workspace.is_not(None),
-        ProcessingRun.job_kind != JOB_ACCESS,
-        ProcessingRun.created_at >= since,
-    )
-    total = int(
-        await session.scalar(select(func.count()).select_from(ProcessingRun).where(*conditions))
-        or 0
-    )
-    result = await session.execute(
-        select(ProcessingRun, link_workspace, link_filename)
-        .where(*conditions)
-        .order_by(ProcessingRun.created_at.desc(), ProcessingRun.id.desc())
-    )
-    return ProcessingRunListResponse(
-        items=[
-            processing_run_summary(run, workspace_id, filename)
-            for run, workspace_id, filename in result.all()
-        ],
-        total=total,
-        since=since,
-    )
+    items = [
+        processing_run_summary(run, workspace_id, filename)
+        for run, workspace_id, filename in result.all()
+    ]
+    return ProcessingActivityResponse(items=items, total=len(items))
 
 
 def _link_columns(workspace_ids: list[UUID]) -> tuple[Any, Any]:
