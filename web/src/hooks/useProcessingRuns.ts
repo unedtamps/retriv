@@ -17,13 +17,10 @@ export interface ProcessingRuns {
  * that usually has not changed. This fetches once, and again only when
  * someone asks for it.
  */
-export function useProcessingRuns(
-  token: string,
-  onUnauthorized: () => void,
-): ProcessingRuns {
+export function useProcessingRuns(onUnauthorized: () => void): ProcessingRuns {
   const resource = useApiResource(
-    (signal) => api.listProcessingActivity(token, signal),
-    [token],
+    (signal) => api.listProcessingActivity(signal),
+    [],
     { onUnauthorized },
   )
 

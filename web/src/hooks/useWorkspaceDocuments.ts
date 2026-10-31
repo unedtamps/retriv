@@ -21,7 +21,6 @@ const MAX_PAGES = 20
  * of quietly deriving those numbers from the first 100 rows.
  */
 export function useWorkspaceDocuments(
-  token: string,
   workspace: Workspace | null,
   onUnauthorized: () => void,
 ) {
@@ -31,7 +30,7 @@ export function useWorkspaceDocuments(
         return { items: [], total: 0, offset: 0, limit: PAGE_SIZE, complete: true }
       }
 
-      const first = await api.listDocuments(token, workspace.id, {
+      const first = await api.listDocuments(workspace.id, {
         offset: 0,
         limit: PAGE_SIZE,
         signal,
@@ -45,7 +44,7 @@ export function useWorkspaceDocuments(
       if (offsets.length > 0) {
         const pages = await Promise.all(
           offsets.map((offset) =>
-            api.listDocuments(token, workspace.id, {
+            api.listDocuments(workspace.id, {
               offset,
               limit: PAGE_SIZE,
               signal,
@@ -63,7 +62,7 @@ export function useWorkspaceDocuments(
         complete: items.length >= first.total,
       }
     },
-    [token, workspace?.id, workspace?.membership_role],
+    [workspace?.id, workspace?.membership_role],
     { onUnauthorized },
   )
 }

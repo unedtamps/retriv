@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bell, FileText, LoaderCircle, RefreshCw } from 'lucide-react'
+import { Bell, FileText, LoaderCircle } from 'lucide-react'
 import type { ProcessingRun, Workspace } from '../types'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import { documentStatusTone, runStatusLabel, STATUS_TONE_CLASSES } from '../lib/visuals'
+import { RefreshButton } from './ui/RefreshButton'
 
 interface ProcessingNotificationsProps {
   workspaces: Workspace[]
   runs: ProcessingRuns
+  open: boolean
   onOpenChange: (open: boolean) => void
 }
 
@@ -16,16 +18,17 @@ interface ProcessingNotificationsProps {
  *
  * The panel is a small popover anchored under the bell, not a drawer: the
  * feed only ever holds what is running right now, so a whole column of the
- * screen was never its proportion. The runs state is owned by the dashboard
- * and passed in, so the bell, the panel and the pipeline popover show one
- * shared picture.
+ * screen was never its proportion. The open state is owned by the shell so
+ * this panel and the pipeline popover are mutually exclusive — opening one
+ * closes the other on the same click. The runs state is owned by the
+ * dashboard and passed in, so both show one shared picture.
  */
 export function ProcessingNotifications({
   workspaces,
   runs,
+  open,
   onOpenChange,
 }: ProcessingNotificationsProps) {
-  const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const bellButtonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -35,7 +38,6 @@ export function ProcessingNotifications({
       const rect = bellButtonRef.current?.getBoundingClientRect()
       if (rect) setAnchor({ top: rect.bottom + 8, right: window.innerWidth - rect.right })
     }
-    setOpen(next)
     onOpenChange(next)
   }
 
@@ -43,17 +45,13 @@ export function ProcessingNotifications({
     if (!open) return
     panelRef.current?.focus()
 
-    function close() {
-      setOpen(false)
-      onOpenChange(false)
-    }
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') close()
+      if (event.key === 'Escape') onOpenChange(false)
     }
     function closeOnPointerDown(event: PointerEvent) {
       const target = event.target as Node
       if (panelRef.current?.contains(target) || bellButtonRef.current?.contains(target)) return
-      close()
+      onOpenChange(false)
     }
 
     window.addEventListener('keydown', closeOnEscape)
@@ -110,20 +108,11 @@ export function ProcessingNotifications({
                       : `${count} in flight across your workspaces`}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="btn-icon shrink-0"
-                  aria-label="Refresh processing activity"
-                  disabled={runs.loading}
-                  onClick={runs.reload}
-                >
-                  <RefreshCw
-                    aria-hidden="true"
-                    className={runs.loading ? 'animate-spin' : undefined}
-                    size={17}
-                  />
-                </button>
-              </div>
+                <RefreshButton
+                  label="Refresh processing activity"
+                  loading={runs.loading}
+                  onRefresh={runs.reload}
+                />              </div>
 
               <div className="max-h-96 space-y-2 overflow-y-auto overscroll-contain p-3">
                 {runs.error === null ? null : (

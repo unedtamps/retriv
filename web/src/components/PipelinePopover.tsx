@@ -22,14 +22,23 @@ const PIPELINE_STAGES: Array<{ id: 'scan' | 'extract' | 'chunk' | 'embed' | 'ind
 interface PipelinePopoverProps {
   runs: ProcessingRuns
   workspaceId: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
 /**
  * The pipeline status beside the bell: a quiet icon that opens a small
  * popover with the stage flow and the recent runs of the selected workspace.
+ *
+ * It is controlled by the shell so the bell and the pipeline can never be
+ * open together: opening one closes the other in the same click.
  */
-export function PipelinePopover({ runs, workspaceId }: PipelinePopoverProps) {
-  const [open, setOpen] = useState(false)
+export function PipelinePopover({
+  runs,
+  workspaceId,
+  open,
+  onOpenChange,
+}: PipelinePopoverProps) {
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -39,7 +48,7 @@ export function PipelinePopover({ runs, workspaceId }: PipelinePopoverProps) {
       const rect = buttonRef.current?.getBoundingClientRect()
       if (rect) setAnchor({ top: rect.bottom + 8, right: window.innerWidth - rect.right })
     }
-    setOpen(next)
+    onOpenChange(next)
   }
 
   useEffect(() => {
@@ -47,12 +56,12 @@ export function PipelinePopover({ runs, workspaceId }: PipelinePopoverProps) {
     panelRef.current?.focus()
 
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape') onOpenChange(false)
     }
     function closeOnPointerDown(event: PointerEvent) {
       const target = event.target as Node
       if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return
-      setOpen(false)
+      onOpenChange(false)
     }
 
     window.addEventListener('keydown', closeOnEscape)
@@ -61,7 +70,7 @@ export function PipelinePopover({ runs, workspaceId }: PipelinePopoverProps) {
       window.removeEventListener('keydown', closeOnEscape)
       document.removeEventListener('pointerdown', closeOnPointerDown)
     }
-  }, [open])
+  }, [open, onOpenChange])
 
   const workspaceRuns = runs.runs.filter(
     (run) =>
@@ -115,33 +124,25 @@ export function PipelinePopover({ runs, workspaceId }: PipelinePopoverProps) {
                   : 'Nothing is being processed'}
               </p>
 
-              <div className="mt-4 flex items-center" aria-hidden="true">
-                {PIPELINE_STAGES.map((stage, index) => (
-                  <div key={stage.id} className="flex min-w-0 flex-1 items-center">
-                    {index > 0 ? <span className="h-px w-1.5 shrink-0 bg-line-strong" /> : null}
-                    <div
-                      className={`min-w-0 flex-1 rounded-control px-1 py-2 text-center ${
-                        activeStage === stage.id ? 'bg-accent-soft' : ''
-                      }`}
-                    >
-                      <p
-                        className={`truncate text-[0.6875rem] leading-4 ${
-                          activeStage === stage.id ? 'text-accent-ink' : 'text-ink-muted'
+              {running ? (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-hidden="true">
+                  {PIPELINE_STAGES.filter((stage) => (stageCounts.get(stage.id) ?? 0) > 0).map(
+                    (stage) => (
+                      <span
+                        key={stage.id}
+                        className={`inline-flex items-center gap-1.5 rounded-stamp px-2 py-1 font-mono text-[0.65rem] ${
+                          activeStage === stage.id
+                            ? 'bg-accent text-white'
+                            : 'bg-sunken text-ink-muted'
                         }`}
                       >
                         {stage.label}
-                      </p>
-                      <p
-                        className={`mt-0.5 text-lg font-medium leading-6 ${
-                          activeStage === stage.id ? 'text-accent-ink' : 'text-ink'
-                        }`}
-                      >
-                        {stageCounts.get(stage.id) ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                        <span className="font-semibold">{stageCounts.get(stage.id)}</span>
+                      </span>
+                    ),
+                  )}
+                </div>
+              ) : null}
 
               <div className="mt-3 border-t border-line pt-1">
                 <p className="py-2 text-right font-mono text-[0.6rem] text-ink-faint">

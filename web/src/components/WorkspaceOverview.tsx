@@ -1,4 +1,16 @@
-import { ArrowRight, Plus, FileUp, LockKeyhole, Sparkles, UploadCloud } from 'lucide-react'
+import type { ReactNode } from 'react'
+import {
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  FileUp,
+  HardDrive,
+  LoaderCircle,
+  LockKeyhole,
+  Plus,
+  Sparkles,
+  UploadCloud,
+} from 'lucide-react'
 import type { ApiResource } from '../hooks/useApiResource'
 import type { WorkspaceDocumentsData } from '../hooks/useWorkspaceDocuments'
 import { formatBytes, isActiveStatus } from '../lib/visuals'
@@ -10,10 +22,14 @@ import { WorkspaceAccessSummary } from './WorkspaceAccessSummary'
 
 interface WorkspaceOverviewProps {
   workspace: Workspace
-  token: string
   isAdmin: boolean
   documents: ApiResource<WorkspaceDocumentsData>
   searchQuery: string
+  canReindex?: boolean
+  reindexingId?: string | null
+  onReindex?: (document: DocumentUpload) => void
+  canView?: boolean
+  onView?: (document: DocumentUpload) => void
   onUpload: () => void
   onViewDocuments: () => void
   onManageMembers: () => void
@@ -23,10 +39,14 @@ interface WorkspaceOverviewProps {
 
 export function WorkspaceOverview({
   workspace,
-  token,
   isAdmin,
   documents,
   searchQuery,
+  canReindex,
+  reindexingId,
+  onReindex,
+  canView,
+  onView,
   onUpload,
   onViewDocuments,
   onManageMembers,
@@ -76,27 +96,30 @@ export function WorkspaceOverview({
         </div>
       </header>
 
-      <section className="mt-6" aria-label="Workspace summary">
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line xl:grid-cols-4">
-          <StatCell
+      <section className="mt-5" aria-label="Workspace summary">
+        <div className="inline-flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-card border border-line bg-surface px-4 py-2.5">
+          <StatLine
+            icon={<FileText aria-hidden="true" size={13} />}
             label="Documents"
             value={restricted ? '—' : String(total)}
-            detail={restricted ? 'Members only' : 'in this workspace'}
           />
-          <StatCell
+          <StatDivider />
+          <StatLine
+            icon={<CheckCircle2 aria-hidden="true" size={13} />}
             label="Ready"
             value={restricted ? '—' : String(ready)}
-            detail="searchable context"
           />
-          <StatCell
+          <StatDivider />
+          <StatLine
+            icon={<LoaderCircle aria-hidden="true" size={13} />}
             label="In pipeline"
             value={restricted ? '—' : String(active)}
-            detail="queued or processing"
           />
-          <StatCell
+          <StatDivider />
+          <StatLine
+            icon={<HardDrive aria-hidden="true" size={13} />}
             label="Storage"
             value={restricted ? '—' : formatBytes(storage)}
-            detail="total file size"
           />
         </div>
       </section>
@@ -144,6 +167,11 @@ export function WorkspaceOverview({
               loading={documents.loading}
               error={documents.error}
               canDelete={workspace.can_delete}
+              canReindex={canReindex}
+              reindexingId={reindexingId}
+              onReindex={onReindex}
+              canView={canView}
+              onView={onView}
               searchQuery={searchQuery}
               onDelete={onDeleteDocument}
               limit={7}
@@ -155,7 +183,6 @@ export function WorkspaceOverview({
           <QuickUpload workspace={workspace} onUpload={onUpload} />
           <WorkspaceAccessSummary
             workspace={workspace}
-            token={token}
             isAdmin={isAdmin}
             onManageMembers={onManageMembers}
             onUnauthorized={onUnauthorized}
@@ -166,22 +193,33 @@ export function WorkspaceOverview({
   )
 }
 
-function StatCell({
+/**
+ * One figure in the summary line.
+ *
+ * The label sits beside the number instead of above it, and the explanatory
+ * third line is gone: "Documents 12" and "Storage 9.2 MB" already say what
+ * the old captions repeated at four times the height.
+ */
+function StatLine({
+  icon,
   label,
   value,
-  detail,
 }: {
+  icon: ReactNode
   label: string
   value: string
-  detail: string
 }) {
   return (
-    <div className="bg-surface px-5 py-4">
-      <p className="text-xs text-ink-faint">{label}</p>
-      <p className="mt-1.5 text-[1.75rem] font-medium leading-7 text-ink">{value}</p>
-      <p className="mt-0.5 text-xs text-ink-muted">{detail}</p>
-    </div>
+    <p className="flex items-center gap-1.5">
+      <span className="text-ink-faint">{icon}</span>
+      <span className="text-xs text-ink-faint">{label}</span>
+      <span className="font-mono text-sm font-medium text-ink">{value}</span>
+    </p>
   )
+}
+
+function StatDivider() {
+  return <span aria-hidden="true" className="hidden h-3.5 w-px bg-line sm:block" />
 }
 
 function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: () => void }) {
