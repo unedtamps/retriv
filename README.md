@@ -38,29 +38,29 @@ screen recording. The same clip is committed at
 There is one API process, one worker process, one database, and the external
 services the deployment provides: object storage, embeddings, and vision.
 
-![Retriv system architecture](docs/images/retriv-ui-architecture.png)
+![Retriv system architecture](docs/images/retriv-architecture.png)
 
-*Two processes, one processing queue, one scoped index. Source:
-[`docs/retriv-ui-architecture.pen`](docs/retriv-ui-architecture.pen); object
-storage and model endpoints are external services.*
+*Two processes, one queue, one scoped index. Source:
+[`docs/images/retriv-architecture.svg`](docs/images/retriv-architecture.svg);
+object storage and model endpoints are external services.*
 
 The API answers requests. The worker does the expensive, untrusted part: native
-markdown extraction (PyMuPDF, python-docx and an ONNX OCR engine) in a sandboxed
-subprocess, chunking, embeddings, and Qdrant writes.
-They coordinate through PostgreSQL processing runs; there is no direct HTTP call
-between them.
+markdown extraction (PyMuPDF, python-docx and a RapidOCR ONNX engine) in a
+sandboxed subprocess, chunking, embeddings, and Qdrant writes. Replicas claim
+work through a lease on the run row, so `--scale worker=N` is how you add
+capacity; there is no direct HTTP call between the two processes.
 
 | Component | Short role |
 |---|---|
-| Dashboard | Workspace catalogue, uploads, members and processing status. |
+| Dashboard | Workspace catalogue, uploads, members, inline PDF and Word preview. |
 | MCP client | Claude Code, Codex or a custom agent using read-only tools. |
-| `app/` | Auth, document intake, scoped retrieval and the MCP server. |
-| PostgreSQL | Canonical documents, workspace links, runs, chunks and CSV rows. |
+| `app/` | Auth, document intake, scoped retrieval, and the MCP server on `/mcp`. |
+| PostgreSQL | Canonical documents, workspace links, runs, chunks, CSV rows, refresh tokens. |
 | Qdrant | Candidate vectors filtered by the `workspace_ids` payload. |
-| S3 / R2 | Raw uploads and extracted artifacts, one object per content hash. |
+| S3 / R2 | Two buckets: `raw-documents` (content-addressed uploads) and `context-documents` (per-run artifacts and image previews). |
 | `worker/` | Sandboxed native extraction, chunking, embeddings and payload sync. |
-| ClamAV | Malware scan before any bytes reach storage. |
-| LM Studio + VLM | Text embeddings and descriptions of document pictures. |
+| ClamAV | Scans the staged bytes before anything is stored. |
+| Model endpoints | LM Studio for embeddings (local); an OpenAI-compatible VLM for picture descriptions. |
 
 ## Core concepts
 
