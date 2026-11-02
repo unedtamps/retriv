@@ -191,10 +191,21 @@ async def trim_active_families(
 
 
 async def _find_token(session: AsyncSession, token: str) -> RefreshToken:
+    """The row a presented token names, locked against a concurrent rotation.
+
+    Two requests presenting the same token must not both read it as live:
+    each would mint a successor, and a stolen copy used at the same moment
+    as the real one would go undetected until one of the two was presented
+    again. The row lock serializes them, so the second reader sees the
+    revocation the first wrote and takes the replay path. SQLite ignores
+    the lock, which is fine: it is a single-writer database to begin with.
+    """
     if not looks_like_refresh_token(token):
         raise authentication_error()
     record = await session.scalar(
-        select(RefreshToken).where(RefreshToken.token_hash == hash_refresh_token(token))
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == hash_refresh_token(token))
+        .with_for_update()
     )
     if record is None:
         raise authentication_error()

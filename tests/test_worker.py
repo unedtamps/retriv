@@ -695,6 +695,9 @@ async def test_delete_removes_vectors_before_the_document_row(
         prefix == f"workspaces/{entities.finance.id}/documents/{document.id}/"
         for _bucket, prefix in storage.prefixes
     ), "the artifact prefix was removed"
+    assert ("raw-documents", document.object_key) not in storage.objects, (
+        "the raw upload went with everything else"
+    )
 
     async with db_session_factory() as session:
         assert await session.get(Document, document.id) is None
@@ -804,6 +807,9 @@ async def test_a_tombstone_sweep_removes_leaked_artifacts(
         "context-documents",
         f"workspaces/{entities.finance.id}/documents/{document.id}/runs/x/attempt.json.gz",
     ) not in storage.objects
+    assert ("raw-documents", document.object_key) not in storage.objects, (
+        "the sweep reaches the raw upload too"
+    )
 
 
 async def test_embedding_backfill_requeues_a_run_left_half_indexed(
@@ -1947,6 +1953,90 @@ async def test_two_extraction_slots_parse_in_parallel(
         stop_event.set()
         await asyncio.wait_for(runner, 15)
     assert extractor.max_concurrent == 2
+
+
+class GatedCsvDecoder:
+    """A stand-in for the worker's CSV decode that blocks mid-parse.
+
+    Mirrors GatedExtractor for the in-process CSV path: while the gate is
+    closed, a second run reaching its own decode is proof that the parser
+    cap did not hold.
+    """
+
+    def __init__(self, original: Callable[[Path], str]) -> None:
+        self._original = original
+        self._lock = threading.Lock()
+        self._gate = threading.Event()
+        self.current = 0
+        self.max_concurrent = 0
+
+    def __call__(self, path: Path) -> str:
+        with self._lock:
+            self.current += 1
+            self.max_concurrent = max(self.max_concurrent, self.current)
+        try:
+            self._gate.wait(timeout=15)
+        finally:
+            with self._lock:
+                self.current -= 1
+        return self._original(path)
+
+    def release(self) -> None:
+        self._gate.set()
+
+
+async def test_a_csv_run_holds_the_parser_slot(
+    concurrent_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """The CSV parse is un-sandboxed but not un-capped.
+
+    A CSV decode keeps the whole file in memory until its rows are
+    committed, so the run must hold a parser slot across all of it:
+    without the slot, two large CSVs would decode at once whatever
+    parser_max_concurrent_extractions says.
+    """
+    session_factory = concurrent_session_factory
+    workspace_id = await seed_workspace(session_factory)
+    storage = FakeStorage()
+    runs = []
+    for index in range(2):
+        _, run = await seed_document(
+            session_factory,
+            workspace_id,
+            storage=storage,
+            content=csv_bytes(f"id,status,amount,currency\n900{index},OPEN,10.00,USD\n"),
+            media_type="text/csv",
+            filename=f"rows-{index}.csv",
+        )
+        runs.append(run)
+    worker = build_worker(
+        session_factory,
+        settings.model_copy(
+            update={
+                "processing_max_concurrent_runs": 2,
+                "parser_max_concurrent_extractions": 1,
+                "processing_poll_interval_seconds": 0.02,
+            }
+        ),
+        storage=storage,
+    )
+    decoder = GatedCsvDecoder(worker._decode_csv)
+    worker._decode_csv = decoder  # type: ignore[method-assign]
+
+    stop_event = asyncio.Event()
+    runner = asyncio.create_task(worker.run(stop_event))
+    try:
+        await wait_until(lambda: decoder.current == 1, message="first CSV to start decoding")
+        await wait_until(lambda: len(worker._in_flight) == 2, message="second run to be claimed")
+        await asyncio.sleep(0.1)
+    finally:
+        decoder.release()
+        stop_event.set()
+        await asyncio.wait_for(runner, 15)
+    assert decoder.max_concurrent == 1
+    statuses = [await run_status(session_factory, run.id) for run in runs]
+    assert statuses == [RUN_READY, RUN_READY]
 
 
 async def test_describing_runs_share_one_vlm_budget(

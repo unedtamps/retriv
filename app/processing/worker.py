@@ -504,6 +504,15 @@ class ProcessingWorker:
                 )
 
     async def _reconcile_deleted_artifacts(self) -> None:
+        """Repair whatever a lost or failed delete run left behind.
+
+        Every document carrying a tombstone is swept on each interval: the
+        artifact folder, the raw upload, and the vectors. Each step is
+        idempotent, so a document whose delete run is still queued is
+        merely cleaned early, and one whose run failed permanently is
+        cleaned here instead of leaking forever -- an object store delete
+        that succeeds on a missing key costs one list.
+        """
         now = utcnow()
         if now < self._next_artifact_reconciliation:
             return
@@ -512,12 +521,12 @@ class ProcessingWorker:
         )
         async with self._session_factory() as session:
             result = await session.execute(
-                select(Document.origin_workspace_id, Document.id).where(
+                select(Document.origin_workspace_id, Document.sha256, Document.id).where(
                     Document.deleted_at.is_not(None)
                 )
             )
             tombstones = result.all()
-        for workspace_id, document_id in tombstones:
+        for workspace_id, sha256, document_id in tombstones:
             prefix = f"workspaces/{workspace_id}/documents/{document_id}/"
             try:
                 await to_thread.run_sync(
@@ -530,6 +539,23 @@ class ProcessingWorker:
             except StorageError:
                 logger.warning(
                     "Deleted-document artifact reconciliation failed",
+                    extra={
+                        "workspace_id": str(workspace_id),
+                        "document_id": str(document_id),
+                    },
+                    exc_info=True,
+                )
+            try:
+                await to_thread.run_sync(
+                    partial(
+                        self._storage.delete_object,
+                        bucket=self._settings.s3_raw_bucket,
+                        key=f"workspaces/{workspace_id}/objects/{sha256}/{document_id}",
+                    )
+                )
+            except StorageError:
+                logger.warning(
+                    "Deleted-document raw object reconciliation failed",
                     extra={
                         "workspace_id": str(workspace_id),
                         "document_id": str(document_id),
@@ -699,7 +725,8 @@ class ProcessingWorker:
             raise PermanentProcessingError("Document exceeds the processing size limit")
 
         if document.detected_media_type == CSV_MEDIA_TYPE:
-            await self._process_csv_extract(claimed_run, lease_token, document)
+            async with self._extraction_slots:
+                await self._process_csv_extract(claimed_run, lease_token, document)
             return
 
         self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
@@ -987,6 +1014,11 @@ class ProcessingWorker:
         document extractors load native parsing libraries; plain delimited
         text has no such surface, and the caps in the validator bound it
         instead.
+
+        The caller holds a parser slot for the whole call, not just the
+        parse: the decoded text stays in memory until the rows are
+        committed, so releasing the slot at the parse would let the next
+        CSV in while this one still holds its full size in RAM.
         """
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
@@ -1247,6 +1279,15 @@ class ProcessingWorker:
             run.last_error = None
 
     async def _process_delete(self, claimed_run: ProcessingRun) -> None:
+        """Remove one document from every store it occupies.
+
+        The vectors go first, then the artifact folder, then the raw
+        upload, and the row that holds the raw object's address goes last:
+        a failure once the address is gone could not be retried with the
+        key in hand. The raw delete lives here rather than on the API
+        route because a failed attempt lands back in the queue, while the
+        route's caller is long gone.
+        """
         lease_token = self._require_lease_token(claimed_run)
         await self._vector_store.delete_document(claimed_run.document_id)
         artifact_prefix = (
@@ -1259,6 +1300,15 @@ class ProcessingWorker:
                 prefix=artifact_prefix,
             )
         )
+        raw_bucket, raw_key = await self._raw_object_location(claimed_run.document_id)
+        if raw_key is not None:
+            await to_thread.run_sync(
+                partial(
+                    self._storage.delete_object,
+                    bucket=raw_bucket or self._settings.s3_raw_bucket,
+                    key=raw_key,
+                )
+            )
         await self._set_phase(claimed_run.id, lease_token, RUN_DELETING)
 
         async with self._session_factory() as session, session.begin():
@@ -1270,6 +1320,24 @@ class ProcessingWorker:
             )
             if document is not None:
                 await session.delete(document)
+
+    async def _raw_object_location(self, document_id: UUID) -> tuple[str | None, str | None]:
+        """The bucket and key of a document's original upload.
+
+        The document row is the only record of that address, and this run
+        ends by deleting the row, so the location is read before anything
+        irreversible happens. ``None`` means the row is already gone, which
+        a retry after a completed attempt can hit; the object it named was
+        deleted then too, and the delete call is a no-op on a missing key.
+        """
+        async with self._session_factory() as session:
+            row = await session.execute(
+                select(Document.bucket, Document.object_key).where(Document.id == document_id)
+            )
+            location = row.first()
+        if location is None:
+            return None, None
+        return location[0], location[1]
 
     async def _load_document(self, run: ProcessingRun) -> Document:
         async with self._session_factory() as session:
