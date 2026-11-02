@@ -104,16 +104,15 @@ async def test_an_unsupported_format_fails_the_run_immediately(
     settings: Settings,
     entities: SeededEntities,
 ) -> None:
-    """A spreadsheet is stored but cannot be extracted.
+    """A format outside the pipeline is terminal from birth.
 
     The run is created already terminal rather than queued, so the
     document reports the real outcome immediately instead of sitting on
-    "processing" until someone notices nothing is happening.
+    "processing" until someone notices nothing is happening. The legacy
+    binary spreadsheet is the standing example: workbooks arrive as
+    ``.xlsx`` now, and ``.xls`` is nobody's job to convert.
     """
-    document = new_document(
-        entities.finance.id,
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    document = new_document(entities.finance.id, "application/vnd.ms-excel")
     async with db_session_factory() as session, session.begin():
         session.add(document)
         await session.flush()
@@ -122,7 +121,7 @@ async def test_an_unsupported_format_fails_the_run_immediately(
     assert run.status == RUN_UNSUPPORTED
     assert run.completed_at is not None
     assert run.last_error is not None
-    assert "spreadsheetml" in run.last_error
+    assert "vnd.ms-excel" in run.last_error
     assert derived_document_status(document, run) == "unsupported_format"
 
 

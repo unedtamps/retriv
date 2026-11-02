@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -438,4 +439,106 @@ def pptx_bytes(slides: int = 3) -> bytes:
 
     buffer = BytesIO()
     presentation.save(buffer)
+    return buffer.getvalue()
+
+
+def tiny_png_bytes() -> bytes:
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (200, 120), (30, 90, 160))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([15, 15, 185, 105], outline=(255, 255, 255), width=4)
+    draw.text((35, 55), "REGIONAL MAP", fill=(255, 255, 0))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def xlsx_table_bytes(rows: Sequence[Sequence[object]], sheet: str = "Data") -> bytes:
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    active = workbook.active
+    active.title = sheet
+    for row in rows:
+        active.append(row)
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def xlsx_complex_bytes() -> bytes:
+    """The hostile export: junk preamble, a two-level merged header, a prose
+    sheet and a hidden one."""
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    report = workbook.active
+    report.title = "Laporan"
+    report["A1"] = "LAPORAN PENJUALAN REGIONAL 2026"
+    report["A3"] = "Diunduh: 2026-11-03"
+    report["A5"] = "Bulan"
+    report.merge_cells("A5:A6")
+    report["B5"] = "Penjualan"
+    report.merge_cells("B5:D5")
+    report["E5"] = "Harga"
+    report.merge_cells("E5:F5")
+    report["B6"] = "Q1"
+    report["C6"] = "Q2"
+    report["D6"] = "Q3"
+    report["E6"] = "Min"
+    report["F6"] = "Maks"
+    for row in [
+        ("Jan", 100, 120, 150, 90, 200),
+        ("Feb", 180, 160, 190, 140, 250),
+        ("Mar", 150, 170, 200, 120, 260),
+    ]:
+        report.append(row)
+    prose = workbook.create_sheet("Ringkasan")
+    prose["A1"] = "Ringkasan eksekutif untuk kuartal ini."
+    prose["A2"] = "Penjualan tumbuh sehat di semua region."
+    secret = workbook.create_sheet("Rahasia")
+    secret["A1"] = "kode"
+    secret["A2"] = "X1"
+    secret["A3"] = "X2"
+    secret.sheet_state = "hidden"
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def xlsx_visual_bytes() -> bytes:
+    """A table with an embedded picture and a native bar chart on it."""
+    from openpyxl import Workbook
+    from openpyxl.chart import BarChart, Reference
+    from openpyxl.drawing.image import Image as XlImage
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data"
+    for row in [("Month", "Revenue"), ("Jan", 100), ("Feb", 180), ("Mar", 150), ("Apr", 210)]:
+        sheet.append(row)
+    chart = BarChart()
+    chart.title = "Revenue by Month"
+    data = Reference(sheet, min_col=2, min_row=1, max_row=5)
+    categories = Reference(sheet, min_col=1, min_row=2, max_row=5)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(categories)
+    sheet.add_chart(chart, "D2")
+    sheet.add_image(XlImage(BytesIO(tiny_png_bytes())), "A10")
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def xlsx_prose_bytes() -> bytes:
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    prose = workbook.active
+    prose.title = "Catatan"
+    prose["A1"] = "Catatan rapat direksi bulan November."
+    prose["A2"] = "Tidak ada tabel di berkas ini."
+    buffer = BytesIO()
+    workbook.save(buffer)
     return buffer.getvalue()

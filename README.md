@@ -1,6 +1,7 @@
 # Retriv
 
-Retriv is a workspace-scoped document backend. It accepts PDF, DOCX and CSV files,
+Retriv is a workspace-scoped document backend. It accepts PDF, DOCX, PPTX, XLSX and
+CSV files,
 extracts and indexes their contents, and exposes the result to people through a
 dashboard API and to agents through an MCP server.
 

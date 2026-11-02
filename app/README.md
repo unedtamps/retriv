@@ -904,6 +904,8 @@ A document has either `document_chunks` or `document_rows`, never both, and the 
 carries the count that says which: `row_count = 320` for a CSV, `chunk_count = 412` for
 a PDF. `csv_columns` sits on the run rather than on every row because it labels each
 returned cell, and repeating a header across 100k rows is the cost this design avoids.
+A workbook stores one catalogue entry per sheet -- the CSV's is the unnamed sheet -- and
+`document_rows.sheet` says which sheet a row came from, empty for a CSV.
 
 `document_rows.data` is JSONB and read with `->>`, which is why a SQL error saying
 `column "year" does not exist` comes back to the model as a hint naming `data->>'Year'`

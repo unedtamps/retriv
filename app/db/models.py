@@ -257,7 +257,7 @@ class ProcessingRun(Base):
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     embedded_chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     row_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    csv_columns: Mapped[list[str] | None] = mapped_column(JSON_TYPE, nullable=True)
+    csv_columns: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON_TYPE, nullable=True)
     embedding_profile: Mapped[str | None] = mapped_column(String(255), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -360,30 +360,40 @@ class DocumentImage(Base):
 
 
 class DocumentRow(Base):
-    """One CSV row, stored for SQL rather than for search.
+    """One row of a tabular document, stored for SQL rather than for search.
 
-    Rows deliberately have no foreign key into ``document_chunks``. A CSV is
-    all numeric or identifier columns, so embedding each row buys noise at
+    A CSV is one sheet with no name; a workbook is several named ones. The
+    ``sheet`` column carries that name, empty for a CSV, so both formats
+    land in this table with one query surface: the agent filters on
+    ``document_id`` and, for a workbook, on ``sheet``. Rows deliberately
+    have no foreign key into ``document_chunks``. A tabular document is all
+    numeric or identifier columns, so embedding each row buys noise at
     16KB of vector storage per row and finds nothing a filter would not;
     the rows are the queryable form and Qdrant stays empty for these
     documents by design.
 
-    The id is derived from ``(run_id, row_number)`` so it is stable across a
-    re-upload of identical content, and it doubles as the ``chunk_id`` the
-    agent's citation plumbing expects. Nothing needs it to resolve inside
+    The id is derived from ``(run_id, sheet, row_number)`` -- a CSV keeps
+    the older ``(run_id, row_number)`` seed so existing rows keep their
+    identity -- and it doubles as the ``chunk_id`` the agent's citation
+    plumbing expects. Nothing needs it to resolve inside
     ``document_chunks``: the citation gate checks label membership in the
     turn's own source set, which this row is registered into.
     """
 
     __tablename__ = "document_rows"
     __table_args__ = (
-        UniqueConstraint("processing_run_id", "row_number", name="uq_document_rows_run_row"),
+        UniqueConstraint(
+            "processing_run_id",
+            "sheet",
+            "row_number",
+            name="uq_document_rows_run_sheet_row",
+        ),
         Index(
             "ix_document_rows_active_lookup",
             "origin_workspace_id",
             "processing_run_id",
         ),
-        Index("ix_document_rows_document", "document_id"),
+        Index("ix_document_rows_document_sheet", "document_id", "sheet"),
         Index("ix_document_rows_data", "data", postgresql_using="gin"),
     )
 
@@ -393,6 +403,7 @@ class DocumentRow(Base):
     processing_run_id: Mapped[UUID] = mapped_column(
         ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False
     )
+    sheet: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     row_number: Mapped[int] = mapped_column(Integer, nullable=False)
     data: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
     created_at: Mapped[datetime] = mapped_column(

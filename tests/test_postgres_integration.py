@@ -37,6 +37,7 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentImage,
     DocumentRow,
     DocumentWorkspace,
     ProcessingRun,
@@ -60,6 +61,7 @@ from tests.test_worker import (
     FakeExtractor,
     FakeStorage,
     FakeVectorStore,
+    FakeVisionProvider,
 )
 
 POSTGRES_URL = os.getenv("TEST_POSTGRES_URL")
@@ -1116,7 +1118,9 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
         assert run.status == "ready"
         assert run.row_count == 3
         assert run.chunk_count == 0
-        assert sorted(run.csv_columns or []) == ["amount", "currency", "id", "status"]
+        assert run.csv_columns == [
+            {"sheet": "", "columns": ["id", "status", "amount", "currency"], "rows": 3}
+        ]
 
         assert [row.row_number for row in rows] == [1, 2, 3]
         assert rows[0].data == {
@@ -1145,14 +1149,17 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
         await engine.dispose()
 
 
-async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
-    """XLSX was accepted once and then failed in the extractor.
+async def test_an_xlsx_upload_lands_as_named_sheets_with_visuals() -> None:
+    """The workbook path end to end, which only a real Postgres can show.
 
-    Replacing it with CSV means the picker and the pipeline agree again, so
-    the rejection belongs at the door with a clear message rather than after
-    a 202 and a background failure.
+    XLSX was accepted once and then failed in the extractor, which is why
+    this upload goes all the way through before anything asserts: POST the
+    file, run the worker over the run it enqueued, and read back named
+    sheets with their rows and their described pictures. A gap between what
+    the API accepts and what the worker can parse would be invisible
+    otherwise -- it is exactly how XLSX shipped the first time.
     """
-    from tests.document_samples import xlsx_bytes
+    from tests.document_samples import xlsx_visual_bytes
 
     engine = create_async_engine(database_url(), pool_pre_ping=True)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -1160,11 +1167,12 @@ async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
         update={
             "environment": "test",
             "database_url": database_url(),
+            "processing_temp_dir": Path("/tmp"),
             "antivirus_enabled": False,
         }
     )
     application = create_app(settings)
-    storage = InMemoryObjectStorage()
+    storage = UploadAndProcessStorage()
 
     async def override_session() -> AsyncIterator[AsyncSession]:
         async with factory() as session:
@@ -1174,6 +1182,19 @@ async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
     application.dependency_overrides[get_session] = override_session
     application.dependency_overrides[get_object_storage] = lambda: storage
     application.dependency_overrides[get_malware_scanner] = lambda: CleanScanner()
+
+    worker_settings = settings.model_copy(update={"processing_poll_interval_seconds": 0.0})
+    vector_store = FakeVectorStore()
+    worker = ProcessingWorker(
+        factory,
+        storage,
+        FakeExtractor(),
+        worker_settings,
+        FakeEmbeddingProvider(),
+        vector_store,
+        FakeVisionProvider(),
+    )
+
     try:
         async with factory() as session:
             await clear_database(session)
@@ -1183,20 +1204,77 @@ async def test_an_xlsx_upload_is_refused_by_the_api() -> None:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             token = await client.post("/v1/auth/token", data=credentials)
             assert token.status_code == 200
+            headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
             response = await client.post(
                 f"/v1/workspaces/{workspace_id}/documents",
-                headers={"Authorization": f"Bearer {token.json()['access_token']}"},
+                headers=headers,
                 files={
                     "file": (
-                        "budget.xlsx",
-                        xlsx_bytes(),
+                        "visual.xlsx",
+                        xlsx_visual_bytes(),
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
                 },
             )
-            assert response.status_code == 415
-            assert response.json()["code"] == "unsupported_file_type"
-            assert storage.objects == {}
+            assert response.status_code == 202, response.text
+            body = response.json()
+            assert body["detected_media_type"] == (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            assert body["status"] == "processing"
+
+        document_id = UUID(body["id"])
+        assert await worker.run_once() is True
+
+        async with factory() as session:
+            run = await session.scalar(
+                select(ProcessingRun).where(ProcessingRun.document_id == document_id)
+            )
+            rows = (
+                await session.scalars(
+                    select(DocumentRow)
+                    .where(DocumentRow.document_id == document_id)
+                    .order_by(DocumentRow.row_number)
+                )
+            ).all()
+            images = (
+                await session.scalars(
+                    select(DocumentImage).where(DocumentImage.document_id == document_id)
+                )
+            ).all()
+        assert run is not None
+        assert run.status == "ready"
+        assert run.row_count == 3
+        assert run.chunk_count == 0
+        assert run.csv_columns is not None
+        assert run.csv_columns[0]["sheet"] == "Data"
+        assert run.csv_columns[0]["columns"] == ["Month", "Revenue"]
+        assert run.csv_columns[0]["rows"] == 4
+
+        assert [row.sheet for row in rows] == ["Data", "Data", "Data", "Data"]
+        assert rows[0].data == {"Month": "Jan", "Revenue": "100"}
+        assert vector_store.points == {}
+        assert [image.ref for image in images] == ["chart-1", "picture-1"]
+        assert all(image.described for image in images)
+
+        catalogue_reader = create_async_engine(database_url())
+        catalogue = RowQuery(
+            catalogue_reader,
+            statement_timeout_ms=5_000,
+            max_result_rows=100,
+        )
+        listed = await catalogue.queryable_files(workspace_ids=(workspace_id,))
+        assert [entry.filename for entry in listed.entries] == ["visual.xlsx"]
+        assert listed.entries[0].sheet == "Data"
+        assert "Revenue" in listed.entries[0].columns
+
+        spanning = await catalogue.run(
+            "select * from document_rows order by row_number",
+            workspace_ids=(workspace_id,),
+        )
+        assert [row.sheet for row in spanning.sources] == ["Data"] * 4
+        await catalogue.aclose()
+        await catalogue_reader.dispose()
     finally:
         async with factory() as session:
             await clear_database(session)

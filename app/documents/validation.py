@@ -25,8 +25,9 @@ DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingm
 PPTX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 )
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSV_MEDIA_TYPE = "text/csv"
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".csv"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".csv"}
 OFFICE_CFB_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 CSV_ENCODINGS = ("utf-8-sig", "utf-8")
 CSV_DELIMITERS = (",", ";", "\t", "|")
@@ -113,7 +114,7 @@ def supported_extension(filename: str) -> str:
             status_code=415,
             code="unsupported_file_type",
             title="Unsupported file type",
-            detail="Only PDF, DOCX, PPTX, and CSV files are accepted.",
+            detail="Only PDF, DOCX, PPTX, XLSX, and CSV files are accepted.",
         )
     return extension
 
@@ -159,10 +160,11 @@ def validate_document(staged: StagedUpload, settings: Settings) -> ValidationRes
 def validate_csv(path: Path, settings: Settings) -> ValidationResult:
     """Accept a CSV only if it is text we can actually parse into rows.
 
-    CSV replaces XLSX here, and that is a net removal: the OOXML path needed
-    zip-bomb, compression-ratio, CFB-encryption and macro checks because a
-    spreadsheet is a hostile archive. Plain text needs none of that, so
-    these guards are about staying bounded rather than staying safe.
+    CSV and XLSX both land in the same row store, but only the spreadsheet
+    is a hostile archive: the OOXML path carries the zip-bomb,
+    compression-ratio, CFB-encryption and macro checks, and plain text needs
+    none of them, so these guards are about staying bounded rather than
+    staying safe.
 
     The file is re-read at parse time in the worker, so what is proven here
     is that the shape is one the worker can handle: decodable, a header we
@@ -289,6 +291,18 @@ def count_slides(presentation_xml: bytes) -> int:
     return presentation_xml.count(b"<p:sldId ")
 
 
+def count_sheets(workbook_xml: bytes) -> int:
+    """How many sheets the workbook declares.
+
+    ``<sheet `` appears once per sheet in ``xl/workbook.xml``, visible or
+    hidden, so the count bounds the parse before any sheet is opened. The
+    count is taken here, at validation, rather than trusting the reader's
+    later walk: refusing a hundred-sheet workbook at the door costs one
+    small XML part instead of a full ingest attempt.
+    """
+    return workbook_xml.count(b"<sheet ")
+
+
 def too_many_pages_error(
     max_pages: int, *, unit: str = "pages", kind: str = "PDF documents"
 ) -> AppError:
@@ -359,6 +373,11 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
             "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
             PPTX_MEDIA_TYPE,
         ),
+        ".xlsx": (
+            "xl/workbook.xml",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+            XLSX_MEDIA_TYPE,
+        ),
     }
     main_part, main_content_type, media_type = expected[extension]
 
@@ -394,6 +413,13 @@ def validate_ooxml(path: Path, extension: str, settings: Settings) -> Validation
                 if slide_count > settings.max_pdf_pages:
                     raise too_many_pages_error(
                         settings.max_pdf_pages, unit="slides", kind="Presentations"
+                    )
+
+            if extension == ".xlsx":
+                sheet_count = count_sheets(archive.read(archive.getinfo(main_part)))
+                if sheet_count > settings.max_xlsx_sheets:
+                    raise too_many_pages_error(
+                        settings.max_xlsx_sheets, unit="sheets", kind="Workbooks"
                     )
 
             content_types_info = archive.getinfo("[Content_Types].xml")

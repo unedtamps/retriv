@@ -414,9 +414,12 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             is `''` rather than NULL.
 
             The statement must filter on document_id, and every row it returns
-            must come from that one file; anything else is rejected. Use the
-            document_id and column names from list_queryable_files. An aggregate
-            such as `count(*)` returns no rows and is reported as a value.
+            must come from that one file; a workbook's rows also carry a
+            `sheet` column, and a result spanning two sheets is rejected, so
+            add `AND sheet = '<name from the catalogue>'` for one. Use the
+            document_id, sheet and column names from list_queryable_files. An
+            aggregate such as `count(*)` returns no rows and is reported as a
+            value.
             """
             runtime = box.runtime
             rows = runtime.row_query

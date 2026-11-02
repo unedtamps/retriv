@@ -183,6 +183,7 @@ _ROW_KEYS = (
     "document_id",
     "processing_run_id",
     "row_number",
+    "sheet",
     "data",
 )
 
@@ -195,6 +196,7 @@ def _result_row(document_id: UUID) -> tuple[object, ...]:
         document_id,
         uuid4(),
         1,
+        "",
         {"id": "1", "amount": "1500.00"},
     )
 
@@ -208,8 +210,25 @@ def test_a_result_spanning_two_files_is_refused() -> None:
     ``RowQuery.run`` applies it, and neither the agent nor the MCP tool
     carries its own copy.
     """
-    with pytest.raises(RowQueryError, match="rows came from 2 files"):
+    with pytest.raises(RowQueryError, match="rows came from 2 files or sheets"):
         runner()._to_results([_result_row(uuid4()), _result_row(uuid4())], _ROW_KEYS)
+
+
+def test_a_result_spanning_two_sheets_is_refused() -> None:
+    """A workbook's rows carry a sheet, and a result spanning two is refused.
+
+    The rule is the one-document rule with one more axis: a workbook's
+    sheets are separate tables to the agent, and a sum over both would
+    answer a question nobody asked.
+    """
+    document_id = uuid4()
+    first, second = _result_row(document_id), _result_row(document_id)
+    with pytest.raises(RowQueryError, match="files or sheets"):
+        rows = [
+            tuple(value if index != 5 else sheet for index, value in enumerate(row))
+            for row, sheet in ((first, "Q1"), (second, "Q2"))
+        ]
+        runner()._to_results(rows, _ROW_KEYS)
 
 
 def test_a_result_from_one_file_is_kept() -> None:

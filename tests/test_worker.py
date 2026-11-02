@@ -971,7 +971,9 @@ async def test_worker_stores_csv_rows_and_never_embeds_them(
     assert stored.row_count == 3
     assert stored.chunk_count == 0
     assert stored.embedded_chunk_count == 0
-    assert stored.csv_columns == ["id", "status", "amount", "currency"]
+    assert stored.csv_columns == [
+        {"sheet": "", "columns": ["id", "status", "amount", "currency"], "rows": 3}
+    ]
     assert embeddings.embedded == []
     assert vectors.points == {}
 
@@ -1164,7 +1166,9 @@ async def test_a_semicolon_csv_ingests_with_its_columns_intact(
             .all()
         )
 
-    assert stored.csv_columns == ["id", "status", "amount"]
+    assert stored.csv_columns == [
+        {"sheet": "", "columns": ["id", "status", "amount"], "rows": 2}
+    ]
     assert rows[0].data == {"id": "1", "status": "OPEN", "amount": "10"}
 
 
@@ -1190,7 +1194,9 @@ async def test_a_utf8_bom_does_not_become_the_first_column_name(
     async with db_session_factory() as session:
         stored = await session.get(ProcessingRun, run.id)
         assert stored is not None
-    assert stored.csv_columns == ["id", "status", "amount", "currency"]
+    assert stored.csv_columns == [
+        {"sheet": "", "columns": ["id", "status", "amount", "currency"], "rows": 3}
+    ]
 
 
 async def test_deleting_a_csv_document_removes_its_rows(

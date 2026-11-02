@@ -42,6 +42,7 @@ _REQUIRED_COLUMNS = (
     "document_id",
     "processing_run_id",
     "row_number",
+    "sheet",
     "data",
 )
 _ALLOWED_TABLES = frozenset({"document_rows", "documents"})
@@ -68,6 +69,7 @@ class RowResult:
     row_number: int
     data: dict[str, object]
     columns: list[str]
+    sheet: str = ""
 
     def as_source(self, filename: str | None) -> "ContextSource":
         """Render this row as evidence.
@@ -97,7 +99,11 @@ class RowResult:
 
 @dataclass(frozen=True)
 class CatalogueEntry:
-    """One CSV file the model is allowed to see and query."""
+    """One queryable table the model is allowed to see and query.
+
+    A workbook contributes one entry per sheet; the sheet name is what a
+    query has to filter on when there is more than one.
+    """
 
     document_id: UUID
     workspace_id: UUID
@@ -105,6 +111,7 @@ class CatalogueEntry:
     filename: str
     row_count: int
     columns: list[str]
+    sheet: str = ""
 
 
 @dataclass(frozen=True)
@@ -130,25 +137,55 @@ class RowQueryResult:
 
 
 def _require_one_document(result: RowQueryResult) -> None:
-    """Refuse a result whose rows came from more than one file.
+    """Refuse a result whose rows came from more than one file or sheet.
 
     This lives here rather than in each caller so that no tool can forget it.
-    Row-level security narrows a statement to a workspace, not to a file, and
-    a result spanning two files is a number computed over data the question
-    never asked about -- reported with a confidence no part of it deserves.
+    Row-level security narrows a statement to a workspace, not to a file or
+    a sheet, and a result spanning two is a number computed over data the
+    question never asked about -- reported with a confidence no part of it
+    deserves.
 
-    The statement's own text is not enough: a ``document_id`` that appears
-    without narrowing the read passes any presence test. The rows are the
-    only honest witness, so they are the thing checked.
+    The statement's own text is not enough: a ``document_id`` or a ``sheet``
+    that appears without narrowing the read passes any presence test. The
+    rows are the only honest witness, so they are the thing checked.
     """
-    documents = {source.document_id for source in result.sources}
-    if len(documents) <= 1:
+    sources = {(source.document_id, source.sheet) for source in result.sources}
+    if len(sources) <= 1:
         return
-    listed = ", ".join(str(value) for value in sorted(documents, key=str))
-    raise RowQueryError(
-        f"rows came from {len(documents)} files ({listed}); query one file at "
-        "a time by filtering on document_id"
+    listed = ", ".join(
+        f"{document_id}/{sheet or 'csv'}" for document_id, sheet in sorted(sources, key=str)
     )
+    raise RowQueryError(
+        f"rows came from {len(sources)} files or sheets ({listed}); query one "
+        "file and one sheet at a time by filtering on document_id and, for a "
+        "workbook, sheet"
+    )
+
+
+def catalogue_entries(
+    csv_columns: object, total_rows: int
+) -> list[tuple[str, list[str], int]]:
+    """Per-sheet ``(name, columns, rows)`` from a run's catalogue column.
+
+    Runs written before workbooks existed carry a plain list of column
+    names for the document's single table; those become one unnamed entry
+    whose row count is the run's total. The shape is data, not schema, so
+    both forms stay readable for as long as old rows exist.
+    """
+    if not isinstance(csv_columns, list) or not csv_columns:
+        return [("", [], total_rows)]
+    entries: list[tuple[str, list[str], int]] = []
+    for item in csv_columns:
+        if not isinstance(item, dict):
+            return [("", [str(column) for column in csv_columns], total_rows)]
+        entries.append(
+            (
+                str(item.get("sheet", "") or ""),
+                [str(column) for column in item.get("columns", []) or []],
+                int(item.get("rows", 0) or 0),
+            )
+        )
+    return entries
 
 
 class CatalogueReader:
@@ -202,20 +239,20 @@ class CatalogueReader:
                 .order_by(DocumentWorkspace.filename, Document.id)
             )
             found = [tuple(r) for r in rows]
-        return Catalogue(
-            entries=[
-                CatalogueEntry(
-                    document_id=row[0],
-                    workspace_id=row[1],
-                    processing_run_id=row[2],
-                    filename=row[3],
-                    row_count=int(row[4] or 0),
-                    columns=list(row[5] or []),
-                )
-                for row in found
-            ],
-            hidden=0,
-        )
+        entries = [
+            CatalogueEntry(
+                document_id=row[0],
+                workspace_id=row[1],
+                processing_run_id=row[2],
+                filename=row[3],
+                row_count=sheet_rows,
+                columns=columns,
+                sheet=sheet_name,
+            )
+            for row in found
+            for sheet_name, columns, sheet_rows in catalogue_entries(row[5], int(row[4] or 0))
+        ]
+        return Catalogue(entries=entries, hidden=0)
 
     async def filenames(
         self, *, workspace_ids: tuple[UUID, ...], document_ids: set[UUID]
@@ -421,6 +458,7 @@ class RowQuery:
                     row_number=int(mapping["row_number"] or 0),
                     data=dict(data),
                     columns=[str(key) for key in data],
+                    sheet=str(mapping.get("sheet", "") or ""),
                 )
             )
         outcome = RowQueryResult(
@@ -481,7 +519,7 @@ class RowQuery:
                 parameters,
             )
             rows = result.fetchall()
-        total = int(rows[0][6]) if rows else 0
+        total = int(rows[0][7]) if rows else 0
         return Catalogue(
             entries=[
                 CatalogueEntry(
@@ -489,8 +527,9 @@ class RowQuery:
                     workspace_id=row[1],
                     processing_run_id=row[2],
                     filename=row[3],
-                    row_count=int(row[4] or 0),
+                    row_count=int(row[6] or 0),
                     columns=list(row[5] or []),
+                    sheet=str(row[4] or ""),
                 )
                 for row in rows
             ],
@@ -507,16 +546,35 @@ def catalogue_statement(conditions: list[str]) -> str:
     Every fragment here is a constant, and the values they bind to are
     parameters, so nothing model-authored reaches this string. Kept out of
     the caller so the one place that composes SQL reads as obviously literal.
+
+    The run's catalogue column is expanded to one row per sheet. Runs from
+    before workbooks hold a plain list of column names; those normalize to
+    one unnamed entry whose row count is the run's total, so old rows keep
+    showing up as they always did.
     """
     return (
-        "select d.id, dw.workspace_id, pr.id, "  # noqa: S608
-        "dw.filename, pr.row_count, pr.csv_columns, "
+        "select d.id, dw.workspace_id, pr.id, dw.filename, "  # noqa: S608
+        "entry.col->>'sheet' as sheet, entry.col->'columns' as columns, "
+        "coalesce((entry.col->>'rows')::int, pr.row_count, 0) as rows, "
         "count(*) over () as total "
         "from documents d "
         "join document_workspaces dw on dw.document_id = d.id "
         "join processing_runs pr on pr.id = d.active_processing_run_id "
+        "cross join lateral ("
+        "  select case"
+        "    when jsonb_typeof(pr.csv_columns) = 'array'"
+        "         and (jsonb_array_length(pr.csv_columns) = 0"
+        "              or jsonb_typeof(pr.csv_columns -> 0) = 'string')"
+        "    then jsonb_build_array(jsonb_build_object("
+        "         'sheet', '', 'columns', coalesce(pr.csv_columns, '[]'::jsonb),"
+        "         'rows', pr.row_count))"
+        "    else pr.csv_columns"
+        "  end as entries"
+        ") as normed "
+        "cross join lateral jsonb_array_elements("
+        "  coalesce(normed.entries, '[]'::jsonb)) as entry(col) "
         f"where {' and '.join(conditions)} "
-        "order by dw.filename, d.id "
+        "order by dw.filename, entry.col->>'sheet', d.id "
         "limit :limit offset :offset"
     )
 

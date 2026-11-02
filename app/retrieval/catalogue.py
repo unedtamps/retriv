@@ -36,9 +36,12 @@ def format_catalogue(
         )
         lines.append("")
     lines.extend(
-        f"  {entry.filename}  [{entry.document_id}]  {entry.row_count} rows"
+        f"  {label}  [{entry.document_id}]  {entry.row_count} rows"
         f"  columns: {', '.join(entry.columns) if entry.columns else 'unknown'}"
         for entry in catalogue.entries
+        for label in (
+            f"{entry.filename} › sheet {entry.sheet}" if entry.sheet else entry.filename,
+        )
     )
     if catalogue.hidden:
         lines.append(

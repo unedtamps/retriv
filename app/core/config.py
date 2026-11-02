@@ -84,6 +84,17 @@ class Settings(BaseSettings):
     max_csv_rows: int = Field(default=1_000_000, gt=0)
     max_csv_columns: int = Field(default=512, ge=1, le=4096)
     max_csv_field_bytes: int = Field(default=64 * 1024, gt=0)
+    max_xlsx_sheets: int = Field(default=64, gt=0)
+    """Sheets one workbook may carry.
+
+    A sheet is another table to detect, stream and store, and another
+    catalogue entry the agent reads; past a few dozen the workbook is a
+    database export that should have been split before it was uploaded."""
+    max_xlsx_images: int = Field(default=20, gt=0)
+    """Pictures and rendered charts one workbook may contribute.
+
+    Every one of these becomes a vision call and an artifact object, so the
+    cap bounds the cost of a workbook that embeds a logo on every sheet."""
     max_concurrent_uploads: int = Field(default=2, ge=1, le=16)
     request_read_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     upload_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs

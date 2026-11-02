@@ -61,6 +61,7 @@ from app.documents.validation import (
     DOCX_MEDIA_TYPE,
     PDF_MEDIA_TYPE,
     PPTX_MEDIA_TYPE,
+    XLSX_MEDIA_TYPE,
     sniff_delimiter,
     uniquify_columns,
 )
@@ -84,6 +85,13 @@ from app.extraction.images import (
     is_no_figure_reply,
     merge_descriptions,
     picture_refs,
+)
+from app.extraction.xlsx_reader import (
+    SheetPicture,
+    SheetTable,
+    WorkbookError,
+    WorkbookTooLargeError,
+    read_workbook,
 )
 from app.infrastructure.storage import (
     ArtifactStorage,
@@ -268,6 +276,7 @@ class ProcessingWorker:
                 PermanentProcessingError,
                 ObjectNotFoundError,
                 ObjectTooLargeError,
+                WorkbookError,
             ) as exc:
                 span.record_exception(exc)
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
@@ -729,6 +738,11 @@ class ProcessingWorker:
                 await self._process_csv_extract(claimed_run, lease_token, document)
             return
 
+        if document.detected_media_type == XLSX_MEDIA_TYPE:
+            async with self._extraction_slots:
+                await self._process_xlsx_extract(claimed_run, lease_token, document)
+            return
+
         self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
         suffix = _SOURCE_SUFFIX.get(document.detected_media_type)
         if suffix is None:
@@ -853,8 +867,12 @@ class ProcessingWorker:
             stored_images: list[DocumentImage] = []
             if extraction.images:
                 await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
-                stored_images = await self._persist_images(
-                    claimed_run.id, document, extraction, artifact_prefix
+                stored_images = await self._store_images(
+                    claimed_run.id,
+                    document,
+                    extraction.images,
+                    extraction.image_descriptions or {},
+                    artifact_prefix,
                 )
 
             await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
@@ -882,25 +900,26 @@ class ProcessingWorker:
         if chunks_persisted:
             await self._process_embeddings(claimed_run, lease_token)
 
-    async def _persist_images(
+    async def _store_images(
         self,
         run_id: UUID,
         document: Document,
-        extraction: ExtractionResult,
+        images: list[ExtractedImage],
+        descriptions: dict[str, str],
         artifact_prefix: str,
     ) -> list[DocumentImage]:
-        """Ship the document's pictures to the artifact bucket, sized for a model.
+        """Ship a document's pictures to the artifact bucket, sized for a model.
 
         One object per picture: a render bounded to the edge a vision model
         reads at. A model downscales past that edge itself, so the larger
         render buys nothing -- and when a picture cannot be re-read at all,
         its own bytes are stored as they came rather than failing the run.
-        The rows returned here are written by ``_persist_chunks`` inside the
-        run's committing transaction, so a crashed attempt leaves objects no
-        database row points at and the folder sweep reclaims them.
+        The rows returned here are written inside the run's committing
+        transaction, so a crashed attempt leaves objects no database row
+        points at and the folder sweep reclaims them.
         """
         stored: list[DocumentImage] = []
-        for image in extraction.images:
+        for image in images:
             data, media_type = self._preview_png(image.data, image.media_type)
             object_key = image_object_keys(image.ref, media_type, artifact_prefix)
             await to_thread.run_sync(
@@ -914,7 +933,7 @@ class ProcessingWorker:
                     sha256=hashlib.sha256(data).hexdigest(),
                 )
             )
-            description = (extraction.image_descriptions or {}).get(image.ref, "")
+            description = descriptions.get(image.ref, "")
             stored.append(
                 DocumentImage(
                     origin_workspace_id=document.origin_workspace_id,
@@ -1095,14 +1114,20 @@ class ProcessingWorker:
             )
 
             await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
-            rows_persisted = await self._persist_rows(
+            rows_persisted = await self._persist_tabular_rows(
                 claimed_run.id,
                 lease_token,
                 document,
-                csv_text,
-                columns,
-                delimiter,
+                [
+                    SheetTable(
+                        name="",
+                        columns=columns,
+                        header_row=1,
+                        rows=self._iter_csv_rows(csv_text, columns, delimiter),
+                    )
+                ],
                 manifest_key=manifest_key,
+                stored_images=[],
             )
             if not rows_persisted:
                 await self._delete_artifacts(None, manifest_key)
@@ -1114,6 +1139,212 @@ class ProcessingWorker:
             raise
         finally:
             await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
+
+    async def _process_xlsx_extract(
+        self, claimed_run: ProcessingRun, lease_token: UUID, document: Document
+    ) -> None:
+        """Store a workbook's sheets as rows, and its pictures for the agent.
+
+        The data path is the CSV path with names: every tabular sheet lands
+        in ``document_rows`` under its sheet name, and Qdrant stays empty
+        for the document. What a CSV cannot carry -- embedded pictures,
+        charts -- is lifted here and described by the vision stage, so a
+        workbook's graphs are as reachable as its numbers: each description
+        is stored beside its picture and served through the image tools.
+
+        The parser runs in-process next to the CSV parser: openpyxl is pure
+        Python and holds no native parsing surface, and the caps bound the
+        work instead of a sandbox.
+        """
+        if document.bucket != self._settings.s3_raw_bucket:
+            raise PermanentProcessingError("Document references an unapproved raw bucket")
+        expected_key = (
+            f"workspaces/{document.origin_workspace_id}/objects/{document.sha256}/{document.id}"
+        )
+        if document.object_key != expected_key:
+            raise PermanentProcessingError("Object key does not match document identity")
+        if document.size_bytes > self._settings.max_source_bytes:
+            raise PermanentProcessingError("Document exceeds the processing size limit")
+
+        self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix="context-source-",
+            suffix=".xlsx",
+            dir=self._settings.processing_temp_dir,
+        )
+        os.close(descriptor)
+        temporary_path = Path(temporary_name)
+        manifest_key: str | None = None
+        try:
+            downloaded = await to_thread.run_sync(
+                partial(
+                    self._storage.download_file,
+                    temporary_path,
+                    bucket=document.bucket,
+                    key=document.object_key,
+                    max_bytes=self._settings.max_source_bytes,
+                )
+            )
+            if downloaded.size_bytes != document.size_bytes:
+                raise PermanentProcessingError("Downloaded object size does not match the event")
+            if downloaded.sha256 != document.sha256:
+                raise PermanentProcessingError("Downloaded object hash does not match the event")
+
+            await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
+            try:
+                reading = await to_thread.run_sync(
+                    partial(
+                        read_workbook,
+                        temporary_path,
+                        max_sheets=self._settings.max_xlsx_sheets,
+                        max_rows=self._settings.max_csv_rows,
+                        max_columns=self._settings.max_csv_columns,
+                        max_images=self._settings.max_xlsx_images,
+                    )
+                )
+            except WorkbookTooLargeError as exc:
+                raise PermanentProcessingError(str(exc)) from exc
+            except WorkbookError as exc:
+                raise PermanentProcessingError(
+                    f"The workbook could not be read: {exc}"
+                ) from exc
+
+            artifact_prefix = (
+                f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
+                f"runs/{claimed_run.id}/attempts/{lease_token}"
+            )
+            manifest_key = f"{artifact_prefix}/manifest.json"
+            manifest_bytes = json.dumps(
+                {
+                    "artifact_type": "retriv-spreadsheet",
+                    "sheets": [
+                        {
+                            "sheet": table.name,
+                            "columns": table.columns,
+                            "header_row": table.header_row,
+                        }
+                        for table in reading.tables
+                    ],
+                    "skipped": [
+                        {"sheet": sheet.name, "reason": sheet.reason}
+                        for sheet in reading.skipped
+                    ],
+                    "visuals_skipped": reading.visuals_skipped,
+                    "media_type": document.detected_media_type,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+            await self._set_artifact_keys(
+                claimed_run.id,
+                lease_token,
+                artifact_key=None,
+                manifest_key=manifest_key,
+            )
+            await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
+            await to_thread.run_sync(
+                partial(
+                    self._storage.put_bytes,
+                    manifest_bytes,
+                    bucket=self._settings.s3_artifact_bucket,
+                    key=manifest_key,
+                    content_type="application/json",
+                    content_encoding=None,
+                    sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+                )
+            )
+
+            descriptions: dict[str, str] = {}
+            if reading.pictures and self._settings.image_processing_enabled:
+                descriptions = await self._describe_xlsx_images(
+                    claimed_run.id, lease_token, reading.pictures
+                )
+            await self._ensure_active(claimed_run.id, lease_token)
+
+            stored_images = await self._store_images(
+                claimed_run.id,
+                document,
+                [picture.image for picture in reading.pictures],
+                descriptions,
+                artifact_prefix,
+            )
+
+            await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
+            rows_persisted = await self._persist_tabular_rows(
+                claimed_run.id,
+                lease_token,
+                document,
+                reading.tables,
+                manifest_key=manifest_key,
+                stored_images=stored_images,
+            )
+            if not rows_persisted:
+                await self._delete_artifacts(None, manifest_key)
+            else:
+                await self._sweep_superseded_artifacts(document.id, claimed_run.id)
+        except Exception:
+            if manifest_key is not None:
+                await self._delete_artifacts(None, manifest_key)
+            raise
+        finally:
+            await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
+
+    async def _describe_xlsx_images(
+        self, run_id: UUID, lease_token: UUID, pictures: list[SheetPicture]
+    ) -> dict[str, str]:
+        """Describe a workbook's pictures and charts, a few at a time.
+
+        The concurrency cap and the failure posture are the document path's:
+        the budget belongs to the worker, not to a run, and a description
+        that cannot be produced fails the run rather than shipping a
+        picture nobody can read about.
+        """
+        provider = self._vision_provider
+        if provider is None:
+            raise PermanentProcessingError(
+                "Image processing is enabled but no vision provider is configured"
+            )
+        await self._set_phase(run_id, lease_token, RUN_DESCRIBING)
+        stop_event = asyncio.Event()
+        heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
+
+        async def describe_one(picture: SheetPicture) -> str:
+            async with self._vlm_slots:
+                context = (
+                    f'The picture appears on the sheet "{picture.sheet}" '
+                    "of a spreadsheet workbook.\n"
+                )
+                if picture.image.caption.strip():
+                    context += f"The chart is titled: {picture.image.caption.strip()}\n"
+                return await provider.describe(picture.image, context=context)
+
+        try:
+            with _tracer.start_as_current_span(
+                "describe", attributes={"retriv.image_count": len(pictures)}
+            ) as span:
+                try:
+                    async with asyncio.timeout(self._settings.processing_timeout_seconds):
+                        results = await asyncio.gather(
+                            *(describe_one(picture) for picture in pictures),
+                            return_exceptions=True,
+                        )
+                except TimeoutError as exc:
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR, str(exc)))
+                    raise ExtractionError(
+                        "Describing the workbook's pictures exceeded the time limit"
+                    ) from exc
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+            return {
+                picture.image.ref: str(description)
+                for picture, description in zip(pictures, results, strict=True)
+            }
+        finally:
+            stop_event.set()
+            await heartbeat
 
     def _decode_csv(self, path: Path) -> str:
         """Decode the file to text using the same encodings the validator tried.
@@ -1155,17 +1386,26 @@ class ProcessingWorker:
                 continue
             yield dict(zip(columns, row, strict=False))
 
-    async def _persist_rows(
+    async def _persist_tabular_rows(
         self,
         run_id: UUID,
         lease_token: UUID,
         document: Document,
-        text: str,
-        columns: list[str],
-        delimiter: str,
+        tables: list[SheetTable],
         *,
         manifest_key: str,
+        stored_images: list[DocumentImage],
     ) -> bool:
+        """Store one tabular document's rows, replacing whatever it had.
+
+        A CSV arrives as one unnamed table and a workbook as several named
+        ones; both land here, because the store, the caps and the citation
+        contract are the same. The row id seeds from the sheet name when
+        there is one, and keeps the older seed for a CSV so existing rows
+        keep their identity. This is also the run's activation gate: the
+        document row is locked, so a delete that committed meanwhile turns
+        the run into a cancellation instead of a write over a tombstone.
+        """
         stop_event = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
         try:
@@ -1189,29 +1429,36 @@ class ProcessingWorker:
                 await session.execute(
                     delete(DocumentRow).where(DocumentRow.processing_run_id == run_id)
                 )
-                inserted = 0
-                batch: list[dict[str, object]] = []
-                for row_number, row in enumerate(
-                    self._iter_csv_rows(text, columns, delimiter), start=1
-                ):
-                    batch.append(
-                        {
-                            "id": uuid5(run_id, str(row_number)),
-                            "origin_workspace_id": stored_document.origin_workspace_id,
-                            "document_id": stored_document.id,
-                            "processing_run_id": run_id,
-                            "row_number": row_number,
-                            "data": row,
-                        }
-                    )
-                    if len(batch) >= _ROW_INSERT_BATCH:
+                inserted_total = 0
+                catalogue: list[dict[str, object]] = []
+                for table in tables:
+                    inserted = 0
+                    batch: list[dict[str, object]] = []
+                    for row_number, row in enumerate(table.rows, start=1):
+                        seed = str(row_number) if not table.name else f"{table.name}:{row_number}"
+                        batch.append(
+                            {
+                                "id": uuid5(run_id, seed),
+                                "origin_workspace_id": stored_document.origin_workspace_id,
+                                "document_id": stored_document.id,
+                                "processing_run_id": run_id,
+                                "sheet": table.name,
+                                "row_number": row_number,
+                                "data": row,
+                            }
+                        )
+                        if len(batch) >= _ROW_INSERT_BATCH:
+                            await session.execute(insert(DocumentRow), batch)
+                            inserted += len(batch)
+                            batch.clear()
+                            await asyncio.sleep(0)
+                    if batch:
                         await session.execute(insert(DocumentRow), batch)
                         inserted += len(batch)
-                        batch.clear()
-                        await asyncio.sleep(0)
-                if batch:
-                    await session.execute(insert(DocumentRow), batch)
-                    inserted += len(batch)
+                    inserted_total += inserted
+                    catalogue.append(
+                        {"sheet": table.name, "columns": table.columns, "rows": inserted}
+                    )
 
                 await session.execute(
                     delete(DocumentRow).where(
@@ -1219,6 +1466,12 @@ class ProcessingWorker:
                         DocumentRow.processing_run_id != run_id,
                     )
                 )
+                await session.execute(
+                    delete(DocumentImage).where(
+                        DocumentImage.document_id == stored_document.id
+                    )
+                )
+                session.add_all(stored_images)
 
                 run.status = RUN_READY
                 run.lease_until = None
@@ -1228,8 +1481,8 @@ class ProcessingWorker:
                 run.manifest_key = manifest_key
                 run.chunk_count = 0
                 run.embedded_chunk_count = 0
-                run.row_count = inserted
-                run.csv_columns = columns
+                run.row_count = inserted_total
+                run.csv_columns = catalogue
                 run.embedding_profile = None
                 run.embedding_model = None
                 run.embedding_dimensions = None
