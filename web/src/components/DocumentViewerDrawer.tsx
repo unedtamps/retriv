@@ -5,6 +5,7 @@ import { cachedDocument, loadDocument, type DocumentFile } from '../lib/document
 import type { DocumentUpload, Workspace } from '../types'
 import { Dialog } from './Dialog'
 import { DocumentDocxPreview } from './DocumentDocxPreview'
+import { DocumentSheetPreview } from './DocumentSheetPreview'
 
 interface DocumentViewerDrawerProps {
   document: DocumentUpload
@@ -15,6 +16,8 @@ interface DocumentViewerDrawerProps {
 
 const DOCX_MEDIA_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const XLSX_MEDIA_TYPE =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 /**
  * The original document, rendered in place.
@@ -36,6 +39,9 @@ export function DocumentViewerDrawer({
   const file = loaded ?? cached
   const isPdf = document.detected_media_type === 'application/pdf'
   const isDocx = document.detected_media_type === DOCX_MEDIA_TYPE
+  const isSheet =
+    document.detected_media_type === 'text/csv' ||
+    document.detected_media_type === XLSX_MEDIA_TYPE
 
   useEffect(() => {
     if (cachedDocument(document) !== null) return
@@ -123,6 +129,12 @@ export function DocumentViewerDrawer({
           </p>
         ) : isDocx ? (
           <DocumentDocxPreview
+            document={document}
+            workspace={workspace}
+            onUnauthorized={onUnauthorized}
+          />
+        ) : isSheet ? (
+          <DocumentSheetPreview
             document={document}
             workspace={workspace}
             onUnauthorized={onUnauthorized}

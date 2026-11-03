@@ -1,5 +1,6 @@
 import type { DocumentUpload } from '../types'
 import { clearDocxMarkupCache } from './docxPreview'
+import { clearSheetMarkupCache } from './sheetPreview'
 
 /**
  * Bytes and object URLs for documents already fetched in this tab.
@@ -95,4 +96,5 @@ export function clearDocumentCache(): void {
   entries.clear()
   inFlight.clear()
   clearDocxMarkupCache()
+  clearSheetMarkupCache()
 }
