@@ -29,7 +29,7 @@ help:
 		'  web       Run only the web dev server (API must already be running)' \
 		'  worker    Build and start the processing worker (Docker)' \
 		'  run-worker Start the worker without rebuilding it' \
-		'  infra     Start and wait for PostgreSQL, Qdrant, and ClamAV' \
+		'  infra     Start and wait for PostgreSQL, Qdrant, ClamAV, and Jaeger' \
 		'  sql-role  Create or repair the read-only SQL role and its grants' \
 		'  migrate   Apply database migrations' \
 		'  status    Show infrastructure container status' \
@@ -53,6 +53,12 @@ install:
 # Object storage is an external S3-compatible provider; its buckets must exist
 # before the API or worker can use them.
 #
+# Jaeger is here rather than behind an opt-in flag because the API and the
+# worker both export OTLP to it on every run: with it absent, tracing is
+# enabled and silently dropping spans, and the UI at :16686 answers nothing.
+# It costs one 512m container and no startup wait, so every run path -- api,
+# run, run-build -- gets a working trace viewer for free.
+#
 # sql-role runs last and as a separate step because `up --wait` is the wrong
 # tool for a one-shot service: it waits for a container to be *running*, and
 # this script finishes in under a second, so compose reports the exit as a
@@ -60,7 +66,7 @@ install:
 # job to finish and hands back its exit code, which is what a build step needs.
 infra: check-env
 	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) \
-		postgres qdrant clamav
+		postgres qdrant clamav jaeger
 	$(MAKE) sql-role
 
 migrate: infra

@@ -234,6 +234,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
