@@ -80,6 +80,7 @@ export function documentStatusLabel(status: string): string {
 
 const RUN_STATUS_LABELS: Record<string, string> = {
   fetching: 'Fetching',
+  awaiting_parser: 'Awaiting parser',
   describing: 'Describing',
   storing_artifact: 'Storing',
   chunking: 'Chunking',
@@ -102,7 +103,12 @@ export type PipelineStage = 'scan' | 'extract' | 'chunk' | 'embed' | 'index'
  */
 export function pipelineStage(status: string): PipelineStage {
   if (status === 'queued' || status === 'fetching' || status === 'retry_wait') return 'scan'
-  if (status === 'extracting' || status === 'describing' || status === 'storing_artifact') {
+  if (
+    status === 'awaiting_parser' ||
+    status === 'extracting' ||
+    status === 'describing' ||
+    status === 'storing_artifact'
+  ) {
     return 'extract'
   }
   if (status === 'chunking') return 'chunk'
@@ -141,6 +147,7 @@ export function documentStatusTone(status: string): StatusTone {
     [
       'queued',
       'fetching',
+      'awaiting_parser',
       'extracting',
       'describing',
       'storing_artifact',

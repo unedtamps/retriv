@@ -33,7 +33,9 @@ from app.db.models import (
     EMBEDDING_RETRY_WAIT,
     JOB_DELETE,
     JOB_EXTRACT,
+    RUN_AWAITING_PARSER,
     RUN_CANCELLED,
+    RUN_DELETING,
     RUN_EXTRACTING,
     RUN_FAILED,
     RUN_FETCHING,
@@ -417,6 +419,49 @@ async def test_a_completed_run_records_its_progress_and_its_attempt(
     )
     assert finished.manifest_key is not None
     assert finished.last_error is None
+
+
+async def test_a_queued_delete_is_claimed_ahead_of_queued_extracts(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    """Deletes jump the queue.
+
+    The delete run is the newest row, so FIFO would hand the claim to the
+    first extract. Cleanup carries no parser work and serves a user
+    request, so it is claimed ahead of the extracts it would otherwise
+    wait behind.
+    """
+    storage = FakeStorage()
+    first_document, _ = await seed_document(
+        db_session_factory, entities.finance.id, storage=storage
+    )
+    await seed_document(
+        db_session_factory, entities.finance.id, storage=storage, content=b"the second document"
+    )
+    async with db_session_factory() as session, session.begin():
+        session.add(
+            ProcessingRun(
+                id=uuid4(),
+                document_id=first_document.id,
+                origin_workspace_id=first_document.origin_workspace_id,
+                job_kind=JOB_DELETE,
+                pipeline_version="2026.1",
+                status=RUN_QUEUED,
+            )
+        )
+
+    worker = build_worker(db_session_factory, settings, storage=storage)
+    assert await worker._claim_one() is not None
+
+    async with db_session_factory() as session:
+        statuses = {
+            run.job_kind: run.status
+            for run in (await session.scalars(select(ProcessingRun))).all()
+        }
+    assert statuses[JOB_DELETE] == RUN_DELETING
+    assert statuses[JOB_EXTRACT] == RUN_QUEUED
 
 
 async def test_an_expired_lease_is_reclaimed_and_retried(
@@ -1741,6 +1786,10 @@ async def test_a_second_document_starts_parsing_while_the_first_is_still_indexin
     that must not stand between a finished parse and the next one. Which of
     the two documents claims the parser first is the claim order's business,
     not the test's, so the roles are read off the runs instead of assumed.
+
+    The waiting run reaches awaiting_parser, which only happens after its
+    download: the fetch therefore completed while the parser slot was still
+    held by the other document, proving it runs outside the slot.
     """
     session_factory = concurrent_session_factory
     workspace_id = await seed_workspace(session_factory)
@@ -1772,12 +1821,12 @@ async def test_a_second_document_starts_parsing_while_the_first_is_still_indexin
             }
             return extractor.calls >= 1 and statuses == {
                 RUN_EXTRACTING,
-                RUN_FETCHING,
+                RUN_AWAITING_PARSER,
             }
 
         await wait_until(
             one_parsing_one_waiting,
-            message="second run to be claimed while the first parses",
+            message="second run to finish downloading while the first parses",
         )
 
         extractor.release()

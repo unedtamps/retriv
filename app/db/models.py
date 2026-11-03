@@ -29,6 +29,7 @@ JOB_ACCESS = "access"
 
 RUN_QUEUED = "queued"
 RUN_FETCHING = "fetching"
+RUN_AWAITING_PARSER = "awaiting_parser"
 RUN_EXTRACTING = "extracting"
 RUN_DESCRIBING = "describing"
 RUN_STORING_ARTIFACT = "storing_artifact"
@@ -44,6 +45,7 @@ RUN_UNSUPPORTED = "unsupported_format"
 
 ACTIVE_RUN_STATUSES: tuple[str, ...] = (
     RUN_FETCHING,
+    RUN_AWAITING_PARSER,
     RUN_EXTRACTING,
     RUN_DESCRIBING,
     RUN_STORING_ARTIFACT,

@@ -33,6 +33,7 @@ from app.db.models import (
     JOB_ACCESS,
     JOB_DELETE,
     JOB_EXTRACT,
+    RUN_AWAITING_PARSER,
     RUN_CANCELLED,
     RUN_CHUNKING,
     RUN_DELETING,
@@ -683,6 +684,13 @@ class ProcessingWorker:
                 run.last_error = None
 
     async def _claim_one(self) -> ProcessingRun | None:
+        """Claim the next dispatchable run, deletes ahead of the queue.
+
+        A delete carries no parser work and serves a user request, while
+        the extracts it overtakes cost minutes of CPU: letting cleanup
+        wait behind a burst of uploads keeps a deleted document's
+        artifacts and queue rows alive for nothing.
+        """
         now = utcnow()
         lease_until = now + timedelta(seconds=self._settings.processing_lease_seconds)
         async with self._session_factory() as session, session.begin():
@@ -692,7 +700,11 @@ class ProcessingWorker:
                     ProcessingRun.status.in_((RUN_QUEUED, RUN_RETRY_WAIT)),
                     ProcessingRun.available_at <= now,
                 )
-                .order_by(ProcessingRun.created_at, ProcessingRun.id)
+                .order_by(
+                    ProcessingRun.job_kind != JOB_DELETE,
+                    ProcessingRun.created_at,
+                    ProcessingRun.id,
+                )
                 .limit(1)
                 .with_for_update(skip_locked=True)
             )
@@ -734,13 +746,11 @@ class ProcessingWorker:
             raise PermanentProcessingError("Document exceeds the processing size limit")
 
         if document.detected_media_type == CSV_MEDIA_TYPE:
-            async with self._extraction_slots:
-                await self._process_csv_extract(claimed_run, lease_token, document)
+            await self._process_csv_extract(claimed_run, lease_token, document)
             return
 
         if document.detected_media_type == XLSX_MEDIA_TYPE:
-            async with self._extraction_slots:
-                await self._process_xlsx_extract(claimed_run, lease_token, document)
+            await self._process_xlsx_extract(claimed_run, lease_token, document)
             return
 
         self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
@@ -761,25 +771,26 @@ class ProcessingWorker:
         manifest_key: str | None = None
         chunks_persisted = False
         try:
-            async with self._extraction_slots:
-                downloaded = await to_thread.run_sync(
-                    partial(
-                        self._storage.download_file,
-                        temporary_path,
-                        bucket=document.bucket,
-                        key=document.object_key,
-                        max_bytes=self._settings.max_source_bytes,
-                    )
+            downloaded = await to_thread.run_sync(
+                partial(
+                    self._storage.download_file,
+                    temporary_path,
+                    bucket=document.bucket,
+                    key=document.object_key,
+                    max_bytes=self._settings.max_source_bytes,
                 )
-                if downloaded.size_bytes != document.size_bytes:
-                    raise PermanentProcessingError(
-                        "Downloaded object size does not match the event"
-                    )
-                if downloaded.sha256 != document.sha256:
-                    raise PermanentProcessingError(
-                        "Downloaded object hash does not match the event"
-                    )
+            )
+            if downloaded.size_bytes != document.size_bytes:
+                raise PermanentProcessingError(
+                    "Downloaded object size does not match the event"
+                )
+            if downloaded.sha256 != document.sha256:
+                raise PermanentProcessingError(
+                    "Downloaded object hash does not match the event"
+                )
 
+            await self._set_phase(claimed_run.id, lease_token, RUN_AWAITING_PARSER)
+            async with self._extraction_slots:
                 await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
                 extraction_media_type = document.detected_media_type
                 if document.detected_media_type == PPTX_MEDIA_TYPE:
@@ -1034,10 +1045,12 @@ class ProcessingWorker:
         text has no such surface, and the caps in the validator bound it
         instead.
 
-        The caller holds a parser slot for the whole call, not just the
-        parse: the decoded text stays in memory until the rows are
+        The parser slot is held for the whole post-download call, not just
+        the parse: the decoded text stays in memory until the rows are
         committed, so releasing the slot at the parse would let the next
-        CSV in while this one still holds its full size in RAM.
+        CSV in while this one still holds its full size in RAM. The
+        download itself stays outside the slot -- it is network I/O and
+        overlaps another document's parse.
         """
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
@@ -1074,65 +1087,67 @@ class ProcessingWorker:
             if downloaded.sha256 != document.sha256:
                 raise PermanentProcessingError("Downloaded object hash does not match the event")
 
-            await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
-            csv_text = await to_thread.run_sync(partial(self._decode_csv, temporary_path))
-            columns, delimiter = await to_thread.run_sync(partial(self._inspect_csv, csv_text))
+            await self._set_phase(claimed_run.id, lease_token, RUN_AWAITING_PARSER)
+            async with self._extraction_slots:
+                await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
+                csv_text = await to_thread.run_sync(partial(self._decode_csv, temporary_path))
+                columns, delimiter = await to_thread.run_sync(partial(self._inspect_csv, csv_text))
 
-            artifact_prefix = (
-                f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
-                f"runs/{claimed_run.id}/attempts/{lease_token}"
-            )
-            manifest_key = f"{artifact_prefix}/manifest.json"
-            manifest_bytes = json.dumps(
-                {
-                    "columns": columns,
-                    "delimiter": delimiter,
-                    "encoding": CSV_ENCODINGS[0],
-                    "media_type": document.detected_media_type,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode()
-            await self._set_artifact_keys(
-                claimed_run.id,
-                lease_token,
-                artifact_key=None,
-                manifest_key=manifest_key,
-            )
-            await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
-            await to_thread.run_sync(
-                partial(
-                    self._storage.put_bytes,
-                    manifest_bytes,
-                    bucket=self._settings.s3_artifact_bucket,
-                    key=manifest_key,
-                    content_type="application/json",
-                    content_encoding=None,
-                    sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+                artifact_prefix = (
+                    f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
+                    f"runs/{claimed_run.id}/attempts/{lease_token}"
                 )
-            )
-
-            await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
-            rows_persisted = await self._persist_tabular_rows(
-                claimed_run.id,
-                lease_token,
-                document,
-                [
-                    SheetTable(
-                        name="",
-                        columns=columns,
-                        header_row=1,
-                        rows=self._iter_csv_rows(csv_text, columns, delimiter),
+                manifest_key = f"{artifact_prefix}/manifest.json"
+                manifest_bytes = json.dumps(
+                    {
+                        "columns": columns,
+                        "delimiter": delimiter,
+                        "encoding": CSV_ENCODINGS[0],
+                        "media_type": document.detected_media_type,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+                await self._set_artifact_keys(
+                    claimed_run.id,
+                    lease_token,
+                    artifact_key=None,
+                    manifest_key=manifest_key,
+                )
+                await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
+                await to_thread.run_sync(
+                    partial(
+                        self._storage.put_bytes,
+                        manifest_bytes,
+                        bucket=self._settings.s3_artifact_bucket,
+                        key=manifest_key,
+                        content_type="application/json",
+                        content_encoding=None,
+                        sha256=hashlib.sha256(manifest_bytes).hexdigest(),
                     )
-                ],
-                manifest_key=manifest_key,
-                stored_images=[],
-            )
-            if not rows_persisted:
-                await self._delete_artifacts(None, manifest_key)
-            else:
-                await self._sweep_superseded_artifacts(document.id, claimed_run.id)
+                )
+
+                await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
+                rows_persisted = await self._persist_tabular_rows(
+                    claimed_run.id,
+                    lease_token,
+                    document,
+                    [
+                        SheetTable(
+                            name="",
+                            columns=columns,
+                            header_row=1,
+                            rows=self._iter_csv_rows(csv_text, columns, delimiter),
+                        )
+                    ],
+                    manifest_key=manifest_key,
+                    stored_images=[],
+                )
+                if not rows_persisted:
+                    await self._delete_artifacts(None, manifest_key)
+                else:
+                    await self._sweep_superseded_artifacts(document.id, claimed_run.id)
         except Exception:
             if manifest_key is not None:
                 await self._delete_artifacts(None, manifest_key)
@@ -1190,99 +1205,101 @@ class ProcessingWorker:
             if downloaded.sha256 != document.sha256:
                 raise PermanentProcessingError("Downloaded object hash does not match the event")
 
-            await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
-            try:
-                reading = await to_thread.run_sync(
+            await self._set_phase(claimed_run.id, lease_token, RUN_AWAITING_PARSER)
+            async with self._extraction_slots:
+                await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
+                try:
+                    reading = await to_thread.run_sync(
+                        partial(
+                            read_workbook,
+                            temporary_path,
+                            max_sheets=self._settings.max_xlsx_sheets,
+                            max_rows=self._settings.max_csv_rows,
+                            max_columns=self._settings.max_csv_columns,
+                            max_images=self._settings.max_xlsx_images,
+                        )
+                    )
+                except WorkbookTooLargeError as exc:
+                    raise PermanentProcessingError(str(exc)) from exc
+                except WorkbookError as exc:
+                    raise PermanentProcessingError(
+                        f"The workbook could not be read: {exc}"
+                    ) from exc
+
+                artifact_prefix = (
+                    f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
+                    f"runs/{claimed_run.id}/attempts/{lease_token}"
+                )
+                manifest_key = f"{artifact_prefix}/manifest.json"
+                manifest_bytes = json.dumps(
+                    {
+                        "artifact_type": "retriv-spreadsheet",
+                        "sheets": [
+                            {
+                                "sheet": table.name,
+                                "columns": table.columns,
+                                "header_row": table.header_row,
+                            }
+                            for table in reading.tables
+                        ],
+                        "skipped": [
+                            {"sheet": sheet.name, "reason": sheet.reason}
+                            for sheet in reading.skipped
+                        ],
+                        "visuals_skipped": reading.visuals_skipped,
+                        "media_type": document.detected_media_type,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+                await self._set_artifact_keys(
+                    claimed_run.id,
+                    lease_token,
+                    artifact_key=None,
+                    manifest_key=manifest_key,
+                )
+                await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
+                await to_thread.run_sync(
                     partial(
-                        read_workbook,
-                        temporary_path,
-                        max_sheets=self._settings.max_xlsx_sheets,
-                        max_rows=self._settings.max_csv_rows,
-                        max_columns=self._settings.max_csv_columns,
-                        max_images=self._settings.max_xlsx_images,
+                        self._storage.put_bytes,
+                        manifest_bytes,
+                        bucket=self._settings.s3_artifact_bucket,
+                        key=manifest_key,
+                        content_type="application/json",
+                        content_encoding=None,
+                        sha256=hashlib.sha256(manifest_bytes).hexdigest(),
                     )
                 )
-            except WorkbookTooLargeError as exc:
-                raise PermanentProcessingError(str(exc)) from exc
-            except WorkbookError as exc:
-                raise PermanentProcessingError(
-                    f"The workbook could not be read: {exc}"
-                ) from exc
 
-            artifact_prefix = (
-                f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
-                f"runs/{claimed_run.id}/attempts/{lease_token}"
-            )
-            manifest_key = f"{artifact_prefix}/manifest.json"
-            manifest_bytes = json.dumps(
-                {
-                    "artifact_type": "retriv-spreadsheet",
-                    "sheets": [
-                        {
-                            "sheet": table.name,
-                            "columns": table.columns,
-                            "header_row": table.header_row,
-                        }
-                        for table in reading.tables
-                    ],
-                    "skipped": [
-                        {"sheet": sheet.name, "reason": sheet.reason}
-                        for sheet in reading.skipped
-                    ],
-                    "visuals_skipped": reading.visuals_skipped,
-                    "media_type": document.detected_media_type,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode()
-            await self._set_artifact_keys(
-                claimed_run.id,
-                lease_token,
-                artifact_key=None,
-                manifest_key=manifest_key,
-            )
-            await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
-            await to_thread.run_sync(
-                partial(
-                    self._storage.put_bytes,
-                    manifest_bytes,
-                    bucket=self._settings.s3_artifact_bucket,
-                    key=manifest_key,
-                    content_type="application/json",
-                    content_encoding=None,
-                    sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+                descriptions: dict[str, str] = {}
+                if reading.pictures and self._settings.image_processing_enabled:
+                    descriptions = await self._describe_xlsx_images(
+                        claimed_run.id, lease_token, reading.pictures
+                    )
+                await self._ensure_active(claimed_run.id, lease_token)
+
+                stored_images = await self._store_images(
+                    claimed_run.id,
+                    document,
+                    [picture.image for picture in reading.pictures],
+                    descriptions,
+                    artifact_prefix,
                 )
-            )
 
-            descriptions: dict[str, str] = {}
-            if reading.pictures and self._settings.image_processing_enabled:
-                descriptions = await self._describe_xlsx_images(
-                    claimed_run.id, lease_token, reading.pictures
+                await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
+                rows_persisted = await self._persist_tabular_rows(
+                    claimed_run.id,
+                    lease_token,
+                    document,
+                    reading.tables,
+                    manifest_key=manifest_key,
+                    stored_images=stored_images,
                 )
-            await self._ensure_active(claimed_run.id, lease_token)
-
-            stored_images = await self._store_images(
-                claimed_run.id,
-                document,
-                [picture.image for picture in reading.pictures],
-                descriptions,
-                artifact_prefix,
-            )
-
-            await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
-            rows_persisted = await self._persist_tabular_rows(
-                claimed_run.id,
-                lease_token,
-                document,
-                reading.tables,
-                manifest_key=manifest_key,
-                stored_images=stored_images,
-            )
-            if not rows_persisted:
-                await self._delete_artifacts(None, manifest_key)
-            else:
-                await self._sweep_superseded_artifacts(document.id, claimed_run.id)
+                if not rows_persisted:
+                    await self._delete_artifacts(None, manifest_key)
+                else:
+                    await self._sweep_superseded_artifacts(document.id, claimed_run.id)
         except Exception:
             if manifest_key is not None:
                 await self._delete_artifacts(None, manifest_key)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FileSpreadsheet, LoaderCircle } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
-import { cachedDocument, loadDocument } from '../lib/documentCache'
+import { cachedDocument } from '../lib/documentCache'
 import {
   PREVIEW_ROW_LIMIT,
   SheetTooLargeError,
