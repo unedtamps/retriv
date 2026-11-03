@@ -5,6 +5,13 @@ writers so it can never reproduce a race, and the global unique constraint
 on sha256 is what actually settles it in production.
 
 Skipped unless TEST_POSTGRES_URL points at a real database.
+
+That database is DESTROYED: every test here calls ``clear_database``, which
+deletes every user, workspace, document and row. Pointing it at a dev
+database wipes that database -- it once did. ``POSTGRES_URL`` below refuses
+a URL whose database name matches the application's own, so the mistake
+fails loudly instead of succeeding destructively. Use a scratch database
+(``createdb retriv_test``) and point the variable at that.
 """
 
 import asyncio
@@ -65,6 +72,21 @@ from tests.test_worker import (
 )
 
 POSTGRES_URL = os.getenv("TEST_POSTGRES_URL")
+
+_APPLICATION_URL = os.getenv("RETRIV_DATABASE_URL", "")
+_TARGET_DATABASE = urlsplit(POSTGRES_URL).path.lstrip("/") if POSTGRES_URL else ""
+_APPLICATION_DATABASE = (
+    urlsplit(_APPLICATION_URL).path.lstrip("/") if _APPLICATION_URL else ""
+)
+
+if POSTGRES_URL is not None and _TARGET_DATABASE == _APPLICATION_DATABASE:
+    raise pytest.UsageError(
+        f"TEST_POSTGRES_URL points at the application database "
+        f"({_TARGET_DATABASE!r}). This suite deletes every user, workspace and "
+        "document it can reach. Point it at a scratch database -- "
+        "`createdb retriv_test` then "
+        "TEST_POSTGRES_URL=postgresql+asyncpg://.../retriv_test."
+    )
 
 pytestmark = pytest.mark.skipif(POSTGRES_URL is None, reason="TEST_POSTGRES_URL is not configured")
 

@@ -17,7 +17,7 @@ UV_RUN := uv run --env-file $(ENV_FILE) --
 COMPOSE := docker compose --env-file $(ENV_FILE)
 COMPOSE_WORKER := $(COMPOSE) up -d --scale worker=$(RETRIV_WORKER_REPLICAS) worker
 
-.PHONY: help install infra worker run-worker run-build migrate bootstrap api run web status logs down test check check-env sql-role
+.PHONY: help install infra worker run-worker run-build migrate bootstrap api run web status logs down test test-postgres check check-env sql-role
 
 help:
 	@printf '%s\n' \
@@ -37,6 +37,7 @@ help:
 		'  down      Stop infrastructure containers' \
 		'  install   Install project and development dependencies' \
 		'  test      Run the test suite' \
+		'  test-postgres Run the Postgres-only tests against a scratch database' \
 		'  check     Run tests, lint, and type checking'
 
 check-env:
@@ -152,6 +153,23 @@ down: check-env
 
 test:
 	uv run pytest -q
+
+# Whether the Postgres-only tests can run, and where. They DELETE
+# everything they find, so the target refuses to run them against the
+# application database: it creates (or reuses) a scratch database instead,
+# migrates it, and points TEST_POSTGRES_URL at that. The guard inside
+# tests/test_postgres_integration.py is the second line of defence; this
+# target is the one that makes the safe thing the easy thing.
+test-postgres: check-env
+	@set -a; . ./$(ENV_FILE); set +a; \
+	scratch_url="postgresql+asyncpg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@127.0.0.1:7432/retriv_test"; \
+	PGPASSWORD="$$POSTGRES_PASSWORD" psql -h 127.0.0.1 -p 7432 -U "$$POSTGRES_USER" -d postgres \
+		-tAc "SELECT 1 FROM pg_database WHERE datname='retriv_test'" 2>/dev/null | grep -q 1 \
+		|| PGPASSWORD="$$POSTGRES_PASSWORD" psql -h 127.0.0.1 -p 7432 -U "$$POSTGRES_USER" -d postgres \
+			-c "CREATE DATABASE retriv_test" >/dev/null; \
+	RETRIV_DATABASE_URL="$$scratch_url" uv run alembic upgrade head >/dev/null; \
+	printf 'Postgres tests against retriv_test (the dev database is not touched)\n'; \
+	TEST_POSTGRES_URL="$$scratch_url" uv run pytest tests/test_postgres_integration.py -q
 
 check:
 	uv run pytest -q
