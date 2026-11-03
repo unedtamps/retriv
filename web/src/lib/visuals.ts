@@ -185,6 +185,8 @@ export function documentType(filename: string, mediaType: string): string {
   if (mediaType.includes('pdf')) return 'PDF'
   if (mediaType.includes('csv')) return 'CSV'
   if (mediaType.includes('wordprocessingml')) return 'DOCX'
+  if (mediaType.includes('presentationml')) return 'PPTX'
+  if (mediaType.includes('spreadsheetml')) return 'XLSX'
   return 'FILE'
 }
 

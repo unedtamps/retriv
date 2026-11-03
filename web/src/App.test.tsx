@@ -929,7 +929,53 @@ describe('dashboard application', () => {
     expect((body.get('file') as File).name).toBe('sales.csv')
   })
 
-  it('rejects a spreadsheet extension the pipeline cannot read', async () => {
+  it('accepts a workbook, which is stored as one table per sheet', async () => {
+    const user = userEvent.setup()
+    const fetchMock = installApi(owner, [workspace])
+
+    window.history.pushState({}, '', '/upload-context')
+    render(<App />)
+    await user.type(screen.getByLabelText('Username'), 'maya')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
+
+    const file = new File(['x'], 'budget.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    await user.upload(screen.getByLabelText('Document'), file)
+    expect(screen.getByRole('button', { name: 'Upload document' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+    expect(await screen.findByRole('heading', { name: 'Document accepted' })).toBeInTheDocument()
+    const uploadCall = fetchMock.mock.calls.find(([input]) => String(input) === '/v1/workspaces/workspace-1/documents')
+    if (uploadCall === undefined) throw new Error('Expected an upload request')
+    const body = uploadCall[1]?.body
+    if (!(body instanceof FormData)) throw new Error('Expected multipart form data')
+    expect((body.get('file') as File).name).toBe('budget.xlsx')
+  })
+
+  it('accepts a presentation, which is rendered before it is read', async () => {
+    const user = userEvent.setup()
+    installApi(owner, [workspace])
+
+    window.history.pushState({}, '', '/upload-context')
+    render(<App />)
+    await user.type(screen.getByLabelText('Username'), 'maya')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
+
+    const file = new File(['x'], 'deck.pptx', {
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    })
+    await user.upload(screen.getByLabelText('Document'), file)
+    expect(screen.getByRole('button', { name: 'Upload document' })).toBeEnabled()
+  })
+
+  it('rejects a legacy binary spreadsheet the pipeline cannot read', async () => {
     const user = userEvent.setup()
     installApi(owner, [workspace])
 
@@ -942,10 +988,10 @@ describe('dashboard application', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
 
     fireEvent.change(screen.getByLabelText('Document'), {
-      target: { files: [new File(['x'], 'budget.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })] },
+      target: { files: [new File(['x'], 'budget.xls', { type: 'application/vnd.ms-excel' })] },
     })
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Only PDF, DOCX and CSV')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only PDF, DOCX, PPTX, XLSX and CSV')
     expect(screen.getByRole('button', { name: 'Upload document' })).toBeDisabled()
   })
 
@@ -994,9 +1040,10 @@ describe('dashboard application', () => {
     expect(
       await screen.findByRole('heading', { name: 'Upload context', level: 1 })
     ).toBeInTheDocument()
-    const help = screen.getByText(/PDF, DOCX or CSV/)
+    const help = screen.getByText(/PDF, DOCX, PPTX, XLSX or CSV/)
     expect(help).toBeInTheDocument()
     expect(help).toHaveTextContent(/queried with SQL/)
+    expect(help).toHaveTextContent(/each sheet as its own table/)
     expect(screen.queryByText(/not yet indexed/)).not.toBeInTheDocument()
   })
 

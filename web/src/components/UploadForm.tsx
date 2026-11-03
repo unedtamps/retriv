@@ -24,7 +24,7 @@ interface UploadConfirmation {
   workspaceName: string
 }
 
-const supportedFile = /\.(pdf|docx|csv)$/i
+const supportedFile = /\.(pdf|docx|pptx|xlsx|csv)$/i
 
 export function UploadForm({
   workspaces,
@@ -60,7 +60,7 @@ export function UploadForm({
     setConfirmation(null)
     setError(
       chosen !== null && !supportedFile.test(chosen.name)
-        ? 'Only PDF, DOCX and CSV files can be processed as context.'
+        ? 'Only PDF, DOCX, PPTX, XLSX and CSV files can be processed as context.'
         : chosen !== null && chosen.size === 0
           ? 'Choose a non-empty file to upload.'
           : null,
@@ -89,7 +89,7 @@ export function UploadForm({
       return
     }
     if (!supportedFile.test(file.name)) {
-      setError('Only PDF, DOCX and CSV files can be processed as context.')
+      setError('Only PDF, DOCX, PPTX, XLSX and CSV files can be processed as context.')
       return
     }
     if (file.size === 0) {
@@ -200,9 +200,11 @@ export function UploadForm({
             <p className="mt-2 text-sm font-medium text-ink">
               Drop a file here, or <span className="underline decoration-line-strong underline-offset-2">browse</span>
             </p>
-            <div className="mt-2 flex gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               <span className="stamp">PDF</span>
               <span className="stamp">DOCX</span>
+              <span className="stamp">PPTX</span>
+              <span className="stamp">XLSX</span>
               <span className="stamp">CSV</span>
             </div>
             <input
@@ -210,16 +212,18 @@ export function UploadForm({
               ref={fileInput}
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               type="file"
-              accept=".pdf,.docx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv"
+              accept=".pdf,.docx,.pptx,.xlsx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
               aria-describedby={helpId}
               disabled={uploading}
               onChange={chooseFile}
             />
           </div>
           <p id={helpId} className="mt-2 text-xs leading-5 text-ink-muted">
-            PDF, DOCX or CSV. The server validates the file and enforces its size limit. A CSV is
-            stored as rows and queried with SQL rather than indexed for meaning, so the agent can
-            count, total and group its lines but not search their wording.
+            PDF, DOCX, PPTX, XLSX or CSV. The server validates the file and enforces its size
+            limit. A CSV or a workbook is stored as rows and queried with SQL rather than indexed
+            for meaning, so the agent can count, total and group its lines but not search their
+            wording; a workbook keeps each sheet as its own table, and the pictures and charts it
+            holds are described so they can be found too.
           </p>
           {file === null ? null : (
             <div className="mt-3 flex items-center gap-3 rounded-control border border-line bg-surface px-3.5 py-2.5 text-sm">

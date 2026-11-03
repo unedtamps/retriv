@@ -47,6 +47,18 @@ _REQUIRED_COLUMNS = (
 )
 _ALLOWED_TABLES = frozenset({"document_rows", "documents"})
 
+ROW_STORED_MEDIA_TYPES = (
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
+"""Media types whose content is stored as rows rather than as chunks.
+
+Both a CSV and a workbook land in ``document_rows``, so both belong in the
+catalogue the agent reads. Naming them here keeps the two catalogue paths
+-- the application-session reader and the restricted-role one -- from
+disagreeing about what counts as queryable."""
+
+
 CATALOGUE_PAGE = 100
 
 _TABLE_REFERENCE = re.compile(r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_.]*)", re.IGNORECASE)
@@ -233,7 +245,7 @@ class CatalogueReader:
                     DocumentWorkspace.workspace_id.in_(workspace_ids),
                     DocumentWorkspace.deleted_at.is_(None),
                     Document.deleted_at.is_(None),
-                    Document.detected_media_type == "text/csv",
+                    Document.detected_media_type.in_(ROW_STORED_MEDIA_TYPES),
                     ProcessingRun.status == "ready",
                 )
                 .order_by(DocumentWorkspace.filename, Document.id)
@@ -505,10 +517,10 @@ class RowQuery:
             conditions = [
                 "d.deleted_at is null",
                 "dw.deleted_at is null",
-                "d.detected_media_type = 'text/csv'",
+                "d.detected_media_type = ANY(:row_media_types)",
                 "pr.status = 'ready'",
             ]
-            parameters: dict[str, object] = {}
+            parameters: dict[str, object] = {"row_media_types": list(ROW_STORED_MEDIA_TYPES)}
             if pattern:
                 conditions.append("d.original_filename ilike :pattern")
                 parameters["pattern"] = f"%{_escape_like(pattern)}%"

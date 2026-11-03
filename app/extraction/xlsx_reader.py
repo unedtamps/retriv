@@ -420,9 +420,8 @@ def _compose_columns(
             if nearest is None:
                 break
             used_rows.add(nearest[0])
-            if label := label_of(nearest):
-                if label not in chain:
-                    chain.insert(0, label)
+            if (label := label_of(nearest)) and label not in chain:
+                chain.insert(0, label)
         names.append(" / ".join(chain) if chain else f"column {column + 1}")
     return uniquify_columns(names)
 

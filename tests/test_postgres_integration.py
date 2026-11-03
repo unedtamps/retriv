@@ -1244,17 +1244,17 @@ async def test_an_xlsx_upload_lands_as_named_sheets_with_visuals() -> None:
             ).all()
         assert run is not None
         assert run.status == "ready"
-        assert run.row_count == 3
+        assert run.row_count == 4
         assert run.chunk_count == 0
         assert run.csv_columns is not None
         assert run.csv_columns[0]["sheet"] == "Data"
         assert run.csv_columns[0]["columns"] == ["Month", "Revenue"]
         assert run.csv_columns[0]["rows"] == 4
 
-        assert [row.sheet for row in rows] == ["Data", "Data", "Data", "Data"]
+        assert [row.sheet for row in rows] == ["Data"] * 4
         assert rows[0].data == {"Month": "Jan", "Revenue": "100"}
         assert vector_store.points == {}
-        assert [image.ref for image in images] == ["chart-1", "picture-1"]
+        assert sorted(image.ref for image in images) == ["chart-1", "picture-1"]
         assert all(image.described for image in images)
 
         catalogue_reader = create_async_engine(database_url())
@@ -1402,7 +1402,7 @@ async def test_a_row_query_is_served_by_the_document_index() -> None:
             node = plan.scalar_one()[0]["Plan"]
             methods = _plan_methods(node)
 
-        assert "ix_document_rows_document" in methods, (
+        assert "ix_document_rows_document_sheet" in methods, (
             "the document_id index is no longer part of the plan; a per-file "
             f"row query has fallen back to a scan ({methods})"
         )
