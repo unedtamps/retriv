@@ -32,7 +32,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
   const empty = items.length === 0
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-3xl flex-col px-4 sm:px-6">
+    <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-4xl flex-col px-4 sm:px-6">
       <style>{MD_STYLES}</style>
       <header className="flex items-baseline justify-between gap-3 border-b border-line py-4">
         <div>
@@ -44,12 +44,12 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
         </p>
       </header>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-5">
+      <div ref={scrollRef} className="scrollbar-none min-h-0 flex-1 overflow-y-auto">
         {empty ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
             <Sparkles aria-hidden="true" size={22} className="text-ink-faint" strokeWidth={1.6} />
             <div>
-              <p className="text-sm font-medium text-ink">Ask this workspace</p>
+              <p className="text-sm font-medium text-ink">Ask across your workspaces</p>
               <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-ink-muted">
                 The agent searches, reads and queries the documents in every workspace you can
                 read, and answers with citations.
@@ -69,7 +69,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="flex min-h-full flex-col justify-end gap-3 pb-6 pt-4">
             {items.map((item, index) => {
               if (item.kind === 'user') {
                 return (
@@ -184,6 +184,8 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
 }
 
 const MD_STYLES = String.raw`
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
 .retriv-md > :first-child { margin-top: 0; }
 .retriv-md > :last-child { margin-bottom: 0; }
 .retriv-md p { margin: 0.5rem 0; }
