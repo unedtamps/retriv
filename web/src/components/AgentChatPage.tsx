@@ -40,7 +40,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
         }}
       >
         <textarea
-          className="max-h-28 min-h-[2.5rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
+          className="max-h-48 min-h-[3.5rem] flex-1 resize-none bg-transparent px-2 py-2.5 text-sm text-ink outline-none placeholder:text-ink-faint"
           rows={1}
           autoFocus
           placeholder="Ask across your workspaces…"
@@ -117,7 +117,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
               if (item.kind === 'user') {
                 return (
                   <div key={index} className="flex justify-end">
-                    <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm">
+                    <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm text-white">
                       {item.text}
                     </p>
                   </div>
