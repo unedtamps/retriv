@@ -1,4 +1,5 @@
 import secrets
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -8,6 +9,9 @@ from sqlalchemy import Result, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.chat import ChatProviderError, OpenAICompatibleChatProvider
+from app.agents.model_settings import fresh_session_id, key_preview
+from app.agents.providers import BUILTIN_PROVIDERS, session_header_for
 from app.api.dependencies import PlatformAdmin
 from app.api.schemas import (
     AdminMemberRequest,
@@ -18,13 +22,24 @@ from app.api.schemas import (
     AdminUserResponse,
     AdminWorkspaceListResponse,
     AdminWorkspaceResponse,
+    AgentModelSettingsResponse,
+    AgentModelSettingsUpdate,
+    AgentModelTestResult,
+    AgentProviderInfo,
     WorkspaceCreateRequest,
     WorkspaceMemberListResponse,
     WorkspaceMemberResponse,
     WorkspaceResponse,
 )
 from app.core.errors import AppError
-from app.db.models import Document, DocumentWorkspace, User, Workspace, WorkspaceMembership
+from app.db.models import (
+    AgentModelSetting,
+    Document,
+    DocumentWorkspace,
+    User,
+    Workspace,
+    WorkspaceMembership,
+)
 from app.db.session import get_session
 from app.routes.workspaces import admin_membership_error, member_response
 from app.security.auth import hash_password
@@ -445,3 +460,162 @@ def member_not_found_error() -> AppError:
         title="Workspace member not found",
         detail="The requested user is not a member of this workspace.",
     )
+
+
+def _provider_choices() -> list[AgentProviderInfo]:
+    """The provider options an admin picks from, custom first."""
+    return [
+        AgentProviderInfo(
+            key="custom",
+            label="Custom endpoint",
+            default_model="",
+            key_hint="Bring your own OpenAI-compatible URL.",
+        ),
+        *(
+            AgentProviderInfo(
+                key=key,
+                label=preset.label,
+                default_model=preset.default_model,
+                key_hint=preset.key_hint,
+            )
+            for key, preset in BUILTIN_PROVIDERS.items()
+        ),
+    ]
+
+
+@router.get("/agent-model", response_model=AgentModelSettingsResponse)
+async def get_agent_model(
+    _admin: PlatformAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AgentModelSettingsResponse:
+    """The harness's configured chat model, with the key shown only masked."""
+    row = await session.get(AgentModelSetting, 1)
+    if row is None:
+        return AgentModelSettingsResponse(
+            configured=False, available_providers=_provider_choices()
+        )
+    return AgentModelSettingsResponse(
+        configured=True,
+        provider=row.provider,
+        base_url=row.base_url,
+        model=row.model,
+        api_key_preview=key_preview(row.api_key),
+        last_test_ok=row.last_test_ok,
+        last_test_model=row.last_test_model,
+        last_tested_at=row.last_tested_at,
+        updated_at=row.updated_at,
+        key_hint=key_preview(row.api_key),
+        available_providers=_provider_choices(),
+    )
+
+
+@router.put("/agent-model", response_model=AgentModelSettingsResponse)
+async def set_agent_model(
+    payload: AgentModelSettingsUpdate,
+    admin: PlatformAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AgentModelSettingsResponse:
+    """Save the harness's chat model, then test it and record the outcome.
+
+    The settings are kept even when the connection test fails: the endpoint
+    may be temporarily down, and refusing to save would leave the previous
+    configuration standing with no record of the attempt. The response
+    carries the test result so the admin sees a broken endpoint immediately.
+    """
+    api_key = payload.api_key
+    if api_key is None:
+        existing = await session.get(AgentModelSetting, 1)
+        if existing is None:
+            raise AppError(
+                status_code=422,
+                code="agent_model_key_required",
+                title="API key required",
+                detail="The first configuration must include the model endpoint's API key.",
+            )
+        api_key = existing.api_key
+
+    provider = OpenAICompatibleChatProvider(
+        base_url=payload.base_url,
+        api_key=api_key,
+        model=payload.model,
+        session_header=session_header_for(payload.provider),
+        session_id=fresh_session_id(),
+    )
+    test_ok = False
+    test_model: str | None = None
+    test_error: str | None = None
+    try:
+        test_model = await provider.test_connection()
+        test_ok = True
+    except ChatProviderError as exc:
+        test_error = str(exc)
+    finally:
+        await provider.aclose()
+
+    row = await session.get(AgentModelSetting, 1)
+    if row is None:
+        row = AgentModelSetting(id=1)
+        session.add(row)
+    row.provider = payload.provider
+    row.base_url = payload.base_url
+    row.api_key = api_key
+    row.model = payload.model
+    row.last_test_ok = test_ok
+    row.last_test_model = test_model if test_ok else None
+    row.last_tested_at = datetime.now(UTC)
+    row.updated_by_user_id = admin.id
+    await session.commit()
+    await session.refresh(row)
+    return AgentModelSettingsResponse(
+        configured=True,
+        provider=row.provider,
+        base_url=row.base_url,
+        model=row.model,
+        api_key_preview=key_preview(row.api_key),
+        last_test_ok=test_ok,
+        last_test_model=test_model if test_ok else None,
+        last_tested_at=row.last_tested_at,
+        test_error=test_error,
+        updated_at=row.updated_at,
+        key_hint=key_preview(row.api_key),
+        available_providers=_provider_choices(),
+    )
+
+
+@router.post("/agent-model/test", response_model=AgentModelTestResult)
+async def test_agent_model(
+    payload: AgentModelSettingsUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AgentModelTestResult:
+    """Try a candidate configuration without saving anything.
+
+    ``api_key`` may be omitted to test the endpoint and model against the
+    key already stored, which is how an admin checks an edit before committing
+    to it.
+    """
+    api_key = payload.api_key
+    if api_key is None:
+        existing = await session.get(AgentModelSetting, 1)
+        if existing is None:
+            raise AppError(
+                status_code=422,
+                code="agent_model_key_required",
+                title="API key required",
+                detail="Nothing is stored yet, so the test needs an API key.",
+            )
+        api_key = existing.api_key
+
+    provider = OpenAICompatibleChatProvider(
+        base_url=payload.base_url,
+        api_key=api_key,
+        model=payload.model,
+        session_header=session_header_for(payload.provider),
+        session_id=fresh_session_id(),
+    )
+    try:
+        model = await provider.test_connection()
+        return AgentModelTestResult(ok=True, model=model)
+    except ChatProviderError as exc:
+        return AgentModelTestResult(ok=False, error=str(exc))
+    finally:
+        await provider.aclose()

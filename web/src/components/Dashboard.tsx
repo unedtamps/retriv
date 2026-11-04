@@ -18,8 +18,10 @@ import {
 import type { ThemePreference } from '../hooks/useTheme'
 import { useProcessingRuns } from '../hooks/useProcessingRuns'
 import { useWorkspaceDocuments } from '../hooks/useWorkspaceDocuments'
+import { AdminAgentModel } from './AdminAgentModel'
 import { AdminUserPanel } from './AdminUserPanel'
 import { AdminWorkspacesPage } from './AdminWorkspaces'
+import { AgentChat } from './AgentChat'
 import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
 import { ConfirmDialog, Dialog } from './Dialog'
@@ -249,6 +251,14 @@ export function Dashboard({
             onNotice={showNotice}
           />
         </PlatformPage>
+      ) : activeView === 'agent-model' && isAdmin ? (
+        <PlatformPage
+          eyebrow="Platform administration"
+          title="Agent harness"
+          description="The one chat model every workspace agent answers with. Pick a provider, paste its API key, and the connection test proves the endpoint before anyone uses it."
+        >
+          <AdminAgentModel onUnauthorized={onUnauthorized} onNotice={showNotice} />
+        </PlatformPage>
       ) : adminMode ? (
         <AdminWorkspacesPage
           onUnauthorized={onUnauthorized}
@@ -296,6 +306,10 @@ export function Dashboard({
           onDeleteDocument={setDeleteTarget}
         />
       )}
+
+      {!adminMode && selectedWorkspace !== null ? (
+        <AgentChat workspace={selectedWorkspace} onUnauthorized={onUnauthorized} />
+      ) : null}
 
       {createWorkspaceOpen ? (
         <CreateWorkspaceDialog

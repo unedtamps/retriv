@@ -518,3 +518,38 @@ class RefreshToken(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentModelSetting(Base):
+    """The one chat model the in-server agent harness uses, chosen by an admin.
+
+    A singleton: the primary key is pinned to 1, so a second row cannot
+    appear and every reader selects the same row. The API key is stored as
+    it was typed -- the database is the only copy -- and is never served
+    back; responses carry its last four characters so an admin can tell
+    which key is configured without seeing it.
+    """
+
+    __tablename__ = "agent_model_settings"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="agent_model_settings_singleton"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    provider: Mapped[str] = mapped_column(
+        String(32), default="custom", server_default="custom", nullable=False
+    )
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    api_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_test_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

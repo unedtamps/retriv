@@ -13,6 +13,7 @@ import {
   Plus,
   Users,
   X,
+  Sparkles,
 } from 'lucide-react'
 import type { AppRoute, CurrentUser, DashboardView, DocumentSearchHit, Workspace } from '../types'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
@@ -91,6 +92,7 @@ export function AppShell({
     && !adminMode
     && activeView !== 'api-keys'
     && activeView !== 'users'
+    && activeView !== 'agent-model'
 
   useEffect(() => {
     if (!navigationOpen || isDesktop) return
@@ -408,6 +410,18 @@ function Navigation({
               >
                 <Users aria-hidden="true" size={16} />
                 Users
+              </button>
+            </li>
+          ) : null}
+          {isAdmin ? (
+            <li>
+              <button
+                type="button"
+                className={`nav-link w-full justify-start ${activeView === 'agent-model' && route === '/dashboard' ? 'nav-link-active' : ''}`}
+                onClick={() => onSelectView('agent-model')}
+              >
+                <Sparkles aria-hidden="true" size={16} />
+                Agent model
               </button>
             </li>
           ) : null}
