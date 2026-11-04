@@ -33,14 +33,14 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
 
   const composer = (
     <form
-        className="flex shrink-0 items-end gap-2 rounded-xl border border-line bg-surface p-2 shadow-sm"
+        className="flex shrink-0 items-end gap-2 rounded-xl border border-line bg-surface px-2 py-1.5 shadow-sm"
         onSubmit={(event) => {
           event.preventDefault()
           void send()
         }}
       >
         <textarea
-          className="max-h-48 min-h-[3.5rem] flex-1 resize-none bg-transparent px-2 py-2.5 text-sm text-ink outline-none placeholder:text-ink-faint"
+          className="max-h-48 min-h-[2.75rem] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-ink outline-none placeholder:text-ink-faint"
           rows={1}
           autoFocus
           placeholder="Ask across your workspaces…"
