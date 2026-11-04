@@ -31,6 +31,48 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
 
   const empty = items.length === 0
 
+  const composer = (
+    <form
+        className="flex items-end gap-2 rounded-xl border border-line bg-surface p-2 shadow-sm"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void send()
+        }}
+      >
+        <textarea
+          className="max-h-28 min-h-[2.5rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
+          rows={1}
+          autoFocus
+          placeholder="Ask across your workspaces…"
+          value={draft}
+          maxLength={8000}
+          disabled={busy}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              void send()
+            }
+          }}
+        />
+        {busy ? (
+          <button type="button" className="btn btn-sm" onClick={stop}>
+            <Square aria-hidden="true" size={13} />
+            Stop
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="btn btn-sm btn-primary"
+            disabled={draft.trim() === ''}
+            aria-label="Send the question"
+          >
+            <CornerDownLeft aria-hidden="true" size={14} />
+          </button>
+        )}
+      </form>
+    )
+
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-4xl flex-col px-4 sm:px-6">
       <style>{MD_STYLES}</style>
@@ -67,9 +109,10 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
                 </button>
               ))}
             </div>
+            <div className="w-full max-w-2xl text-left">{composer}</div>
           </div>
         ) : (
-          <div className="flex min-h-full flex-col justify-end gap-3 pb-6 pt-4">
+          <div className="space-y-3 pb-6 pt-4">
             {items.map((item, index) => {
               if (item.kind === 'user') {
                 return (
@@ -141,44 +184,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
         )}
       </div>
 
-      <form
-        className="flex items-end gap-2 rounded-xl border border-line bg-surface p-2 shadow-sm"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void send()
-        }}
-      >
-        <textarea
-          className="max-h-28 min-h-[2.5rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
-          rows={1}
-          placeholder="Ask across your workspaces…"
-          value={draft}
-          maxLength={8000}
-          disabled={busy}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              void send()
-            }
-          }}
-        />
-        {busy ? (
-          <button type="button" className="btn btn-sm" onClick={stop}>
-            <Square aria-hidden="true" size={13} />
-            Stop
-          </button>
-        ) : (
-          <button
-            type="submit"
-            className="btn btn-sm btn-primary"
-            disabled={draft.trim() === ''}
-            aria-label="Send the question"
-          >
-            <CornerDownLeft aria-hidden="true" size={14} />
-          </button>
-        )}
-      </form>
+      {empty ? null : composer}
     </div>
   )
 }

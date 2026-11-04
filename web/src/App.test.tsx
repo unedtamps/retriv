@@ -830,6 +830,8 @@ describe('dashboard application', () => {
     await user.keyboard('{Enter}')
 
     expect(await screen.findByText('What is in this workspace?')).toBeInTheDocument()
+    const pinned = screen.getByPlaceholderText('Ask across your workspaces…')
+    expect(pinned).not.toBe(input)
     expect(await screen.findByText('search_context')).toBeInTheDocument()
     expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
