@@ -21,7 +21,8 @@ import { useWorkspaceDocuments } from '../hooks/useWorkspaceDocuments'
 import { AdminAgentModel } from './AdminAgentModel'
 import { AdminUserPanel } from './AdminUserPanel'
 import { AdminWorkspacesPage } from './AdminWorkspaces'
-import { AgentChat } from './AgentChat'
+import { AgentChatPage } from './AgentChatPage'
+import { useAgentConversation } from '../hooks/useAgentConversation'
 import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
 import { ConfirmDialog, Dialog } from './Dialog'
@@ -67,7 +68,7 @@ export function Dashboard({
   const [activeView, setActiveView] = useState<DashboardView>(
     () =>
       readDashboardView(window.location.search, isAdmin, adminMode) ??
-      (adminMode ? 'admin-overview' : 'overview'),
+      (adminMode ? 'admin-overview' : 'chat'),
   )
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(() =>
     readDashboardWorkspaceId(window.location.search, workspaces),
@@ -91,6 +92,7 @@ export function Dashboard({
     preferredWorkspace
   const documents = useWorkspaceDocuments(selectedWorkspace, onUnauthorized)
   const runs = useProcessingRuns(onUnauthorized)
+  const conversation = useAgentConversation(selectedWorkspace?.id ?? '', onUnauthorized)
 
   useEffect(() => {
     if (route !== '/dashboard') return
@@ -266,6 +268,8 @@ export function Dashboard({
         />
       ) : selectedWorkspace === null ? (
         <EmptyWorkspace onCreate={isAdmin ? () => setCreateWorkspaceOpen(true) : undefined} />
+      ) : activeView === 'chat' ? (
+        <AgentChatPage workspace={selectedWorkspace} conversation={conversation} />
       ) : activeView === 'documents' ? (
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}
@@ -306,10 +310,6 @@ export function Dashboard({
           onDeleteDocument={setDeleteTarget}
         />
       )}
-
-      {!adminMode && selectedWorkspace !== null ? (
-        <AgentChat workspace={selectedWorkspace} onUnauthorized={onUnauthorized} />
-      ) : null}
 
       {createWorkspaceOpen ? (
         <CreateWorkspaceDialog

@@ -2,6 +2,7 @@ export type PlatformRole = 'admin' | 'user' | string
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 export type AppRoute = '/dashboard' | '/upload-context'
 export type DashboardView =
+  | 'chat'
   | 'overview'
   | 'documents'
   | 'members'

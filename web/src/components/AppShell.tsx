@@ -1,20 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import {
-  ArrowLeftRight,
-  Check,
-  ChevronsDown,
-  FileText,
-  FileUp,
-  KeyRound,
-  LayoutGrid,
-  LockKeyhole,
-  LogOut,
-  Menu,
-  Plus,
-  Users,
-  X,
-  Sparkles,
-} from 'lucide-react'
+import { ArrowLeftRight, Check, ChevronsDown, FileText, FileUp, KeyRound, LayoutGrid, LockKeyhole, LogOut, Menu, MessageSquare, Plus, Sparkles, Users, X } from 'lucide-react'
 import type { AppRoute, CurrentUser, DashboardView, DocumentSearchHit, Workspace } from '../types'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import { ConfirmDialog } from './Dialog'
@@ -50,6 +35,7 @@ interface AppShellProps {
 }
 
 const WORKSPACE_NAV: Array<{ view: DashboardView; label: string; icon: typeof LayoutGrid }> = [
+  { view: 'chat', label: 'Chat', icon: MessageSquare },
   { view: 'overview', label: 'Overview', icon: LayoutGrid },
   { view: 'documents', label: 'Documents', icon: FileText },
   { view: 'members', label: 'Members', icon: Users },
@@ -93,6 +79,7 @@ export function AppShell({
     && activeView !== 'api-keys'
     && activeView !== 'users'
     && activeView !== 'agent-model'
+    && activeView !== 'chat'
 
   useEffect(() => {
     if (!navigationOpen || isDesktop) return

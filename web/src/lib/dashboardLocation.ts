@@ -1,6 +1,6 @@
 import type { DashboardView, Workspace } from '../types'
 
-const MEMBER_VIEWS: DashboardView[] = ['overview', 'documents', 'members', 'api-keys']
+const MEMBER_VIEWS: DashboardView[] = ['chat', 'overview', 'documents', 'members', 'api-keys']
 const ADMIN_ONLY_VIEWS: DashboardView[] = ['users', 'agent-model']
 const ADMIN_MODE_VIEWS: DashboardView[] = ['admin-overview', 'users', 'agent-model']
 
