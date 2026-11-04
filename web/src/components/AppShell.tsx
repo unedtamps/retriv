@@ -287,6 +287,7 @@ function Navigation({
   themePreference,
   onThemeChange,
 }: NavigationProps) {
+  const hasMembership = workspaces.some((workspace) => workspace.membership_role !== null)
   const [directoryOpen, setDirectoryOpen] = useState(false)
   const [signOutOpen, setSignOutOpen] = useState(false)
   const [systemDark, setSystemDark] = useState(
@@ -341,7 +342,7 @@ function Navigation({
           <>
             <p className="px-2 eyebrow">Workspace</p>
             <ul className="mt-1.5 space-y-0.5">
-              {WORKSPACE_NAV.map((item) => {
+              {WORKSPACE_NAV.filter((item) => item.view !== 'chat' || hasMembership).map((item) => {
                 const active = route === '/dashboard' && item.view === activeView
                 const Icon = item.icon
                 return (

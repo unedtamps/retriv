@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { CornerDownLeft, Sparkles, Square, Wrench } from 'lucide-react'
 import type { AgentConversation } from '../hooks/useAgentConversation'
-import type { Workspace } from '../types'
 
 const SUGGESTIONS = [
   'What is in this workspace?',
@@ -10,7 +9,7 @@ const SUGGESTIONS = [
 ]
 
 /**
- * The workspace agent, as a page.
+ * The agent, as a page.
  *
  * A centered column with the conversation in the middle and the composer
  * pinned underneath, because asking the workspace questions is the front door
@@ -19,13 +18,7 @@ const SUGGESTIONS = [
  * to Documents and back does not erase it -- but it is still ephemeral: the
  * server keeps nothing, and a refresh starts over.
  */
-export function AgentChatPage({
-  workspace,
-  conversation,
-}: {
-  workspace: Workspace
-  conversation: AgentConversation
-}) {
+export function AgentChatPage({ conversation }: { conversation: AgentConversation }) {
   const { items, draft, setDraft, busy, send, stop } = conversation
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -40,7 +33,7 @@ export function AgentChatPage({
     <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-3xl flex-col px-4 sm:px-6">
       <header className="flex items-baseline justify-between gap-3 border-b border-line py-4">
         <div>
-          <p className="eyebrow">{workspace.name}</p>
+          <p className="eyebrow">Across your workspaces</p>
           <h1 className="font-display text-xl font-medium tracking-[-0.02em] text-ink">Chat</h1>
         </div>
         <p className="hidden text-xs text-ink-faint sm:block">
@@ -55,8 +48,8 @@ export function AgentChatPage({
             <div>
               <p className="text-sm font-medium text-ink">Ask this workspace</p>
               <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-ink-muted">
-                The agent searches, reads and queries the documents here, and answers with
-                citations.
+                The agent searches, reads and queries the documents in every workspace you can
+                read, and answers with citations.
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
@@ -149,7 +142,7 @@ export function AgentChatPage({
         <textarea
           className="max-h-28 min-h-[2.5rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
           rows={1}
-          placeholder={`Ask about ${workspace.name}…`}
+          placeholder="Ask across your workspaces…"
           value={draft}
           maxLength={8000}
           disabled={busy}

@@ -65,6 +65,7 @@ export function Dashboard({
 }: DashboardProps) {
   const isAdmin = user.role === 'admin'
   const adminMode = isAdmin && workspaces.every((workspace) => workspace.membership_role === null)
+  const hasMembership = workspaces.some((workspace) => workspace.membership_role !== null)
   const [activeView, setActiveView] = useState<DashboardView>(
     () =>
       readDashboardView(window.location.search, isAdmin, adminMode) ??
@@ -92,7 +93,7 @@ export function Dashboard({
     preferredWorkspace
   const documents = useWorkspaceDocuments(selectedWorkspace, onUnauthorized)
   const runs = useProcessingRuns(onUnauthorized)
-  const conversation = useAgentConversation(selectedWorkspace?.id ?? '', onUnauthorized)
+  const conversation = useAgentConversation(onUnauthorized)
 
   useEffect(() => {
     if (route !== '/dashboard') return
@@ -268,8 +269,8 @@ export function Dashboard({
         />
       ) : selectedWorkspace === null ? (
         <EmptyWorkspace onCreate={isAdmin ? () => setCreateWorkspaceOpen(true) : undefined} />
-      ) : activeView === 'chat' ? (
-        <AgentChatPage workspace={selectedWorkspace} conversation={conversation} />
+      ) : activeView === 'chat' && !adminMode && hasMembership ? (
+        <AgentChatPage conversation={conversation} />
       ) : activeView === 'documents' ? (
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}

@@ -165,7 +165,7 @@ async def test_chat_without_a_configured_model_is_refused(
 ) -> None:
     headers = await login(client, "alice", OWNER_PASSWORD)
     response = await client.post(
-        f"/v1/workspaces/{entities.finance.id}/agent/chat",
+        "/v1/agent/chat",
         json={"message": "What is in these documents?"},
         headers=headers,
     )
@@ -173,21 +173,23 @@ async def test_chat_without_a_configured_model_is_refused(
     assert response.json()["code"] == "agent_not_configured"
 
 
-async def test_chat_refuses_a_non_member(
+async def test_chat_refuses_a_user_with_no_memberships(
     client: httpx.AsyncClient,
     entities: Any,
     runtime_env: FakeRetriever,
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """The scope is the membership list: an admin of no workspaces has none."""
+    del entities
     await seed_model_config(db_session_factory)
-    headers = await login(client, "bob", OUTSIDER_PASSWORD)
+    headers = await login(client, "admin", "admin-correct-password")
     response = await client.post(
-        f"/v1/workspaces/{entities.finance.id}/agent/chat",
+        "/v1/agent/chat",
         json={"message": "What is in these documents?"},
         headers=headers,
     )
-    assert response.status_code == 404, response.text
-    assert response.json()["code"] == "workspace_not_found"
+    assert response.status_code == 403, response.text
+    assert response.json()["code"] == "no_searchable_workspaces"
 
 
 async def test_chat_streams_tool_calls_to_an_answer(
@@ -213,7 +215,7 @@ async def test_chat_streams_tool_calls_to_an_answer(
 
     headers = await login(client, "alice", OWNER_PASSWORD)
     response = await client.post(
-        f"/v1/workspaces/{entities.finance.id}/agent/chat",
+        "/v1/agent/chat",
         json={"message": "How did revenue move?"},
         headers=headers,
     )
@@ -227,7 +229,8 @@ async def test_chat_streams_tool_calls_to_an_answer(
     assert "Net revenue rose by a tenth." in events[2]["preview"]
     assert events[3]["content"].startswith("Net revenue rose")
 
-    assert runtime_env.scopes == [[entities.finance.id]]
+    assert len(runtime_env.scopes) == 1
+    assert set(runtime_env.scopes[0]) == {entities.finance.id, entities.legal.id}
     tool_message = next(
         message
         for message in scripted_model.prompts[1]
@@ -257,7 +260,7 @@ async def test_a_tool_rejection_is_fed_back_to_the_model(
 
     headers = await login(client, "alice", OWNER_PASSWORD)
     response = await client.post(
-        f"/v1/workspaces/{entities.finance.id}/agent/chat",
+        "/v1/agent/chat",
         json={"message": "explode the database"},
         headers=headers,
     )
@@ -269,6 +272,139 @@ async def test_a_tool_rejection_is_fed_back_to_the_model(
         if message.get("role") == "tool"
     )
     assert tool_message["content"].startswith("Rejected: Unknown tool")
+    assert events[-1]["type"] == "final"
+
+
+async def test_chat_scope_is_the_caller_memberships(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """A viewer on one workspace searches that workspace, and nothing else.
+
+    Bob is a viewer on Legal and has no standing in Finance: the scope the
+    retriever receives names Legal alone, so Finance's documents are not
+    merely filtered out of answers -- they are never reached at all.
+    """
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.legal.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "holdings"})
+            ],
+        ),
+        ChatTurn(content="Here is what Legal holds.", tool_calls=[]),
+    ]
+    headers = await login(client, "bob", OUTSIDER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "What do we have?"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert runtime_env.scopes == [[entities.legal.id]]
+
+
+async def test_a_document_tool_outside_the_scope_is_rejected(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """Naming a workspace the caller cannot read is a correction, not a leak.
+
+    The model hands read_document Finance's ids while scoped to Legal. The
+    toolkit refuses before anything is read, the refusal is fed back as the
+    tool result, and the run finishes with an answer instead of an error.
+    """
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="call-1",
+                    name="read_document",
+                    arguments={
+                        "document_id": str(uuid4()),
+                        "workspace_id": str(entities.finance.id),
+                    },
+                )
+            ],
+        ),
+        ChatTurn(content="I cannot read that workspace's documents.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "bob", OUTSIDER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "Read the finance report."},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    tool_message = next(
+        message for message in scripted_model.prompts[1] if message.get("role") == "tool"
+    )
+    assert tool_message["content"].startswith("Rejected: That workspace is not in scope")
+    assert events[-1]["type"] == "final"
+
+
+async def test_download_refuses_a_role_without_the_permission(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """A viewer may read a workspace but not hand out its file.
+
+    The download tool re-checks the named workspace's permission at call
+    time; the 403 comes back as a tool rejection the model can act on, and
+    the stream survives instead of dying mid-run.
+    """
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="call-1",
+                    name="download_document",
+                    arguments={
+                        "document_id": str(uuid4()),
+                        "workspace_id": str(entities.legal.id),
+                    },
+                )
+            ],
+        ),
+        ChatTurn(content="I cannot download that file for you.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "bob", OUTSIDER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "Download the legal deck."},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    tool_message = next(
+        message for message in scripted_model.prompts[1] if message.get("role") == "tool"
+    )
+    assert tool_message["content"].startswith("Rejected: ")
+    assert "permission" in tool_message["content"]
     assert events[-1]["type"] == "final"
 
 
@@ -399,7 +535,7 @@ async def test_the_client_session_id_reaches_the_provider(
     monkeypatch.setattr("app.routes.agent.provider_for", capturing_provider_for)
     headers = await login(client, "alice", OWNER_PASSWORD)
     response = await client.post(
-        f"/v1/workspaces/{entities.finance.id}/agent/chat",
+        "/v1/agent/chat",
         json={"message": "hello", "session_id": "my-conversation-0001"},
         headers=headers,
     )
@@ -407,7 +543,7 @@ async def test_the_client_session_id_reaches_the_provider(
     assert captured["session_id"] == "my-conversation-0001"
 
     response = await client.post(
-        f"/v1/workspaces/{entities.finance.id}/agent/chat",
+        "/v1/agent/chat",
         json={"message": "hello again"},
         headers=headers,
     )

@@ -825,7 +825,7 @@ describe('dashboard application', () => {
     writeSessionToken('member-token')
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask about Launch notes…')
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
 
@@ -851,7 +851,7 @@ describe('dashboard application', () => {
     writeSessionToken('member-token')
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask about Launch notes…')
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
@@ -874,7 +874,7 @@ describe('dashboard application', () => {
     expect(screen.getByText('What is in this workspace?')).toBeInTheDocument()
   })
 
-  it('starts a fresh conversation when the workspace changes', async () => {
+  it('keeps the conversation when the workspace changes', async () => {
     const other: Workspace = {
       ...workspace,
       id: 'workspace-2',
@@ -884,11 +884,11 @@ describe('dashboard application', () => {
     }
     window.history.replaceState(null, '', '/dashboard?view=chat')
     installApi(owner, [workspace, other])
-    const user = userEvent.setup()
     writeSessionToken('member-token')
+    const user = userEvent.setup()
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask about Launch notes…')
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
@@ -901,8 +901,8 @@ describe('dashboard application', () => {
     const close = screen.queryByRole('button', { name: 'Close navigation drawer' })
     if (close !== null) await user.click(close)
 
-    expect(await screen.findByPlaceholderText('Ask about Other notes…')).toBeInTheDocument()
-    expect(screen.queryByText('The workspace holds one report.')).not.toBeInTheDocument()
+    expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
+    expect(screen.getByText('What is in this workspace?')).toBeInTheDocument()
   })
 
   it('keeps the chat nav out of admin mode', async () => {

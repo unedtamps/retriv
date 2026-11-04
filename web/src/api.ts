@@ -528,14 +528,13 @@ export function isUnauthorized(error: unknown): boolean {
 }
 
 export async function streamAgentChat(input: {
-  workspaceId: string
   message: string
   history: AgentChatHistoryMessage[]
   sessionId: string
   signal: AbortSignal
   onEvent: (event: AgentChatEvent) => void
 }): Promise<void> {
-  const response = await send(`/v1/workspaces/${input.workspaceId}/agent/chat`, {
+  const response = await send('/v1/agent/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

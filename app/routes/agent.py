@@ -1,15 +1,15 @@
-"""The harness's HTTP face: one workspace-scoped chat endpoint that streams.
+"""The harness's HTTP face: one chat endpoint that streams, scoped by membership.
 
 The conversation itself is the client's business -- the request carries the
 history it wants continued and nothing is stored here. What the server owns
-is the loop: the model configured by an admin, the tools scoped to the
-request's principal, and the progress events rendered by the dashboard.
+is the loop: the model configured by an admin, the tools scoped to every
+workspace the caller can read, and the progress events rendered by the
+dashboard.
 """
 
 import json
 from collections.abc import AsyncIterator
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -22,14 +22,15 @@ from app.agents.model_settings import (
     provider_for,
 )
 from app.agents.toolkit import AgentToolKit
-from app.api.dependencies import CurrentUser, WorkspaceContext
+from app.api.dependencies import CurrentUser
 from app.api.schemas import AgentChatRequest
 from app.core.errors import AppError
 from app.db.session import get_session
 from app.mcp.auth import McpPrincipal
 from app.mcp.runtime import McpNotReadyError, McpRuntime
+from app.retrieval.scope import searchable_workspace_ids
 
-router = APIRouter(prefix="/v1/workspaces", tags=["agent"])
+router = APIRouter(prefix="/v1/agent", tags=["agent"])
 
 
 async def _runtime(request: Request) -> McpRuntime:
@@ -44,11 +45,9 @@ async def _runtime(request: Request) -> McpRuntime:
         ) from exc
 
 
-@router.post("/{workspace_id}/agent/chat")
+@router.post("/chat")
 async def agent_chat(
-    workspace_id: UUID,
     payload: AgentChatRequest,
-    workspace: WorkspaceContext,
     current_user: CurrentUser,
     runtime: Annotated[McpRuntime, Depends(_runtime)],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -60,11 +59,24 @@ async def agent_chat(
     and finally ``final`` with the answer or ``error`` with the reason there
     is none. Nothing about the conversation is stored server-side.
 
+    The agent sees every workspace the caller's roles let it search -- the
+    same resolution an API key gets -- and the document tools re-check the
+    caller's permission on the named workspace at every call, so a workspace
+    joined later appears and a lost role bites immediately.
+
     ``session_id`` is the client's stable id for the conversation, reused
     across requests so providers that key routing or caching on one (OpenCode
     Go rejects calls without it) see the same conversation they saw before;
     when it is absent one is generated for this request alone.
     """
+    workspace_ids = await searchable_workspace_ids(session, current_user.id)
+    if not workspace_ids:
+        raise AppError(
+            status_code=403,
+            code="no_searchable_workspaces",
+            title="No searchable workspaces",
+            detail="The caller is not a member of any workspace the agent could search.",
+        )
     config = await load_agent_model_config(session)
     if config is None:
         raise AppError(
@@ -75,7 +87,7 @@ async def agent_chat(
         )
     kit = AgentToolKit(
         runtime,
-        McpPrincipal(user=current_user, workspace_ids=[workspace_id]),
+        McpPrincipal(user=current_user, workspace_ids=workspace_ids),
     )
     history = [
         {"role": message.role, "content": message.content} for message in payload.history
@@ -88,8 +100,6 @@ async def agent_chat(
             async for event in run_agent(
                 provider=provider,
                 kit=kit,
-                workspace_id=workspace_id,
-                workspace_name=workspace.name,
                 history=history,
                 message=payload.message,
             ):

@@ -32,14 +32,8 @@ export function historyOf(items: ChatItem[]): AgentChatHistoryMessage[] {
  * because the page mounts and unmounts as the user moves between views, and a
  * conversation that died on every tab switch would make the tab useless.
  *
- * Switching workspaces starts a new conversation. The history is replayed to
- * the model on every turn, and a workspace-A transcript fed to a run whose
- * tools search workspace B would answer from the wrong context.
  */
-export function useAgentConversation(
-  workspaceId: string,
-  onUnauthorized: () => void,
-): AgentConversation {
+export function useAgentConversation(onUnauthorized: () => void): AgentConversation {
   const [items, setItems] = useState<ChatItem[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -48,17 +42,6 @@ export function useAgentConversation(
   // caching on it (OpenCode Go requires it) see the same conversation the
   // whole session lives for. Ephemeral by design -- a refresh starts a new one.
   const sessionIdRef = useRef<string>(crypto.randomUUID())
-  const workspaceRef = useRef(workspaceId)
-
-  useEffect(() => {
-    if (workspaceRef.current === workspaceId) return
-    workspaceRef.current = workspaceId
-    abortRef.current?.abort()
-    sessionIdRef.current = crypto.randomUUID()
-    setItems([])
-    setDraft('')
-    setBusy(false)
-  }, [workspaceId])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -120,7 +103,6 @@ export function useAgentConversation(
 
     try {
       await streamAgentChat({
-        workspaceId,
         message,
         history: historyOf(items),
         sessionId: sessionIdRef.current,
