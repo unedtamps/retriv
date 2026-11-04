@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { CornerDownLeft, Sparkles, Square, Wrench } from 'lucide-react'
 import type { AgentConversation } from '../hooks/useAgentConversation'
+
+const MarkdownText = lazy(() => import('./MarkdownText').then((m) => ({ default: m.MarkdownText })))
 
 const SUGGESTIONS = [
   'What is in this workspace?',
@@ -31,6 +33,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-3xl flex-col px-4 sm:px-6">
+      <style>{MD_STYLES}</style>
       <header className="flex items-baseline justify-between gap-3 border-b border-line py-4">
         <div>
           <p className="eyebrow">Across your workspaces</p>
@@ -79,9 +82,15 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
               }
               if (item.kind === 'assistant') {
                 return (
-                  <p key={index} className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                    {item.text}
-                  </p>
+                  <div key={index} className="text-sm leading-relaxed text-ink">
+                    <Suspense
+                      fallback={
+                        <p className="whitespace-pre-wrap">{item.text}</p>
+                      }
+                    >
+                      <MarkdownText text={item.text} />
+                    </Suspense>
+                  </div>
                 )
               }
               if (item.kind === 'error') {
@@ -173,3 +182,61 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
     </div>
   )
 }
+
+const MD_STYLES = String.raw`
+.retriv-md > :first-child { margin-top: 0; }
+.retriv-md > :last-child { margin-bottom: 0; }
+.retriv-md p { margin: 0.5rem 0; }
+.retriv-md h1, .retriv-md h2, .retriv-md h3, .retriv-md h4 {
+  font-family: var(--font-display, inherit);
+  font-weight: 500;
+  color: var(--color-ink, #16202c);
+  margin: 1rem 0 0.35rem;
+  line-height: 1.3;
+}
+.retriv-md h1 { font-size: 1.05rem; }
+.retriv-md h2 { font-size: 1rem; }
+.retriv-md h3, .retriv-md h4 { font-size: 0.9rem; }
+.retriv-md ul, .retriv-md ol { margin: 0.5rem 0; padding-left: 1.25rem; }
+.retriv-md li { margin: 0.2rem 0; }
+.retriv-md ul li { list-style: disc; }
+.retriv-md ol li { list-style: decimal; }
+.retriv-md code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8em;
+  background: var(--color-muted, #eef2f7);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+}
+.retriv-md pre {
+  background: var(--color-sunken, #f4f7fa);
+  border: 1px solid var(--color-line, #d8dee7);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  overflow-x: auto;
+  margin: 0.6rem 0;
+}
+.retriv-md pre code { background: transparent; padding: 0; }
+.retriv-md table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  font-variant-numeric: tabular-nums;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.retriv-md th, .retriv-md td {
+  border: 1px solid var(--color-line, #d8dee7);
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+}
+.retriv-md th { background: var(--color-paper, #f4f7fa); font-weight: 600; }
+.retriv-md blockquote {
+  border-left: 3px solid var(--color-line, #d8dee7);
+  margin: 0.6rem 0;
+  padding: 0.1rem 0 0.1rem 0.8rem;
+  color: var(--color-ink-muted, #5a6675);
+}
+.retriv-md hr { border: 0; border-top: 1px solid var(--color-line, #d8dee7); margin: 0.8rem 0; }
+.retriv-md a { color: var(--color-accent-ink, #1f5fa8); text-decoration: underline; }
+`

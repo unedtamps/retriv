@@ -124,7 +124,7 @@ function installApi(
             { type: 'turn_start', turns_allowed: 12 },
             { type: 'tool_call', name: 'search_context', arguments: { query: 'anything' } },
             { type: 'tool_result', name: 'search_context', length: 8, truncated: false, preview: 'top hit' },
-            { type: 'final', content: 'The workspace holds one report.' },
+            { type: 'final', content: 'The workspace holds one report.\n\n## Findings\n\n- Revenue rose by a tenth.' },
           ]
           for (const frame of frames) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
@@ -832,6 +832,9 @@ describe('dashboard application', () => {
     expect(await screen.findByText('What is in this workspace?')).toBeInTheDocument()
     expect(await screen.findByText('search_context')).toBeInTheDocument()
     expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
+    expect(screen.getByRole('list')).toBeInTheDocument()
+    expect(screen.getByText('Revenue rose by a tenth.')).toBeInTheDocument()
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument(),
     )

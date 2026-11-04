@@ -23,6 +23,8 @@ from uuid import UUID
 from app.agents.chat import ChatProviderError, ChatTurn, OpenAICompatibleChatProvider
 from app.agents.toolkit import AgentToolKit, ToolRejection
 from app.core.errors import AppError
+from app.retrieval.context import OutOfScopeSearchResult, RetrievalUnavailable
+from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 
 MAX_TURNS = 12
 MAX_TOOL_RESULT_CHARS = 20_000
@@ -415,6 +417,19 @@ async def run_agent(
                 # model-correctable exactly like a rejection: without this
                 # catch the stream would die mid-run on the first 403.
                 result = f"Rejected: {exc.detail}"
+            except (
+                RetrievalUnavailable,
+                OutOfScopeSearchResult,
+                DocumentNotFound,
+                DocumentNotNavigable,
+            ) as exc:
+                # The retrieval layer saying no -- the embedding service being
+                # down is the everyday case -- is an answer about the world,
+                # not a crash: handed back as the tool's result, the model
+                # tells the user so and the stream survives. The MCP server's
+                # guarded wrapper used to make the same translation for
+                # external clients; the harness needs its own.
+                result = f"Unavailable: {exc}"
             text = _result_for_model(result)
             yield {
                 "type": "tool_result",

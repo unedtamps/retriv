@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.agents.chat import ChatTurn
 from app.db.models import AgentModelSetting
 from app.mcp.runtime import McpRuntime
-from app.retrieval.context import ContextRetriever
+from app.retrieval.context import ContextRetriever, RetrievalUnavailable
 from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import CatalogueReader
@@ -36,6 +36,7 @@ class FakeRetriever(ContextRetriever):
     def __init__(self) -> None:
         self.scopes: list[list[Any]] = []
         self.results: list[list[ContextSource]] = []
+        self.error: Exception | None = None
 
     async def retrieve(
         self,
@@ -47,6 +48,8 @@ class FakeRetriever(ContextRetriever):
     ) -> list[ContextSource]:
         del query, limit, budget
         self.scopes.append(list(workspace_ids))
+        if self.error is not None:
+            raise self.error
         return self.results.pop(0) if self.results else []
 
 
@@ -406,6 +409,52 @@ async def test_download_refuses_a_role_without_the_permission(
     assert tool_message["content"].startswith("Rejected: ")
     assert "permission" in tool_message["content"]
     assert events[-1]["type"] == "final"
+
+
+async def test_a_retrieval_outage_is_reported_not_fatal(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """The embedding service being down is an answer, not a crash.
+
+    The retriever raises -- in production this is LM Studio being
+    unreachable -- and the failure flows back as the tool's result, so the
+    model can say the documents are unreachable and the stream completes
+    with a final event instead of dying mid-run.
+    """
+    from app.agents.chat import ToolCall
+
+    runtime_env.error = RetrievalUnavailable(
+        "Scoped context retrieval failed validation"
+    )
+    await seed_model_config(db_session_factory)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(content="I cannot reach the documents right now.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    tool_message = next(
+        message for message in scripted_model.prompts[1] if message.get("role") == "tool"
+    )
+    assert tool_message["content"].startswith("Unavailable: ")
+    assert events[-1]["type"] == "final"
+    assert "cannot reach" in events[-1]["content"]
 
 
 class FakeAdminProvider:

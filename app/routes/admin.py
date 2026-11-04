@@ -534,6 +534,13 @@ async def set_agent_model(
             )
         api_key = existing.api_key
 
+    if payload.base_url is None or payload.model is None or payload.provider is None:
+        raise AppError(
+            status_code=422,
+            code="agent_model_unresolved",
+            title="Model endpoint incomplete",
+            detail="Provider resolution left the endpoint or model unset.",
+        )
     provider = OpenAICompatibleChatProvider(
         base_url=payload.base_url,
         api_key=api_key,
@@ -605,6 +612,13 @@ async def test_agent_model(
             )
         api_key = existing.api_key
 
+    if payload.base_url is None or payload.model is None or payload.provider is None:
+        raise AppError(
+            status_code=422,
+            code="agent_model_unresolved",
+            title="Model endpoint incomplete",
+            detail="Provider resolution left the endpoint or model unset.",
+        )
     provider = OpenAICompatibleChatProvider(
         base_url=payload.base_url,
         api_key=api_key,
