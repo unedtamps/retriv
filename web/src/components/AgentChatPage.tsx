@@ -124,12 +124,22 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
                 )
               }
               if (item.kind === 'assistant') {
+                // While tokens are still arriving the text renders plainly:
+                // re-parsing markdown on every delta flickers half-built
+                // tables and code fences. `final` marks the item complete,
+                // and only then is the markdown pipeline paid for.
+                if (item.streaming === true) {
+                  return (
+                    <p key={index} className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                      {item.text}
+                      <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-ink-muted align-middle" />
+                    </p>
+                  )
+                }
                 return (
                   <div key={index} className="text-sm leading-relaxed text-ink">
                     <Suspense
-                      fallback={
-                        <p className="whitespace-pre-wrap">{item.text}</p>
-                      }
+                      fallback={<p className="whitespace-pre-wrap">{item.text}</p>}
                     >
                       <MarkdownText text={item.text} />
                     </Suspense>
@@ -167,6 +177,13 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
                           <span className="text-ink-faint">· running</span>
                         ) : null}
                       </p>
+                      {Object.keys(call.arguments).length > 0 ? (
+                        <p className="mt-0.5 truncate font-mono text-[0.65rem] text-ink-muted">
+                          {Object.entries(call.arguments)
+                            .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+                            .join('  ')}
+                        </p>
+                      ) : null}
                       {call.preview !== '' ? (
                         <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-ink-faint">
                           {call.preview}

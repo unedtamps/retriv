@@ -262,7 +262,7 @@ export interface AgentChatHistoryMessage {
 }
 
 export interface AgentChatEvent {
-  type: 'turn_start' | 'tool_call' | 'tool_result' | 'message' | 'final' | 'error'
+  type: 'turn_start' | 'message_delta' | 'tool_call' | 'tool_result' | 'message' | 'final' | 'error'
   name?: string
   arguments?: Record<string, unknown>
   length?: number

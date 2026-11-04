@@ -389,13 +389,36 @@ async def run_agent(
     yield {"type": "turn_start", "turns_allowed": MAX_TURNS}
 
     for _ in range(MAX_TURNS):
+        turn: ChatTurn | None = None
+        stream = getattr(provider, "stream_turn", None)
         try:
-            turn = await provider.complete(messages=messages, tools=specs)
+            if stream is None:
+                turn = await provider.complete(messages=messages, tools=specs)
+            else:
+                streamed: list[str] = []
+                async for piece in stream(messages=messages, tools=specs):
+                    if piece["kind"] == "delta":
+                        streamed.append(piece["text"])
+                        yield {"type": "message_delta", "content": piece["text"]}
+                    else:
+                        turn = piece["turn"]
+                # The streamed text was already shown to the user as it
+                # arrived; `final` below carries the same assembled string,
+                # which the viewer swaps in as the authoritative copy.
+                del streamed
         except ChatProviderError as exc:
             yield {
                 "type": "error",
                 "message": f"The model endpoint failed: {exc}",
                 "retryable": exc.retryable,
+            }
+            return
+
+        if turn is None:
+            yield {
+                "type": "error",
+                "message": "The model endpoint stream ended without a turn.",
+                "retryable": True,
             }
             return
 

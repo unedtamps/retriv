@@ -457,6 +457,125 @@ async def test_a_retrieval_outage_is_reported_not_fatal(
     assert "cannot reach" in events[-1]["content"]
 
 
+class FakeStreamingProvider:
+    """A model endpoint that streams: scripted delta pieces per turn."""
+
+    def __init__(self, turns: list[list[dict[str, Any]]]) -> None:
+        self.turns = list(turns)
+        self.prompts: list[list[dict[str, Any]]] = []
+        self.closed = False
+
+    async def stream_turn(
+        self, *, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> AsyncIterator[dict[str, Any]]:
+        del tools
+        self.prompts.append([dict(message) for message in messages])
+        for piece in self.turns.pop(0):
+            yield piece
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+async def test_a_streaming_answer_forwards_deltas_then_final(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Token deltas stream to the browser while the model thinks.
+
+    The pieces arrive as three delta frames and one assembled turn; the
+    browser sees every delta in order and then the same text as the
+    authoritative `final`.
+    """
+    provider = FakeStreamingProvider(
+        [
+            [
+                {"kind": "delta", "text": "Net "},
+                {"kind": "delta", "text": "revenue rose "},
+                {"kind": "delta", "text": "by a tenth."},
+                {"kind": "turn", "turn": ChatTurn(content="Net revenue rose by a tenth.")},
+            ]
+        ]
+    )
+    monkeypatch.setattr("app.routes.agent.provider_for", lambda config, session_id=None: provider)
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    kinds = [event["type"] for event in events]
+    assert kinds == ["turn_start", "message_delta", "message_delta", "message_delta", "final"]
+    assert "".join(e.get("content", "") for e in events if e["type"] == "message_delta") == (
+        "Net revenue rose by a tenth."
+    )
+    assert events[-1]["content"] == "Net revenue rose by a tenth."
+
+
+async def test_stream_turn_assembles_fragmented_tool_calls() -> None:
+    """Tool calls in streaming mode are spread across frames.
+
+    The arguments JSON arrives in pieces keyed by index; parsing before the
+    stream finishes would crash. The assembled turn must carry the merged,
+    parsed arguments exactly as the non-streaming path would have produced.
+    """
+    import httpx as httpx_module
+
+    from app.agents.chat import OpenAICompatibleChatProvider
+
+    sse_body = (
+        'data: {"model":"test-model","choices":[{"index":0,"delta":'
+        '{"role":"assistant","content":"Let me look. "}}]}\n\n'
+        'data: {"model":"test-model","choices":[{"index":0,"delta":'
+        '{"tool_calls":[{"index":0,"id":"call-9","type":"function",'
+        '"function":{"name":"search_context","arguments":"{\\\"query\\\": \\"\"}}]'
+        '}}]}\n\n'
+        'data: {"model":"test-model","choices":[{"index":0,"delta":'
+        '{"tool_calls":[{"index":0,'
+        '"function":{"arguments":"revenue\\\"}"}}]}}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request: httpx_module.Request) -> httpx_module.Response:
+        return httpx_module.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=sse_body,
+        )
+
+    provider = OpenAICompatibleChatProvider(
+        base_url="https://gateway.test/v1",
+        api_key="k",
+        model="test-model",
+        transport=httpx_module.MockTransport(handler),
+    )
+    deltas: list[str] = []
+    turn = None
+    async for piece in provider.stream_turn(
+        messages=[{"role": "user", "content": "revenue?"}], tools=[{"type": "function"}]
+    ):
+        if piece["kind"] == "delta":
+            deltas.append(piece["text"])
+        else:
+            turn = piece["turn"]
+    await provider.aclose()
+
+    assert "".join(deltas) == "Let me look. "
+    assert turn is not None
+    assert turn.content == "Let me look. "
+    assert [(call.id, call.name, call.arguments) for call in turn.tool_calls] == [
+        ("call-9", "search_context", {"query": "revenue"})
+    ]
+
+
 class FakeAdminProvider:
     """Stands in for the real chat client during admin saves: no network."""
 

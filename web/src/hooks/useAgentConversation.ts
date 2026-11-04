@@ -4,13 +4,14 @@ import type { AgentChatEvent, AgentChatHistoryMessage } from '../types'
 
 export interface ToolStep {
   name: string
+  arguments: Record<string, unknown>
   preview: string
   truncated: boolean
 }
 
 export type ChatItem =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string }
+  | { kind: 'assistant'; text: string; streaming?: boolean }
   | { kind: 'activity'; calls: ToolStep[] }
   | { kind: 'error'; text: string }
 
@@ -42,6 +43,7 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
   // caching on it (OpenCode Go requires it) see the same conversation the
   // whole session lives for. Ephemeral by design -- a refresh starts a new one.
   const sessionIdRef = useRef<string>(crypto.randomUUID())
+  const streamingRef = useRef(false)
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -56,6 +58,27 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
     const controller = new AbortController()
     abortRef.current = controller
 
+    const appendDelta = (chunk: string) => {
+      if (streamingRef.current) {
+        setItems((current) => {
+          const last = current[current.length - 1]
+          if (last === undefined || last.kind !== 'assistant') {
+            return [...current, { kind: 'assistant', text: chunk, streaming: true }]
+          }
+          return [
+            ...current.slice(0, -1),
+            { kind: 'assistant', text: last.text + chunk, streaming: true },
+          ]
+        })
+        return
+      }
+      streamingRef.current = true
+      setItems((current) => [
+        ...current,
+        { kind: 'assistant', text: chunk, streaming: true },
+      ])
+    }
+
     const patchActivity = (patch: (calls: ToolStep[]) => ToolStep[]) => {
       setItems((current) =>
         current.map((item) =>
@@ -65,11 +88,21 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
     }
 
     const onEvent = (event: AgentChatEvent) => {
+      if (event.type === 'turn_start') {
+        streamingRef.current = false
+        return
+      }
+      if (event.type === 'message_delta') {
+        if (event.content) appendDelta(event.content)
+        return
+      }
       if (event.type === 'tool_call') {
+        streamingRef.current = false
         patchActivity((calls) => [
           ...calls,
           {
             name: event.name ?? 'tool',
+            arguments: event.arguments ?? {},
             preview: '',
             truncated: false,
           },
@@ -87,10 +120,17 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
         return
       }
       if (event.type === 'message' || event.type === 'final') {
-        setItems((current) => [
-          ...current,
-          { kind: 'assistant', text: event.content ?? '' },
-        ])
+        streamingRef.current = false
+        setItems((current) => {
+          const last = current[current.length - 1]
+          if (last !== undefined && last.kind === 'assistant' && last.streaming === true) {
+            return [
+              ...current.slice(0, -1),
+              { kind: 'assistant', text: event.content ?? last.text },
+            ]
+          }
+          return [...current, { kind: 'assistant', text: event.content ?? '' }]
+        })
         return
       }
       if (event.type === 'error') {
