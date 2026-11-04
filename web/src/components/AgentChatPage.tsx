@@ -33,7 +33,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
 
   const composer = (
     <form
-        className="flex items-end gap-2 rounded-xl border border-line bg-surface p-2 shadow-sm"
+        className="flex shrink-0 items-end gap-2 rounded-xl border border-line bg-surface p-2 shadow-sm"
         onSubmit={(event) => {
           event.preventDefault()
           void send()
@@ -74,7 +74,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
     )
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-4xl flex-col px-4 pb-5 sm:px-6">
+    <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-4xl flex-col px-4 pb-3 sm:px-6">
       <style>{MD_STYLES}</style>
       <header className="flex items-baseline justify-between gap-3 border-b border-line py-4">
         <div>
