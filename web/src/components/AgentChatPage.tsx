@@ -74,7 +74,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
     )
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-4xl flex-col px-4 sm:px-6">
+    <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-4xl flex-col px-4 pb-5 sm:px-6">
       <style>{MD_STYLES}</style>
       <header className="flex items-baseline justify-between gap-3 border-b border-line py-4">
         <div>
