@@ -12,7 +12,7 @@ navigation reads it. A heading retrieved on its own -- ``kind=heading`` -- names
 section whose text is elsewhere in the document, and the ``ordinal`` in its label
 is where reading from would start.
 
-Every row here is loaded without a Qdrant match behind it, exactly like the rows
+Every row here is loaded without a vector match behind it, exactly like the rows
 ``ContextRetriever`` completes from, so every condition ``VALIDATE_CHUNKS``
 enforces is repeated: workspace scope, non-deleted document, active processing
 run, indexed embedding of the configured profile, and a recomputed content hash.

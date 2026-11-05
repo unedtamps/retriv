@@ -1,6 +1,6 @@
 """Reindex one workspace's documents: delete each, then upload it again.
 
-Deleting a document is what clears it. The worker removes the Qdrant points,
+Deleting a document is what clears it. The worker removes the artifacts,
 the artifacts and the PostgreSQL rows (the document row goes last, and its
 cascade takes the chunks and the embedding ledger with it). Re-uploading then
 extracts and embeds the file again, with whatever the pipeline looks like now.
@@ -53,7 +53,7 @@ async def wait_for_delete(client: httpx.AsyncClient, document_id: str) -> None:
     """Wait until the delete run is gone, which is when the document is gone.
 
     The document leaves the list as soon as the delete is accepted, but the
-    worker is still clearing the Qdrant points and the rows. The delete run
+    worker is still clearing the artifacts and the rows. The delete run
     row goes with the document, so its disappearance is the signal that the
     workspace is free for the same file again.
     """

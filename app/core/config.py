@@ -131,8 +131,8 @@ class Settings(BaseSettings):
     embedding_base_url: str = "http://127.0.0.1:1234/v1"
     embedding_api_key: SecretStr = SecretStr("development-embedding-api-key-change-this")
     embedding_model: str = "text-embedding-qwen3-embedding-8b"
-    embedding_profile: str = "qwen3-embedding-8b-4096-v1"
-    embedding_dimensions: int = Field(default=4096, ge=1, le=65_536)
+    embedding_profile: str = "qwen3-embedding-8b-2000-v1"
+    embedding_dimensions: int = Field(default=2000, ge=1, le=65_536)
     embedding_batch_size: int = Field(default=16, ge=1, le=256)
     embedding_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     embedding_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
@@ -164,13 +164,6 @@ class Settings(BaseSettings):
     model_wait_base_seconds: float = Field(default=5.0, gt=0, le=3600)
     model_wait_max_seconds: float = Field(default=60.0, gt=0, le=3600)
     model_wait_timeout_seconds: float = Field(default=3600.0, gt=0, le=86_400)
-
-    qdrant_url: str = "http://127.0.0.1:6333"
-    qdrant_api_key: SecretStr = SecretStr("development-qdrant-api-key-change-this")
-    qdrant_read_only_api_key: SecretStr = SecretStr("development-qdrant-read-only-key-change-this")
-    qdrant_collection: str = "retriv-chunks-qwen3-8b-4096-v1"
-    qdrant_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
-    qdrant_vectors_on_disk: bool = True
 
     max_context_chunks: int = Field(default=8, ge=1, le=20)
     min_relevance_score: float = Field(default=0.25, ge=-1.0, le=1.0)
@@ -284,7 +277,7 @@ class Settings(BaseSettings):
             raise ValueError("RETRIV_S3_ENDPOINT_URL must not contain credentials or query data")
         return value.rstrip("/")
 
-    @field_validator("embedding_base_url", "qdrant_url", "vlm_base_url")
+    @field_validator("embedding_base_url", "vlm_base_url")
     @classmethod
     def validate_service_url(cls, value: str) -> str:
         parsed = urlsplit(value)
@@ -297,8 +290,6 @@ class Settings(BaseSettings):
     @field_validator(
         "s3_secret_key",
         "embedding_api_key",
-        "qdrant_api_key",
-        "qdrant_read_only_api_key",
         "vlm_api_key",
     )
     @classmethod
@@ -310,7 +301,6 @@ class Settings(BaseSettings):
     @field_validator(
         "embedding_model",
         "embedding_profile",
-        "qdrant_collection",
         "pipeline_version",
     )
     @classmethod
@@ -385,7 +375,6 @@ class Settings(BaseSettings):
         if self.component == "api":
             secrets = (
                 self.jwt_secret.get_secret_value(),
-                self.qdrant_read_only_api_key.get_secret_value(),
                 self.s3_secret_key.get_secret_value(),
                 self.bootstrap_admin_password.get_secret_value(),
             )
@@ -393,7 +382,6 @@ class Settings(BaseSettings):
             secrets = (
                 self.s3_secret_key.get_secret_value(),
                 self.embedding_api_key.get_secret_value(),
-                self.qdrant_api_key.get_secret_value(),
                 self.vlm_api_key.get_secret_value(),
             )
         if any(
@@ -423,9 +411,9 @@ class Settings(BaseSettings):
             raise ValueError("Production object storage must use HTTPS")
         if any(
             not url.startswith("https://")
-            for url in (self.embedding_base_url, self.qdrant_url, self.vlm_base_url)
+            for url in (self.embedding_base_url, self.vlm_base_url)
         ):
-            raise ValueError("Production embedding, Qdrant and vision endpoints must use HTTPS")
+            raise ValueError("Production embedding and vision endpoints must use HTTPS")
         if self.component == "api" and not self.antivirus_enabled:
             raise ValueError("Antivirus scanning cannot be disabled in production")
         if self.component == "api" and any(

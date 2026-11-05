@@ -12,13 +12,13 @@ the whole repository, read the [root README](../README.md).
 - authentication and workspace authorization;
 - document upload, deduplication, linking, listing and deletion;
 - the processing queue and its status routes;
-- retrieval over PostgreSQL and Qdrant;
+- retrieval over PostgreSQL, with the vectors in pgvector;
 - the MCP server mounted at `/mcp`;
 - the admin API for users, workspaces and workspace members.
 
 The heavy extraction work is deliberately not here. A separate `worker/`
 process claims runs from PostgreSQL, extracts documents in a sandboxed
-subprocess, embeds chunks, and writes vectors to Qdrant. Keeping that out of
+subprocess, embeds chunks, and writes vectors into PostgreSQL. Keeping that out of
 this process is what keeps the API image small and a hostile PDF away from
 the request path.
 
@@ -30,7 +30,7 @@ the request path.
 | `app/core/` | settings, errors, logging and shared primitives |
 | `app/db/` | SQLAlchemy models, session factory, database contracts |
 | `app/documents/` | upload validation, staging, ingest, dedup, delete acceptance |
-| `app/embeddings/` | embedding client contract and Qdrant vector store |
+| `app/embeddings/` | embedding client and the pgvector text-form helper |
 | `app/extraction/` | markdown extraction (PDF, DOCX, OCR), chunking, table and picture handling |
 | `app/http/` | HTTP middleware such as upload body limits |
 | `app/infrastructure/` | S3/R2 object storage and ClamAV scanning |
@@ -75,7 +75,7 @@ one process call another on the same host. Roughly sixteen environment variables
 only job was to prove the caller was who it said it was.
 
 The answer path is still scoped. A question is answered only from workspaces the caller
-has `search_context` on, and the retriever re-checks that against every Qdrant point and
+has `search_context` on, and the retriever serves only rows the active run and the
 every PostgreSQL row. What changed is that the scope is now a function argument derived
 from the caller's own memberships, rather than a token that had to be signed and
 verified.
@@ -167,7 +167,7 @@ cd web && npm ci && npm run dev
 It is at `http://127.0.0.1:9500`.
 
 ClamAV's first start downloads its signature database and can take a few minutes.
-PostgreSQL, Qdrant, and ClamAV publish on loopback only.
+PostgreSQL, and ClamAV publish on loopback only.
 
 ## Object storage
 
@@ -200,7 +200,6 @@ endpoint setting.
 The local stack's state is in Docker named volumes under the `retriv-api` project:
 
 - `retriv-api_postgres_data`
-- `retriv-api_qdrant_data`
 - `retriv-api_clamav_data`
 
 Nothing is bind-mounted. `docker compose down` keeps the data; `docker compose down -v`
@@ -276,7 +275,6 @@ sequenceDiagram
     participant C as MCP client
     participant A as app (/mcp)
     participant E as LM Studio
-    participant Q as Qdrant
     participant DB as PostgreSQL
     participant M as S3-compatible storage
 
@@ -290,8 +288,7 @@ sequenceDiagram
     C->>A: tools/call search_context(query)
     A->>E: embed the query
     E-->>A: vector
-    A->>Q: search, filter workspace_ids contains a scope workspace
-    A->>DB: re-validate every point against PostgreSQL
+    A->>DB: one scoped pgvector search, validated by its join
     A->>DB: complete each named section, same re-validation
     A-->>C: labelled sources, one citation each
     Note over A,C: or read_document, to read in order from an ordinal
@@ -314,9 +311,11 @@ Four things keep this honest:
    "does not exist".
 2. **The `search_context` tool accepts a query and nothing else.** A model has no
    argument with which to argue for a wider scope.
-3. **Every Qdrant point is re-validated against PostgreSQL**, including a recomputed
-   `content_hash`. A vector whose chunk is gone, stale, or from a superseded run never
-   reaches the client.
+3. **The vector search is validated by construction**: its join only returns a
+   chunk whose document is live, whose run is the document's active one, whose
+   embedding is indexed under the current profile, and whose content hash matches.
+   A vector whose chunk is gone, stale, or from a superseded run never reaches the
+   client.
 4. **`RowQuery` re-checks the result on the way out.** Every row it returns must carry
    the one `document_id` the statement was written against; a result spanning two files
    is refused rather than rendered.
@@ -360,7 +359,7 @@ Two details are load-bearing:
   `$[0] == "..."` matches far more than the prefix it names, which is why the key is a
   column in its own right, indexed with `text_pattern_ops`.
 
-Completed rows are not backed by a Qdrant match, so every guarantee in
+Completed rows are not backed by a vector match, so every guarantee in
 `VALIDATE_CHUNKS` is repeated for them: workspace scope, non-deleted document, active
 processing run, indexed embedding, and a recomputed `content_hash`.
 
@@ -509,7 +508,6 @@ sequenceDiagram
     participant K as worker
     participant L as LM Studio
     participant V as vision model
-    participant Q as Qdrant
 
     U->>W: choose a PDF, DOCX or CSV
     W->>A: POST /v1/workspaces/{id}/documents
@@ -563,7 +561,7 @@ sequenceDiagram
         loop in batches of 1000
             K->>DB: INSERT document_rows (data as JSONB)
         end
-        Note over K,DB: no artifact, no chunks, no embeddings, no Qdrant
+        Note over K,DB: no artifact, no chunks, no embeddings
     end
     K->>DB: BEGIN, delete rows from superseded runs, then set<br/>status=ready and document.active_processing_run_id = run
     K->>DB: COMMIT
@@ -574,18 +572,15 @@ aggregate rather than prose it will quote, so it is stored verbatim as JSONB and
 queried with SQL. Nothing is embedded, which is why the run reports `row_count = 320`
 rather than a chunk count.
 
-Every vector carries `workspace_ids`, the array of workspaces currently linked to its
-canonical document. A search filters that indexed array rather than a document list, so
-the cost is one keyword lookup no matter how many documents the caller can see. Adding
-or removing a link queues a small `access` run; the worker recomputes the array from
-`document_workspaces` and updates the payload for every chunk of that document in one
-Qdrant call. Nothing is re-chunked or re-embedded. PostgreSQL still validates every
-returned chunk against the live link, so a payload that is a few seconds behind cannot
-leak a workspace that was already unlinked.
+The search reads the caller's scope from `document_workspaces` at query time: the
+vector statement's join only serves chunks whose document has a live link to one of
+the caller's workspaces. Adding or removing a link queues a small `access` run that
+acknowledges the change; nothing is re-chunked, re-embedded, or rewritten, because
+there is no derived payload to fall behind.
 
-Existing Qdrant collections carry the old `workspace_id` payload, so this is a
-breaking index change: drop the collection (or use a new `RETRIV_QDRANT_COLLECTION`)
-and reindex before starting the worker.
+Vectors live in PostgreSQL since migration 0018 (`chunk_embeddings.embedding`, a
+pgvector `vector(2000)` column with an HNSW cosine index). A deployment upgrading
+from the Qdrant era re-embeds every chunk through the worker's profile-drift backfill.
 
 A document cannot exist without a way to be processed: the row and the run commit
 together or not at all. There is no outbox and no retry-on-replay, because there is no
@@ -618,7 +613,7 @@ stateDiagram-v2
     row_storing --> retry_wait: transient failure
     storing_artifact --> retry_wait: transient failure
     chunking --> retry_wait: transient failure
-    embedding --> retry_wait: embedding or Qdrant unavailable
+    embedding --> retry_wait: embedding service unavailable
     retry_wait --> fetching: available_at reached
     retry_wait --> failed: attempts exhausted
     fetching --> failed: permanent failure
@@ -709,7 +704,6 @@ sequenceDiagram
     participant M as S3-compatible storage
     participant DB as PostgreSQL
     participant K as worker
-    participant Q as Qdrant
 
     U->>A: DELETE /v1/workspaces/{id}/documents/{id}
     A->>DB: SELECT link and document FOR UPDATE
@@ -732,7 +726,7 @@ sequenceDiagram
     end
 ```
 
-The Qdrant point IDs live in `chunk_embeddings`, which cascades away with the document.
+The vectors live in `chunk_embeddings`, which cascades away with the document.
 Deleting the row first would orphan every vector the document ever produced, with no
 record of where to find them. So the row outlives the request and dies last.
 
@@ -892,7 +886,6 @@ erDiagram
     chunk_embeddings {
         uuid chunk_id PK
         text embedding_profile PK
-        uuid qdrant_point_id UK
         text status
     }
 ```

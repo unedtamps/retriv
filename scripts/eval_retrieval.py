@@ -7,7 +7,7 @@ gap: it sends questions through the same ``ContextRetriever`` the MCP
 ``search_context`` tool uses, and reports recall, MRR, and how much section
 completion contributed.
 
-Two steps, both against the live stack (PostgreSQL, Qdrant and the embedding
+Two steps, both against the live stack (PostgreSQL and the embedding
 server must be running; LM Studio serves the chat model too):
 
     uv run python scripts/eval_retrieval.py generate --chat-model <name> \
@@ -334,7 +334,7 @@ def _report(outcomes: list[QueryOutcome], settings: Settings, args: argparse.Nam
     if errors:
         print(
             f"\n{len(errors)} of {total} queries failed. If every one failed, "
-            "check that LM Studio, Qdrant and PostgreSQL are reachable."
+            "check that LM Studio and PostgreSQL are reachable."
         )
     if args.json_out:
         payload = {

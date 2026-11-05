@@ -371,7 +371,7 @@ class DocumentRow(Base):
     have no foreign key into ``document_chunks``. A tabular document is all
     numeric or identifier columns, so embedding each row buys noise at
     16KB of vector storage per row and finds nothing a filter would not;
-    the rows are the queryable form and Qdrant stays empty for these
+    the rows are the queryable form and no vectors are stored for these
     documents by design.
 
     The id is derived from ``(run_id, sheet, row_number)`` -- a CSV keeps
@@ -414,9 +414,17 @@ class DocumentRow(Base):
 
 
 class ChunkEmbedding(Base):
+    """The embedding ledger, and since 0018 the vector store itself.
+
+    The ``embedding`` column is deliberately not mapped here: it is a
+    pgvector ``vector(2000)`` that only exists in Postgres, and this
+    metadata drives the SQLite test schema too. Every vector read and
+    write goes through raw SQL that CASTs a text literal -- the worker's
+    batch update in processing, and the search in retrieval.context.
+    """
+
     __tablename__ = "chunk_embeddings"
     __table_args__ = (
-        UniqueConstraint("qdrant_point_id", name="uq_chunk_embeddings_qdrant_point_id"),
         Index(
             "ix_chunk_embeddings_dispatch",
             "processing_run_id",
@@ -441,7 +449,6 @@ class ChunkEmbedding(Base):
     model: Mapped[str] = mapped_column(String(255), nullable=False)
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    qdrant_point_id: Mapped[UUID] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), default=EMBEDDING_PENDING, server_default=EMBEDDING_PENDING
     )

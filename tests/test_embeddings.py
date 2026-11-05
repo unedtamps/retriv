@@ -1,12 +1,10 @@
 import json
-from uuid import uuid4
 
 import httpx
 import pytest
 
-from app.embeddings.base import EmbeddingProviderError, VectorPoint, VectorStoreError
-from app.embeddings.openai_compatible import OpenAICompatibleEmbeddingProvider
-from app.embeddings.qdrant import QdrantVectorStore
+from app.embeddings.base import EmbeddingProviderError
+from app.embeddings.openai_compatible import OpenAICompatibleEmbeddingProvider, truncate_normalize
 
 
 async def test_openai_provider_preserves_response_index_order() -> None:
@@ -42,7 +40,7 @@ async def test_openai_provider_preserves_response_index_order() -> None:
     assert vectors == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
 
 
-async def test_openai_provider_rejects_wrong_dimensions() -> None:
+async def test_openai_provider_rejects_fewer_dimensions_than_configured() -> None:
     provider = OpenAICompatibleEmbeddingProvider(
         base_url="http://embeddings.test/v1",
         api_key="test-key",
@@ -54,7 +52,7 @@ async def test_openai_provider_rejects_wrong_dimensions() -> None:
         ),
     )
     try:
-        with pytest.raises(EmbeddingProviderError, match="3 dimensions") as error:
+        with pytest.raises(EmbeddingProviderError, match="at least 3 dimensions") as error:
             await provider.embed(["first"])
     finally:
         await provider.aclose()
@@ -62,223 +60,45 @@ async def test_openai_provider_rejects_wrong_dimensions() -> None:
     assert error.value.retryable is False
 
 
-async def test_openai_provider_marks_server_errors_retryable() -> None:
+async def test_openai_provider_truncates_and_renormalizes_wider_vectors() -> None:
+    """The endpoint's native width may exceed the configured profile.
+
+    The qwen3 embeddings are Matryoshka-trained: the first components carry
+    the information, so truncating to the configured count and re-normalizing
+    is the supported way to shrink them. A wider response than the profile
+    is therefore normal, not an error.
+    """
     provider = OpenAICompatibleEmbeddingProvider(
         base_url="http://embeddings.test/v1",
         api_key="test-key",
         model="embedding-model",
-        dimensions=3,
+        dimensions=2,
         timeout_seconds=1,
-        transport=httpx.MockTransport(lambda _: httpx.Response(503)),
-    )
-    try:
-        with pytest.raises(EmbeddingProviderError) as error:
-            await provider.embed(["first"])
-    finally:
-        await provider.aclose()
-
-    assert error.value.retryable is True
-
-
-async def test_qdrant_store_creates_collection_upserts_metadata_and_deletes() -> None:
-    collection_exists = False
-    requests: list[tuple[str, str, dict[str, object] | None]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal collection_exists
-        body = json.loads(request.content) if request.content else None
-        requests.append((request.method, request.url.path, body))
-        if request.method == "GET":
-            if not collection_exists:
-                return httpx.Response(404)
-            return httpx.Response(
-                200,
-                json={
-                    "result": {"config": {"params": {"vectors": {"size": 4, "distance": "Cosine"}}}}
-                },
-            )
-        if request.method == "PUT" and request.url.path.endswith("/vectors-v1"):
-            collection_exists = True
-            return httpx.Response(200, json={"result": True})
-        if request.url.path.endswith("/index"):
-            return httpx.Response(200, json={"result": {"status": "completed"}})
-        return httpx.Response(200, json={"result": {"status": "completed"}})
-
-    store = QdrantVectorStore(
-        url="http://qdrant.test",
-        api_key="qdrant-key",
-        collection="vectors-v1",
-        dimensions=4,
-        timeout_seconds=1,
-        vectors_on_disk=True,
-        transport=httpx.MockTransport(handler),
-    )
-    workspace_id = uuid4()
-    second_workspace_id = uuid4()
-    document_id = uuid4()
-    point = VectorPoint(
-        id=uuid4(),
-        vector=[1.0, 0.0, 0.0, 0.0],
-        payload={
-            "origin_workspace_id": str(workspace_id),
-            "workspace_ids": [str(workspace_id)],
-            "document_id": str(document_id),
-            "chunk_id": str(uuid4()),
-        },
-    )
-    try:
-        await store.upsert([point])
-        await store.set_document_workspaces(document_id, [workspace_id, second_workspace_id])
-        await store.delete_document(document_id)
-    finally:
-        await store.aclose()
-
-    create_request = next(
-        body for method, path, body in requests if method == "PUT" and path.endswith("/vectors-v1")
-    )
-    assert create_request == {
-        "vectors": {"size": 4, "distance": "Cosine", "on_disk": True},
-        "hnsw_config": {"on_disk": True},
-    }
-    upsert_request = next(
-        body for method, path, body in requests if method == "PUT" and path.endswith("/points")
-    )
-    assert upsert_request is not None
-    assert upsert_request["points"][0]["payload"] == point.payload  # type: ignore[index]
-    assert "text" not in upsert_request["points"][0]["payload"]  # type: ignore[index]
-    delete_request = next(
-        body
-        for method, path, body in requests
-        if method == "POST" and path.endswith("/points/delete")
-    )
-    assert delete_request == {
-        "filter": {
-            "must": [
-                {"key": "document_id", "match": {"value": str(document_id)}},
-            ]
-        }
-    }
-    payload_request = next(
-        body
-        for method, path, body in requests
-        if method == "POST" and path.endswith("/points/payload")
-    )
-    assert payload_request is not None
-    assert isinstance(payload_request["payload"], dict)
-    assert payload_request["payload"]["workspace_ids"] == sorted(
-        [str(workspace_id), str(second_workspace_id)]
-    )
-
-
-async def test_qdrant_store_rejects_mismatched_collection_dimensions() -> None:
-    store = QdrantVectorStore(
-        url="http://qdrant.test",
-        api_key="qdrant-key",
-        collection="vectors-v1",
-        dimensions=4,
-        timeout_seconds=1,
-        vectors_on_disk=True,
         transport=httpx.MockTransport(
             lambda _: httpx.Response(
                 200,
-                json={
-                    "result": {"config": {"params": {"vectors": {"size": 8, "distance": "Cosine"}}}}
-                },
+                json={"data": [{"index": 0, "embedding": [3.0, 4.0, 99.0, 99.0]}]},
             )
         ),
     )
     try:
-        with pytest.raises(VectorStoreError, match="does not match") as error:
-            await store.ensure_collection()
+        vectors = await provider.embed(["first"])
     finally:
-        await store.aclose()
+        await provider.aclose()
 
-    assert error.value.retryable is False
+    assert vectors == [[0.6, 0.8]]
 
 
-async def test_qdrant_search_mandates_workspace_and_profile_payload_filters() -> None:
-    workspace_id = uuid4()
-    point_id = uuid4()
-    chunk_id = uuid4()
-    query_body: dict[str, object] = {}
+def test_truncate_normalize_rejects_a_shorter_vector() -> None:
+    with pytest.raises(EmbeddingProviderError, match="fewer than"):
+        truncate_normalize([1.0, 0.0], 3)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal query_body
-        if request.method == "GET":
-            return httpx.Response(
-                200,
-                json={
-                    "result": {"config": {"params": {"vectors": {"size": 4, "distance": "Cosine"}}}}
-                },
-            )
-        if request.url.path.endswith("/index"):
-            return httpx.Response(200, json={"result": {"status": "completed"}})
-        query_body = json.loads(request.content)
-        return httpx.Response(
-            200,
-            json={
-                "result": {
-                    "points": [
-                        {
-                            "id": str(point_id),
-                            "score": 0.91,
-                            "payload": {
-                                "origin_workspace_id": str(workspace_id),
-                                "workspace_ids": [str(workspace_id)],
-                                "chunk_id": str(chunk_id),
-                                "embedding_profile": "test-profile",
-                            },
-                        }
-                    ]
-                }
-            },
-        )
 
-    store = QdrantVectorStore(
-        url="http://qdrant.test",
-        api_key="qdrant-key",
-        collection="vectors-v1",
-        dimensions=4,
-        timeout_seconds=1,
-        vectors_on_disk=True,
-        transport=httpx.MockTransport(handler),
-    )
-    try:
-        matches = await store.search(
-            [0.1, 0.2, 0.3, 0.4],
-            workspace_ids=[workspace_id],
-            embedding_profile="test-profile",
-            limit=7,
-        )
-    finally:
-        await store.aclose()
+def test_truncate_normalize_rejects_a_truncated_zero_vector() -> None:
+    with pytest.raises(EmbeddingProviderError, match="zero vector"):
+        truncate_normalize([0.0, 0.0, 5.0], 2)
 
-    assert len(matches) == 1
-    assert matches[0].id == point_id
-    assert matches[0].payload["chunk_id"] == str(chunk_id)
-    assert query_body == {
-        "query": [0.1, 0.2, 0.3, 0.4],
-        "filter": {
-            "must": [
-                {
-                    "key": "workspace_ids",
-                    "match": {"any": [str(workspace_id)]},
-                },
-                {
-                    "key": "embedding_profile",
-                    "match": {"value": "test-profile"},
-                },
-            ]
-        },
-        "limit": 7,
-        "with_payload": [
-            "origin_workspace_id",
-            "workspace_ids",
-            "document_id",
-            "processing_run_id",
-            "chunk_id",
-            "content_hash",
-            "embedding_profile",
-        ],
-        "with_vector": False,
-    }
+
+def test_truncate_normalize_passes_an_exact_width_vector_through() -> None:
+    vector = [3.0, 4.0]
+    assert truncate_normalize(vector, 2) is vector

@@ -19,7 +19,7 @@ from uuid import UUID, uuid4, uuid5
 
 from anyio import to_thread
 from opentelemetry.trace import Status, StatusCode
-from sqlalchemy import and_, delete, func, insert, or_, select, update
+from sqlalchemy import and_, delete, func, insert, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
@@ -69,10 +69,8 @@ from app.documents.validation import (
 from app.embeddings.base import (
     EmbeddingProvider,
     EmbeddingProviderError,
-    VectorPoint,
-    VectorStore,
-    VectorStoreError,
 )
+from app.embeddings.pgvector import vector_literal
 from app.extraction.base import (
     DocumentExtractor,
     ExtractedChunk,
@@ -208,6 +206,7 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+
 class ProcessingWorker:
     def __init__(
         self,
@@ -216,7 +215,6 @@ class ProcessingWorker:
         extractor: DocumentExtractor,
         settings: Settings,
         embedding_provider: EmbeddingProvider,
-        vector_store: VectorStore,
         vision_provider: VisionProvider | None = None,
     ) -> None:
         self._session_factory = session_factory
@@ -224,7 +222,6 @@ class ProcessingWorker:
         self._extractor = extractor
         self._settings = settings
         self._embedding_provider = embedding_provider
-        self._vector_store = vector_store
         self._vision_provider = vision_provider
         self._next_artifact_reconciliation = datetime.min.replace(tzinfo=UTC)
         self._next_embedding_reconciliation = datetime.min.replace(tzinfo=UTC)
@@ -282,7 +279,7 @@ class ProcessingWorker:
                 span.record_exception(exc)
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
                 await self._record_failure(run, exc, permanent=True)
-            except (EmbeddingProviderError, VectorStoreError, VisionProviderError) as exc:
+            except (EmbeddingProviderError, VisionProviderError) as exc:
                 span.record_exception(exc)
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
                 await self._record_failure(run, exc, permanent=not exc.retryable)
@@ -517,7 +514,7 @@ class ProcessingWorker:
         """Repair whatever a lost or failed delete run left behind.
 
         Every document carrying a tombstone is swept on each interval: the
-        artifact folder, the raw upload, and the vectors. Each step is
+        artifact folder and the raw upload. Each step is
         idempotent, so a document whose delete run is still queued is
         merely cleaned early, and one whose run failed permanently is
         cleaned here instead of leaking forever -- an object store delete
@@ -572,18 +569,6 @@ class ProcessingWorker:
                     },
                     exc_info=True,
                 )
-            try:
-                await self._vector_store.delete_document(document_id)
-            except VectorStoreError:
-                logger.warning(
-                    "Deleted-document vector reconciliation failed",
-                    extra={
-                        "workspace_id": str(workspace_id),
-                        "document_id": str(document_id),
-                    },
-                    exc_info=True,
-                )
-
     async def _queue_embedding_backfill(self) -> None:
         now = utcnow()
         if now < self._next_embedding_reconciliation:
@@ -666,7 +651,6 @@ class ProcessingWorker:
                     embedding.model = settings.embedding_model
                     embedding.dimensions = settings.embedding_dimensions
                     embedding.content_hash = chunk.content_hash
-                    embedding.qdrant_point_id = self._qdrant_point_id(chunk.id)
                     embedding.status = EMBEDDING_PENDING
                     embedding.last_error = None
                     embedding.embedded_at = None
@@ -1035,7 +1019,7 @@ class ProcessingWorker:
         This deliberately does not go through ``_extract_document``. The
         extraction contract carries a serialized parser artifact plus
         chunk text, and neither is wanted here: rows go to
-        ``document_rows`` and Qdrant stays empty for this document. Handing
+        ``document_rows`` and no vectors are stored for this document. Handing
         100k rows through a JSON contract to then discard them would cost
         more than the parse itself.
 
@@ -1161,7 +1145,7 @@ class ProcessingWorker:
         """Store a workbook's sheets as rows, and its pictures for the agent.
 
         The data path is the CSV path with names: every tabular sheet lands
-        in ``document_rows`` under its sheet name, and Qdrant stays empty
+        in ``document_rows`` under its sheet name, and no vectors are stored
         for the document. What a CSV cannot carry -- embedded pictures,
         charts -- is lifted here and described by the vision stage, so a
         workbook's graphs are as reachable as its numbers: each description
@@ -1510,34 +1494,19 @@ class ProcessingWorker:
             stop_event.set()
             await heartbeat
 
-    async def _document_workspace_ids(self, document_id: UUID) -> list[str]:
-        """The workspace links a document currently has, for the Qdrant payload."""
-        async with self._session_factory() as session:
-            rows = await session.scalars(
-                select(DocumentWorkspace.workspace_id)
-                .where(
-                    DocumentWorkspace.document_id == document_id,
-                    DocumentWorkspace.deleted_at.is_(None),
-                )
-                .order_by(DocumentWorkspace.workspace_id)
-            )
-            return sorted({str(workspace_id) for workspace_id in rows.all()})
-
     async def _process_access_sync(self, claimed_run: ProcessingRun) -> None:
-        """Refresh the Qdrant workspace array after a link changed.
+        """Acknowledge a workspace-link change.
 
-        One payload update per document covers every chunk. No chunk is read
-        and no vector is touched.
+        Retrieval reads the caller's scope from document_workspaces at query
+        time, so a link change needs no remote refresh. The run exists
+        because the membership flows enqueue one on every link change; it
+        completes here.
         """
         lease_token = self._require_lease_token(claimed_run)
         document = await self._load_document(claimed_run)
         if document.deleted_at is not None:
             await self._cancel_run(claimed_run.id, lease_token)
             return
-        workspace_ids = await self._document_workspace_ids(document.id)
-        await self._vector_store.set_document_workspaces(
-            document.id, [UUID(value) for value in workspace_ids]
-        )
         async with self._session_factory() as session, session.begin():
             run = await session.get(ProcessingRun, claimed_run.id)
             if run is None or run.lease_token != lease_token:
@@ -1551,15 +1520,15 @@ class ProcessingWorker:
     async def _process_delete(self, claimed_run: ProcessingRun) -> None:
         """Remove one document from every store it occupies.
 
-        The vectors go first, then the artifact folder, then the raw
-        upload, and the row that holds the raw object's address goes last:
-        a failure once the address is gone could not be retried with the
-        key in hand. The raw delete lives here rather than on the API
-        route because a failed attempt lands back in the queue, while the
-        route's caller is long gone.
+        The artifact folder goes first, then the raw upload, and the row
+        that holds the raw object's address goes last: a failure once the
+        address is gone could not be retried with the key in hand. The
+        vectors need no step of their own -- they live on chunk_embeddings
+        and cascade with the row delete. The raw delete lives here rather
+        than on the API route because a failed attempt lands back in the
+        queue, while the route's caller is long gone.
         """
         lease_token = self._require_lease_token(claimed_run)
-        await self._vector_store.delete_document(claimed_run.document_id)
         artifact_prefix = (
             f"workspaces/{claimed_run.origin_workspace_id}/documents/{claimed_run.document_id}/"
         )
@@ -1741,7 +1710,6 @@ class ProcessingWorker:
         )
         try:
             with _tracer.start_as_current_span("embed") as span:
-                await self._vector_store.ensure_collection()
                 embedded = 0
                 while True:
                     batch = await self._load_embedding_batch(claimed_run.id)
@@ -1755,59 +1723,56 @@ class ProcessingWorker:
                     vectors = await self._embedding_provider.embed(
                         [chunk.text for chunk, _ in batch]
                     )
-                    workspace_ids = await self._document_workspace_ids(claimed_run.document_id)
                     if len(vectors) != len(batch):
                         raise EmbeddingProviderError(
                             "Embedding response count does not match the request",
                             retryable=False,
                         )
-                    points = [
-                        VectorPoint(
-                            id=embedding.qdrant_point_id,
-                            vector=vector,
-                            payload={
-                                "origin_workspace_id": str(chunk.origin_workspace_id),
-                                "workspace_ids": workspace_ids,
-                                "document_id": str(chunk.document_id),
-                                "processing_run_id": str(chunk.processing_run_id),
-                                "chunk_id": str(chunk.id),
-                                "content_hash": chunk.content_hash,
-                                "embedding_profile": self._settings.embedding_profile,
-                                "embedding_model": self._settings.embedding_model,
-                                "dimensions": self._settings.embedding_dimensions,
-                                "ordinal": chunk.ordinal,
-                            },
-                        )
-                        for (chunk, embedding), vector in zip(batch, vectors, strict=True)
-                    ]
-                    await self._vector_store.upsert(points)
-                    try:
-                        await self._mark_embedding_batch_indexed(
-                            claimed_run.id,
-                            lease_token,
-                            [embedding.chunk_id for _, embedding in batch],
-                        )
-                    except LeaseLostError:
-                        with suppress(VectorStoreError):
-                            await self._vector_store.delete_points([point.id for point in points])
-                        raise
+                    await self._store_vectors(batch, vectors)
+                    await self._mark_embedding_batch_indexed(
+                        claimed_run.id,
+                        lease_token,
+                        [embedding.chunk_id for _, embedding in batch],
+                    )
                     embedded += len(batch)
                 span.set_attribute("retriv.chunk_count", embedded)
-            activated = await self._activate_embedded_run(claimed_run.id, lease_token)
-            if not activated:
-                await self._vector_store.delete_document(claimed_run.document_id)
-            else:
-                await self._vector_store.set_document_workspaces(
-                    claimed_run.document_id,
-                    [
-                        UUID(value)
-                        for value in await self._document_workspace_ids(claimed_run.document_id)
-                    ],
-                    processing_run_id=claimed_run.id,
-                )
+            await self._activate_embedded_run(claimed_run.id, lease_token)
         finally:
             stop_event.set()
             await heartbeat
+
+    async def _store_vectors(
+        self,
+        batch: list[tuple[DocumentChunk, ChunkEmbedding]],
+        vectors: list[list[float]],
+    ) -> None:
+        """Write one batch of embeddings onto their ledger rows.
+
+        The vector lives on the chunk_embeddings row it belongs to, so the
+        store step is one UPDATE per row. The status flip stays in
+        _mark_embedding_batch_indexed: it is the lease-checked step that
+        owns activation counting. A lease lost between here and there
+        leaves a vector on a row that lease recovery resets to pending,
+        and the next attempt overwrites it.
+        """
+        now = utcnow()
+        async with self._session_factory() as session, session.begin():
+            await session.execute(
+                text(
+                    "UPDATE chunk_embeddings "
+                    "SET embedding = CAST(:embedding AS vector), updated_at = :updated_at "
+                    "WHERE chunk_id = :chunk_id AND embedding_profile = :profile"
+                ),
+                [
+                    {
+                        "embedding": vector_literal(vector),
+                        "updated_at": now,
+                        "chunk_id": str(chunk.id),
+                        "profile": self._settings.embedding_profile,
+                    }
+                    for (chunk, _), vector in zip(batch, vectors, strict=True)
+                ],
+            )
 
     async def _load_embedding_batch(
         self, run_id: UUID
@@ -1925,7 +1890,7 @@ class ProcessingWorker:
             )
             if not chunk_count or indexed_count != chunk_count:
                 raise PermanentProcessingError(
-                    "Not every document chunk has a matching Qdrant embedding"
+                    "Not every document chunk has an indexed embedding vector"
                 )
             run.status = RUN_READY
             run.lease_until = None
@@ -1937,53 +1902,7 @@ class ProcessingWorker:
             document_id = run.document_id
         if document_id is not None:
             await self._sweep_superseded_artifacts(document_id, run_id)
-            await self._sweep_superseded_vectors(document_id, run_id)
         return True
-
-    async def _sweep_superseded_vectors(self, document_id: UUID, keep_run_id: UUID) -> None:
-        """Remove the Qdrant points of runs this run superseded.
-
-        Retrieval validates every vector match against the active processing
-        run, so a superseded run's points can never be served -- but they are
-        still returned by the vector search, and a search that hits one fails
-        as a whole rather than skipping it. Leaving them behind therefore
-        makes the document's whole workspace unsearchable until they are gone.
-
-        The rows in PostgreSQL stay as history, exactly as they do for the
-        artifacts; only the vectors go.
-        """
-        async with self._session_factory() as session:
-            point_ids = list(
-                (
-                    await session.scalars(
-                        select(ChunkEmbedding.qdrant_point_id).where(
-                            ChunkEmbedding.document_id == document_id,
-                            ChunkEmbedding.processing_run_id != keep_run_id,
-                        )
-                    )
-                ).all()
-            )
-        if not point_ids:
-            return
-        try:
-            await self._vector_store.delete_points(point_ids)
-            logger.info(
-                "Superseded vector sweep removed points",
-                extra={
-                    "document_id": str(document_id),
-                    "kept_run_id": str(keep_run_id),
-                    "point_count": len(point_ids),
-                },
-            )
-        except VectorStoreError:
-            logger.warning(
-                "Superseded vector sweep failed",
-                extra={
-                    "document_id": str(document_id),
-                    "point_count": len(point_ids),
-                },
-                exc_info=True,
-            )
 
     async def _sweep_superseded_artifacts(self, document_id: UUID, keep_run_id: UUID) -> None:
         """Remove the artifact folders of runs this run superseded.
@@ -2115,12 +2034,8 @@ class ProcessingWorker:
             model=self._settings.embedding_model,
             dimensions=self._settings.embedding_dimensions,
             content_hash=content_hash,
-            qdrant_point_id=self._qdrant_point_id(chunk_id),
             status=EMBEDDING_PENDING,
         )
-
-    def _qdrant_point_id(self, chunk_id: UUID) -> UUID:
-        return uuid5(chunk_id, self._settings.embedding_profile)
 
     async def _ensure_active(self, run_id: UUID, lease_token: UUID) -> None:
         """Stop work whose run was cancelled or whose lease is gone.

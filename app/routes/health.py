@@ -1,7 +1,6 @@
 from functools import partial
 from typing import Annotated
 
-import httpx
 from anyio import to_thread
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
@@ -32,31 +31,28 @@ async def readiness(
 ) -> dict[str, str]:
     """Report ready only when every dependency can actually serve traffic.
 
-    Qdrant is checked because this process answers questions from it: a
-    process that reports ready and then 503s on the first chat is worse
-    than one that stays unready. The check is a plain HTTP GET of the
-    collection with the read-only key, so it also proves that key works.
+    The vector extension is checked because this process answers questions
+    from it: a process that reports ready and then 503s on the first chat is
+    worse than one that stays unready. The check is one SELECT against the
+    same session the query path uses, so it also proves the database is
+    migrated to 0018.
     """
     try:
         await session.execute(text("SELECT 1"))
+        await check_vector_extension(session)
         await to_thread.run_sync(partial(storage.check_health, bucket=settings.s3_raw_bucket))
         await to_thread.run_sync(scanner.check_health)
-        await check_qdrant(settings)
     except (SQLAlchemyError, StorageError, ScannerUnavailableError, OSError) as exc:
-        raise service_not_ready_error() from exc
-    except httpx.HTTPError as exc:
         raise service_not_ready_error() from exc
     return {"status": "ok"}
 
 
-async def check_qdrant(settings: Settings) -> None:
-    base_url = settings.qdrant_url.rstrip("/")
-    async with httpx.AsyncClient(timeout=settings.qdrant_timeout_seconds) as client:
-        response = await client.get(
-            f"{base_url}/collections/{settings.qdrant_collection}",
-            headers={"api-key": settings.qdrant_read_only_api_key.get_secret_value()},
-        )
-    response.raise_for_status()
+async def check_vector_extension(session: AsyncSession) -> None:
+    installed = await session.scalar(
+        text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+    )
+    if installed != 1:
+        raise SQLAlchemyError("The pgvector extension is not installed")
 
 
 def service_not_ready_error() -> AppError:

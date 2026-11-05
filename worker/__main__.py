@@ -11,7 +11,6 @@ from opentelemetry import trace
 from app.core.config import get_settings
 from app.db.session import engine, session_factory
 from app.embeddings.openai_compatible import OpenAICompatibleEmbeddingProvider
-from app.embeddings.qdrant import QdrantVectorStore
 from app.extraction.sandbox import SandboxedExtractor
 from app.infrastructure.storage import get_artifact_storage
 from app.observability.tracing import configure_tracing, shutdown_tracing
@@ -29,14 +28,6 @@ async def run_worker() -> None:
         model=settings.embedding_model,
         dimensions=settings.embedding_dimensions,
         timeout_seconds=settings.embedding_timeout_seconds,
-    )
-    vector_store = QdrantVectorStore(
-        url=settings.qdrant_url,
-        api_key=settings.qdrant_api_key.get_secret_value(),
-        collection=settings.qdrant_collection,
-        dimensions=settings.embedding_dimensions,
-        timeout_seconds=settings.qdrant_timeout_seconds,
-        vectors_on_disk=settings.qdrant_vectors_on_disk,
     )
     vision_provider = OpenAICompatibleVisionProvider(
         base_url=settings.vlm_base_url,
@@ -76,7 +67,6 @@ async def run_worker() -> None:
         ),
         settings,
         embedding_provider,
-        vector_store,
         vision_provider,
     )
     stop_event = asyncio.Event()
@@ -88,7 +78,6 @@ async def run_worker() -> None:
         await worker.run(stop_event, shutdown_grace_seconds=SHUTDOWN_GRACE_SECONDS)
     finally:
         await embedding_provider.aclose()
-        await vector_store.aclose()
         await vision_provider.aclose()
         shutdown_tracing()
 

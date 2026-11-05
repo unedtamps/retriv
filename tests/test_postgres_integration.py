@@ -38,9 +38,11 @@ from sqlalchemy.ext.asyncio import (
 from app.api.dependencies import get_malware_scanner
 from app.core.config import Settings, get_settings
 from app.db.models import (
+    EMBEDDING_INDEXED,
     JOB_EXTRACT,
     RUN_CHUNKING,
     RUN_EMBEDDING,
+    RUN_READY,
     ChunkEmbedding,
     Document,
     DocumentChunk,
@@ -63,11 +65,12 @@ from app.processing.worker import ProcessingWorker
 from app.retrieval.sql import RowQuery, RowQueryError
 from app.security.auth import hash_password
 from tests.conftest import CleanScanner, InMemoryObjectStorage
+from app.retrieval.context import ContextRetriever
+from app.sections import encode_section_key
 from tests.test_worker import (
     FakeEmbeddingProvider,
     FakeExtractor,
     FakeStorage,
-    FakeVectorStore,
     FakeVisionProvider,
 )
 
@@ -221,8 +224,7 @@ async def test_chunk_and_embedding_rows_commit_in_foreign_key_order(
         FakeStorage(),
         extractor,
         worker_settings,
-        FakeEmbeddingProvider(),
-        FakeVectorStore(),
+        FakeEmbeddingProvider(dimensions=worker_settings.embedding_dimensions),
     )
     run_id, lease_token = uuid4(), uuid4()
     try:
@@ -1089,14 +1091,12 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
     application.dependency_overrides[get_malware_scanner] = lambda: CleanScanner()
 
     worker_settings = settings.model_copy(update={"processing_poll_interval_seconds": 0.0})
-    vector_store = FakeVectorStore()
     worker = ProcessingWorker(
         factory,
         storage,
         FakeExtractor(),
         worker_settings,
-        FakeEmbeddingProvider(),
-        vector_store,
+        FakeEmbeddingProvider(dimensions=worker_settings.embedding_dimensions),
     )
 
     try:
@@ -1151,7 +1151,6 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
             "amount": "1500.00",
             "currency": "USD",
         }
-        assert vector_store.points == {}
 
         catalogue_reader = create_async_engine(database_url())
         catalogue = RowQuery(
@@ -1206,14 +1205,12 @@ async def test_an_xlsx_upload_lands_as_named_sheets_with_visuals() -> None:
     application.dependency_overrides[get_malware_scanner] = lambda: CleanScanner()
 
     worker_settings = settings.model_copy(update={"processing_poll_interval_seconds": 0.0})
-    vector_store = FakeVectorStore()
     worker = ProcessingWorker(
         factory,
         storage,
         FakeExtractor(),
         worker_settings,
-        FakeEmbeddingProvider(),
-        vector_store,
+        FakeEmbeddingProvider(dimensions=worker_settings.embedding_dimensions),
         FakeVisionProvider(),
     )
 
@@ -1275,7 +1272,6 @@ async def test_an_xlsx_upload_lands_as_named_sheets_with_visuals() -> None:
 
         assert [row.sheet for row in rows] == ["Data"] * 4
         assert rows[0].data == {"Month": "Jan", "Revenue": "100"}
-        assert vector_store.points == {}
         assert sorted(image.ref for image in images) == ["chart-1", "picture-1"]
         assert all(image.described for image in images)
 
@@ -1523,3 +1519,210 @@ def _run(document_id: UUID, workspace_id: UUID, job_kind: str, status: str) -> P
         pipeline_version="2026.1",
         status=status,
     )
+
+
+async def test_vectors_live_in_postgres_and_search_serves_only_the_active_scoped_run() -> None:
+    """The worker writes vectors into chunk_embeddings; the retriever reads them.
+
+    One store: the database that holds the ledger holds the vectors, so a
+    search is one SQL statement. This test drives the real write path --
+    fake embeddings, real pgvector UPDATE -- and then the real search: a
+    chunk is served only to a linked workspace and only from the document's
+    active run, and the HNSW index backs the ordering.
+    """
+    engine = create_async_engine(database_url(), pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    worker_settings = get_settings().model_copy(
+        update={
+            "environment": "test",
+            "database_url": database_url(),
+            "antivirus_enabled": False,
+        }
+    )
+    extractor = FakeExtractor(
+        chunk_texts=["Alpha body paragraph.", "Beta body paragraph."],
+    )
+    worker = ProcessingWorker(
+        factory,
+        FakeStorage(),
+        extractor,
+        worker_settings,
+        FakeEmbeddingProvider(dimensions=worker_settings.embedding_dimensions),
+    )
+    run_id, lease_token = uuid4(), uuid4()
+    try:
+        async with factory() as session:
+            await clear_database(session)
+            user = User(username="vectors", password_hash=hash_password("pw-12345678"))
+            workspace = Workspace(slug="vectors", name="Vectors")
+            elsewhere = Workspace(slug="elsewhere", name="Elsewhere")
+            session.add_all([user, workspace, elsewhere])
+            await session.flush()
+            document = Document(
+                id=uuid4(),
+                origin_workspace_id=workspace.id,
+                original_filename="report.pdf",
+                detected_media_type="application/pdf",
+                size_bytes=1024,
+                sha256="a" * 64,
+                bucket="raw-documents",
+                object_key=f"workspaces/{workspace.id}/objects/{uuid4()}",
+            )
+            session.add(document)
+            await session.flush()
+            session.add(
+                DocumentWorkspace(
+                    workspace_id=workspace.id,
+                    document_id=document.id,
+                    filename=document.original_filename,
+                )
+            )
+            session.add(
+                ProcessingRun(
+                    id=run_id,
+                    origin_workspace_id=workspace.id,
+                    document_id=document.id,
+                    job_kind=JOB_EXTRACT,
+                    pipeline_version=worker_settings.pipeline_version,
+                    status=RUN_CHUNKING,
+                    lease_token=lease_token,
+                )
+            )
+            document.active_processing_run_id = run_id
+            await session.commit()
+
+        assert await worker._persist_chunks(
+            run_id,
+            lease_token,
+            document,
+            extractor.extract(Path("unused.pdf"), media_type="application/pdf"),
+            artifact_key="artifact.json.gz",
+            manifest_key="manifest.json",
+            stored_images=[],
+        )
+
+        async with factory() as session:
+            claimed = await session.get(ProcessingRun, run_id)
+        assert claimed is not None
+        await worker._process_embeddings(claimed, lease_token)
+
+        async with factory() as session:
+            active = await session.get(Document, document.id)
+            assert active is not None
+            vectors = (
+                await session.scalars(
+                    select(ChunkEmbedding).where(
+                        ChunkEmbedding.processing_run_id == run_id
+                    )
+                )
+            ).all()
+        assert active.active_processing_run_id == run_id, "activation ran"
+        assert len(vectors) == 2
+        assert all(vector.status == EMBEDDING_INDEXED for vector in vectors)
+
+        async with factory() as session:
+            installed = await session.scalar(
+                text("SELECT 1 FROM pg_indexes WHERE indexname = 'ix_chunk_embeddings_hnsw'")
+            )
+        assert installed == 1, "the HNSW index backs the ordering"
+
+        retriever = ContextRetriever(
+            worker_settings,
+            engine,
+            embedding_client=httpx.AsyncClient(
+                base_url="http://embedding.test/v1/",
+                transport=httpx.MockTransport(
+                    lambda _: httpx.Response(
+                        200,
+                        json={
+                            "data": [
+                                {
+                                    "index": 0,
+                                    "embedding": [1.0] * worker_settings.embedding_dimensions,
+                                }
+                            ]
+                        },
+                    )
+                ),
+            ),
+        )
+        try:
+            sources = await retriever.retrieve("alpha", [workspace.id], 5)
+            assert {source.text for source in sources} == {
+                "Alpha body paragraph.",
+                "Beta body paragraph.",
+            }
+            assert all(source.score == pytest.approx(1.0) for source in sources), (
+                "identical vectors sit at cosine distance zero"
+            )
+            assert all(source.workspace_id == workspace.id for source in sources)
+
+            elsewhere_sources = await retriever.retrieve("alpha", [elsewhere.id], 5)
+            assert elsewhere_sources == [], "a workspace without the link sees nothing"
+
+            stale_run_id = uuid4()
+            stale_chunk_id = uuid4()
+            stale_text = "Stale superseded text."
+            async with factory() as session, session.begin():
+                session.add(
+                    ProcessingRun(
+                        id=stale_run_id,
+                        origin_workspace_id=workspace.id,
+                        document_id=document.id,
+                        job_kind=JOB_EXTRACT,
+                        pipeline_version=worker_settings.pipeline_version,
+                        status=RUN_READY,
+                    )
+                )
+                await session.flush()
+                session.add(
+                    DocumentChunk(
+                        id=stale_chunk_id,
+                        origin_workspace_id=workspace.id,
+                        document_id=document.id,
+                        processing_run_id=stale_run_id,
+                        ordinal=9,
+                        text=stale_text,
+                        token_count=len(stale_text.split()),
+                        content_hash=hashlib.sha256(stale_text.encode()).hexdigest(),
+                        section_path=["Body"],
+                        section_key=encode_section_key(["Body"]),
+                        is_heading_only=False,
+                        page_numbers=[2],
+                    )
+                )
+                await session.flush()
+                session.add(
+                    ChunkEmbedding(
+                        chunk_id=stale_chunk_id,
+                        embedding_profile=worker_settings.embedding_profile,
+                        origin_workspace_id=workspace.id,
+                        document_id=document.id,
+                        processing_run_id=stale_run_id,
+                        model=worker_settings.embedding_model,
+                        dimensions=worker_settings.embedding_dimensions,
+                        content_hash=hashlib.sha256(stale_text.encode()).hexdigest(),
+                        status=EMBEDDING_INDEXED,
+                    )
+                )
+            async with factory() as session, session.begin():
+                await session.execute(
+                    text(
+                        "UPDATE chunk_embeddings SET embedding = "
+                        "(SELECT embedding FROM chunk_embeddings "
+                        "WHERE processing_run_id = :active_run LIMIT 1) "
+                        "WHERE processing_run_id = :stale_run"
+                    ),
+                    {"active_run": run_id, "stale_run": stale_run_id},
+                )
+
+            sources = await retriever.retrieve("stale", [workspace.id], 5)
+            assert all(source.text != stale_text for source in sources), (
+                "the active-run join is what excludes a superseded run's vectors"
+            )
+        finally:
+            await retriever.aclose()
+    finally:
+        async with factory() as session:
+            await clear_database(session)
+        await engine.dispose()

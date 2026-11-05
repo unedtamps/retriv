@@ -23,7 +23,7 @@ from uuid import UUID
 from app.agents.chat import ChatProviderError, ChatTurn, OpenAICompatibleChatProvider
 from app.agents.toolkit import AgentToolKit, ToolRejection
 from app.core.errors import AppError
-from app.retrieval.context import OutOfScopeSearchResult, RetrievalUnavailable
+from app.retrieval.context import RetrievalUnavailable
 from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 
 MAX_TURNS = 12
@@ -442,7 +442,6 @@ async def run_agent(
                 result = f"Rejected: {exc.detail}"
             except (
                 RetrievalUnavailable,
-                OutOfScopeSearchResult,
                 DocumentNotFound,
                 DocumentNotNavigable,
             ) as exc:

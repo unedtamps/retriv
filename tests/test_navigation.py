@@ -150,7 +150,6 @@ async def seed(
                         if mismatched_embedding_hash_at != ordinal
                         else hashlib.sha256(b"different").hexdigest()
                     ),
-                    qdrant_point_id=uuid4(),
                 )
             )
         await session.commit()
@@ -260,7 +259,7 @@ async def test_a_csv_is_refused_with_the_tool_that_can_read_it() -> None:
 
 
 async def test_an_unindexed_embedding_is_not_returned_as_text() -> None:
-    """Rows here carry no Qdrant match, so the embedding ledger is the only guard."""
+    """Rows here carry no vector match, so the embedding ledger is the only guard."""
     env = await seeded_navigator(make_settings(), count=4, indexed=False)
 
     window = await env.read()

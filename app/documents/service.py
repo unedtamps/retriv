@@ -267,9 +267,8 @@ async def accept_document_delete(
 
     The link is marked deleted first; if other links remain, nothing else is
     touched. The canonical row survives until the worker has removed the
-    vectors and artifacts, because the Qdrant point IDs live in rows that
-    cascade away with it. The raw object is removed only when the last link
-    goes away.
+    artifacts, and the embedding vectors cascade away with it. The raw
+    object is removed only when the last link goes away.
 
     Returns the canonical document, or ``None`` when it disappeared between
     the caller's permission check and this lock.
