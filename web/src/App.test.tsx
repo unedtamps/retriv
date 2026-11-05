@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { readSession, readSessionToken, writeSession, writeSessionToken } from './session'
 import { buildDocx, DOCX_MEDIA_TYPE } from './test/docxFixture'
+import { loadChatHistory } from './lib/chatHistoryStore'
 import type { CurrentUser, Workspace } from './types'
 
 const admin: CurrentUser = {
@@ -922,6 +923,68 @@ describe('dashboard application', () => {
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).queryByRole('button', { name: 'Chat' })).not.toBeInTheDocument()
     expect(window.location.search).toContain('view=admin-overview')
+  })
+
+  it('restores the conversation from browser storage after a refresh', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi()
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    const view = render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+    await screen.findByText('The workspace holds one report.')
+    // the debounced save fires 300ms after the last change
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450))
+    })
+    view.unmount()
+
+    writeSessionToken('member-token')
+    render(<App />)
+    expect(
+      await screen.findByText('The workspace holds one report.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('What is in this workspace?')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Start a new conversation' }),
+    ).toBeInTheDocument()
+  })
+
+  it('starts a fresh conversation when New chat is pressed', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi()
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+    await screen.findByText('The workspace holds one report.')
+
+    await user.click(screen.getByRole('button', { name: 'Start a new conversation' }))
+
+    expect(await screen.findByText('Ask across your workspaces')).toBeInTheDocument()
+    expect(screen.queryByText('The workspace holds one report.')).not.toBeInTheDocument()
+  })
+
+  it('wipes the stored chat on sign out', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi()
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+    await screen.findByText('The workspace holds one report.')
+
+    localStorage.removeItem('retriv.chat.conversation.v1')
+    expect(loadChatHistory()).toBeNull()
   })
 
   it('clears an expired session and returns to sign in', async () => {

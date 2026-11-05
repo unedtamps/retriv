@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getErrorMessage, isUnauthorized, streamAgentChat } from '../api'
+import { loadChatHistory, saveChatHistory } from '../lib/chatHistoryStore'
 import type { AgentChatEvent, AgentChatHistoryMessage } from '../types'
 
 export interface ToolStep {
@@ -28,22 +29,31 @@ export function historyOf(items: ChatItem[]): AgentChatHistoryMessage[] {
 /**
  * One agent conversation, owned above the page that shows it.
  *
- * The conversation lives in this hook's state only: a refresh clears it, and
- * the server keeps nothing. It is held here rather than inside the chat page
- * because the page mounts and unmounts as the user moves between views, and a
- * conversation that died on every tab switch would make the tab useless.
- *
+ * The conversation is held here rather than inside the chat page because the
+ * page mounts and unmounts as the user moves between views, and a
+ * conversation that died on every tab switch would make the tab useless. It
+ * also persists to this browser's storage: the wire protocol replays the
+ * recent history on every turn anyway, so what the client remembers is
+ * exactly what a continuation needs -- the transcript and the session id the
+ * model side keys its caching on. A refresh keeps it; only New chat or sign
+ * out ends it.
  */
 export function useAgentConversation(onUnauthorized: () => void): AgentConversation {
-  const [items, setItems] = useState<ChatItem[]>([])
+  const stored = useMemo(() => loadChatHistory(), [])
+  const [items, setItems] = useState<ChatItem[]>(stored?.items ?? [])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   // One stable id per conversation: providers that key routing or prompt
   // caching on it (OpenCode Go requires it) see the same conversation the
-  // whole session lives for. Ephemeral by design -- a refresh starts a new one.
-  const sessionIdRef = useRef<string>(crypto.randomUUID())
+  // whole session lives for.
+  const sessionIdRef = useRef<string>(stored?.sessionId ?? crypto.randomUUID())
   const streamingRef = useRef(false)
+
+  useEffect(() => {
+    const timer = setTimeout(() => saveChatHistory(sessionIdRef.current, items), 300)
+    return () => clearTimeout(timer)
+  }, [items])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -164,7 +174,16 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
 
   const stop = () => abortRef.current?.abort()
 
-  return { items, draft, setDraft, busy, send, stop }
+  const newConversation = () => {
+    abortRef.current?.abort()
+    streamingRef.current = false
+    sessionIdRef.current = crypto.randomUUID()
+    setItems([])
+    setDraft('')
+    setBusy(false)
+  }
+
+  return { items, draft, setDraft, busy, send, stop, newConversation }
 }
 
 export type AgentConversation = ReturnType<typeof useAgentConversation>

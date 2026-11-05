@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
-import { CornerDownLeft, Sparkles, Square, Wrench } from 'lucide-react'
+import { CirclePlus, CornerDownLeft, Sparkles, Square, Wrench } from 'lucide-react'
 import type { AgentConversation } from '../hooks/useAgentConversation'
 
 const MarkdownText = lazy(() => import('./MarkdownText').then((m) => ({ default: m.MarkdownText })))
@@ -21,7 +21,7 @@ const SUGGESTIONS = [
  * server keeps nothing, and a refresh starts over.
  */
 export function AgentChatPage({ conversation }: { conversation: AgentConversation }) {
-  const { items, draft, setDraft, busy, send, stop } = conversation
+  const { items, draft, setDraft, busy, send, stop, newConversation } = conversation
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -81,9 +81,20 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
           <p className="eyebrow">Across your workspaces</p>
           <h1 className="font-display text-xl font-medium tracking-[-0.02em] text-ink">Chat</h1>
         </div>
-        <p className="hidden text-xs text-ink-faint sm:block">
-          Ephemeral — a refresh starts a new conversation
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="hidden text-xs text-ink-faint sm:block">
+            Saved in this browser — sign out clears it
+          </p>
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-label="Start a new conversation"
+            onClick={newConversation}
+          >
+            <CirclePlus aria-hidden="true" size={14} />
+            New chat
+          </button>
+        </div>
       </header>
 
       <div ref={scrollRef} className="scrollbar-none min-h-0 flex-1 overflow-y-auto">
