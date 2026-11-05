@@ -330,27 +330,18 @@ class DocumentImage(Base):
     __tablename__ = "document_images"
     __table_args__ = (
         UniqueConstraint("document_id", "ref", name="uq_document_images_document_ref"),
-        Index(
-            "ix_document_images_active_lookup",
-            "origin_workspace_id",
-            "document_id",
-        ),
+        Index("ix_document_images_document", "document_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
-    )
-    processing_run_id: Mapped[UUID] = mapped_column(
-        ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False
     )
     ref: Mapped[str] = mapped_column(String(100), nullable=False)
     bucket: Mapped[str] = mapped_column(String(255), nullable=False)
     object_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     media_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     describe_hint: Mapped[str] = mapped_column(String(20), nullable=False, default="picture")
     caption: Mapped[str] = mapped_column(String(500), nullable=False, default="")
@@ -430,12 +421,6 @@ class ChunkEmbedding(Base):
             "processing_run_id",
             "embedding_profile",
             "status",
-        ),
-        Index(
-            "ix_chunk_embeddings_document",
-            "origin_workspace_id",
-            "document_id",
-            "embedding_profile",
         ),
     )
 

@@ -991,15 +991,12 @@ async def _seed_picture(mcp: "McpEnv", *, described: bool = True) -> tuple[UUID,
         await session.flush()
         session.add(
             DocumentImage(
-                origin_workspace_id=workspace_id,
                 document_id=seeded.document_id,
-                processing_run_id=run.id,
                 ref="image-p1-0",
                 bucket=mcp.settings.s3_artifact_bucket,
                 object_key=object_key,
                 media_type="image/png",
                 size_bytes=len(png),
-                sha256=hashlib.sha256(png).hexdigest(),
                 page_number=1,
                 describe_hint="picture",
                 caption="Figure 1: Revenue.",

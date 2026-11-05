@@ -931,15 +931,12 @@ class ProcessingWorker:
             description = descriptions.get(image.ref, "")
             stored.append(
                 DocumentImage(
-                    origin_workspace_id=document.origin_workspace_id,
                     document_id=document.id,
-                    processing_run_id=run_id,
                     ref=image.ref,
                     bucket=self._settings.s3_artifact_bucket,
                     object_key=object_key,
                     media_type=media_type,
                     size_bytes=len(data),
-                    sha256=hashlib.sha256(data).hexdigest(),
                     page_number=image.page_number,
                     describe_hint=image.describe_hint,
                     caption=image.caption,

@@ -2237,7 +2237,6 @@ async def test_extracted_pictures_are_persisted_and_mapped(
     stored = storage.objects[(row.bucket, row.object_key)]
     assert stored != png, "a 2000px render must come back bounded to the model edge"
     assert row.size_bytes == len(stored)
-    assert row.sha256 == hashlib.sha256(stored).hexdigest()
     import pymupdf
 
     preview_document = pymupdf.open(stream=stored, filetype="png")
@@ -2292,7 +2291,9 @@ async def test_a_reingest_replaces_the_picture_rows(
             .all()
         )
 
-    assert [row.processing_run_id for row in rows] == [second.id]
+    assert rows and all(
+        f"runs/{second.id}/" in row.object_key for row in rows
+    ), "the surviving rows are the second run's attempt-scoped objects"
 
 
 async def test_a_csv_run_stores_no_picture_rows(

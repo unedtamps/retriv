@@ -145,15 +145,12 @@ CREATE TABLE public.document_chunks (
 
 CREATE TABLE public.document_images (
     id uuid NOT NULL,
-    origin_workspace_id uuid NOT NULL,
     document_id uuid NOT NULL,
-    processing_run_id uuid NOT NULL,
     ref character varying(100) NOT NULL,
     bucket character varying(255) NOT NULL,
     object_key character varying(1024) NOT NULL,
     media_type character varying(100) NOT NULL,
     size_bytes integer NOT NULL,
-    sha256 character varying(64) NOT NULL,
     page_number integer NOT NULL,
     describe_hint character varying(20) NOT NULL,
     caption character varying(500) NOT NULL,
@@ -512,13 +509,6 @@ CREATE INDEX ix_chunk_embeddings_dispatch ON public.chunk_embeddings USING btree
 
 
 --
--- Name: ix_chunk_embeddings_document; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_chunk_embeddings_document ON public.chunk_embeddings USING btree (origin_workspace_id, document_id, embedding_profile);
-
-
---
 -- Name: ix_chunk_embeddings_hnsw; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -547,10 +537,10 @@ CREATE INDEX ix_document_chunks_section_key ON public.document_chunks USING btre
 
 
 --
--- Name: ix_document_images_active_lookup; Type: INDEX; Schema: public; Owner: -
+-- Name: ix_document_images_document; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_document_images_active_lookup ON public.document_images USING btree (origin_workspace_id, document_id);
+CREATE INDEX ix_document_images_document ON public.document_images USING btree (document_id);
 
 
 --
@@ -731,14 +721,6 @@ ALTER TABLE ONLY public.document_chunks
 
 ALTER TABLE ONLY public.document_images
     ADD CONSTRAINT fk_document_images_document_id_documents FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
-
-
---
--- Name: document_images fk_document_images_processing_run_id_processing_runs; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.document_images
-    ADD CONSTRAINT fk_document_images_processing_run_id_processing_runs FOREIGN KEY (processing_run_id) REFERENCES public.processing_runs(id) ON DELETE CASCADE;
 
 
 --
