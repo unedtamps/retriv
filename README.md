@@ -250,8 +250,8 @@ Detailed app documentation: [`app/README.md`](app/README.md).
 - Apply schema changes with `alembic upgrade head` (or `make migrate`).
 - The worker image contains a copy of `app/`; rebuild it after changing any
   shared code with `make worker`.
-- Vectors live in PostgreSQL since migration 0018. Upgrading from a Qdrant-era
-  deployment re-embeds every chunk through the worker's profile-drift backfill.
+- Vectors live in PostgreSQL (pgvector); the whole schema arrives as a single
+  baseline migration.
 - Health: `GET /health/live` is liveness; `GET /health/ready` checks PostgreSQL
   (the pgvector extension included), object storage and ClamAV.
 - Tracing: with `RETRIV_TRACING_ENABLED=true` both processes export OTLP spans

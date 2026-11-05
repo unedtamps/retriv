@@ -414,7 +414,7 @@ class DocumentRow(Base):
 
 
 class ChunkEmbedding(Base):
-    """The embedding ledger, and since 0018 the vector store itself.
+    """The embedding ledger, and the vector store itself.
 
     The ``embedding`` column is deliberately not mapped here: it is a
     pgvector ``vector(2000)`` that only exists in Postgres, and this

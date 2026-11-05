@@ -35,7 +35,7 @@ async def readiness(
     from it: a process that reports ready and then 503s on the first chat is
     worse than one that stays unready. The check is one SELECT against the
     same session the query path uses, so it also proves the database is
-    migrated to 0018.
+    migrated.
     """
     try:
         await session.execute(text("SELECT 1"))

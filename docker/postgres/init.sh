@@ -2,12 +2,12 @@
 # Create the read-only role the row-query tool connects as.
 #
 # This lives here, next to the other one-shot init service, because the
-# alternative is a documented manual step that people skip. Migrations 0002
-# and 0003 grant to this role *conditionally*: a password must never land in a
-# migration, so the role is created operationally and the GRANT is skipped when
-# it is missing. That made the failure silent and permanent -- skip the CREATE
-# ROLE and the migrations succeed, the app then refuses to start, and nothing
-# in the output says which step was missed.
+# alternative is a documented manual step that people skip. The baseline
+# migration grants to this role *conditionally*: a password must never land
+# in a migration, so the role is created operationally and the GRANT is
+# skipped when it is missing. That made the failure silent and permanent --
+# skip the CREATE ROLE and the migrations succeed, the app then refuses to
+# start, and nothing in the output says which step was missed.
 #
 # So the grants are applied here too, rather than depending on this running
 # before alembic. Order stops mattering: a fresh database gets its tables from
@@ -94,7 +94,7 @@ GRANT USAGE ON SCHEMA public TO :"reader_user";
 -- Guarded per table, because this also runs against a volume that has never
 -- been migrated, which is the normal state of a fresh clone where
 -- `make infra` precedes `make migrate`. The tables arrive afterwards and
--- migrations 0002/0003 grant them, the role already existing by then. Both
+-- the baseline grants them, the role already existing by then. Both
 -- paths are covered and neither depends on the other.
 SELECT format('GRANT SELECT ON public.%I TO %I', target, :'reader_user')
 FROM unnest(ARRAY['document_rows', 'documents', 'document_workspaces', 'processing_runs']) AS target

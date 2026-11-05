@@ -442,7 +442,7 @@ flowchart LR
 ```
 
 This was a documented manual `CREATE ROLE` once, and that turned out to be the worst
-possible place for it. Migrations `0002` and `0003` grant to the role **only if it already
+possible place for it. The baseline migration grants to the role **only if it already
 exists** — a password must never land in a migration, so a GRANT against a role that was
 never created aborts the whole upgrade. Skipping the manual step therefore produced a
 deployment that migrated cleanly, was configured cleanly, and then refused to start, with
@@ -578,9 +578,8 @@ the caller's workspaces. Adding or removing a link queues a small `access` run t
 acknowledges the change; nothing is re-chunked, re-embedded, or rewritten, because
 there is no derived payload to fall behind.
 
-Vectors live in PostgreSQL since migration 0018 (`chunk_embeddings.embedding`, a
-pgvector `vector(2000)` column with an HNSW cosine index). A deployment upgrading
-from the Qdrant era re-embeds every chunk through the worker's profile-drift backfill.
+Vectors live in PostgreSQL (`chunk_embeddings.embedding`, a pgvector
+`vector(2000)` column with an HNSW cosine index, part of the baseline schema).
 
 A document cannot exist without a way to be processed: the row and the run commit
 together or not at all. There is no outbox and no retry-on-replay, because there is no
