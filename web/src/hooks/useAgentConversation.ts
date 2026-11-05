@@ -87,7 +87,9 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
         id,
         title: titleOf(transcript),
         items: transcript,
-        updatedAt: new Date().toISOString(),
+        // The sidebar rises on a sent message, not on this save: send() owns
+        // the stamp, and a brand-new session was just messaged into being.
+        updatedAt: existing?.updatedAt ?? new Date().toISOString(),
       }
       const conversations = existing
         ? current.conversations.map((entry) => (entry.id === id ? updated : entry))
@@ -109,6 +111,12 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
   }
 
   useEffect(() => {
+    // A draft's first message promotes itself: the id that just became active
+    // is the session already on screen. That is not a switch -- treating it
+    // as one would abort the request this hook itself just started.
+    if (history.activeId !== null && history.activeId === sessionIdRef.current) {
+      return
+    }
     abortRef.current?.abort()
     epochRef.current += 1
     streamingRef.current = false
@@ -148,6 +156,16 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
     const withQuestion: ChatItem[] = [...items, { kind: 'user', text: message }]
     const activity: ChatItem = { kind: 'activity', calls: [] }
     setItems([...withQuestion, activity])
+    // The one moment the session's sidebar position may change: a message
+    // was sent. Saves and switches leave the order alone.
+    setHistory((current) => ({
+      ...current,
+      conversations: current.conversations.map((entry) =>
+        entry.id === sessionIdRef.current
+          ? { ...entry, updatedAt: new Date().toISOString() }
+          : entry,
+      ),
+    }))
     const controller = new AbortController()
     abortRef.current = controller
 

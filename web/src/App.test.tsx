@@ -74,6 +74,7 @@ function installApi(
   } = {},
   members: { list?: unknown } = {},
   auth: { refresh?: 'ok' | 'rejected'; meFirst?: 'ok' | 'expired' } = {},
+  chat: { holdBeforeFinalMs?: number } = {},
 ) {
   const refreshes: string[] = []
   const logouts: string[] = []
@@ -120,16 +121,30 @@ function installApi(
     if (url.endsWith('/agent/chat')) {
       const encoder = new TextEncoder()
       const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          const frames = [
+        async start(controller) {
+          init?.signal?.addEventListener('abort', () => {
+            try {
+              controller.error(new DOMException('The request was aborted.', 'AbortError'))
+            } catch {
+              // the stream was already closed
+            }
+          })
+          const early = [
             { type: 'turn_start', turns_allowed: 12 },
             { type: 'tool_call', name: 'search_context', arguments: { query: 'anything' } },
             { type: 'tool_result', name: 'search_context', length: 8, truncated: false, preview: 'top hit' },
-            { type: 'final', content: 'The workspace holds one report.\n\n## Findings\n\n- Revenue rose by a tenth.' },
           ]
-          for (const frame of frames) {
+          for (const frame of early) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
           }
+          if (chat.holdBeforeFinalMs !== undefined) {
+            await new Promise((resolve) => setTimeout(resolve, chat.holdBeforeFinalMs))
+          }
+          const final = {
+            type: 'final',
+            content: 'The workspace holds one report.\n\n## Findings\n\n- Revenue rose by a tenth.',
+          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(final)}\n\n`))
           controller.close()
         },
       })
@@ -849,6 +864,28 @@ describe('dashboard application', () => {
     const headers = chatCall[1]?.headers
     if (!(headers instanceof Headers)) throw new Error('Expected request headers')
     expect(headers.get('Authorization')).toBe('Bearer member-token')
+  })
+
+  it('does not abort the first message of a new chat while the draft promotes', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi(admin, [workspace], undefined, {}, {}, {}, {}, { holdBeforeFinalMs: 500 })
+    const user = userEvent.setup()
+    writeSessionToken('member-token')
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+
+    // the debounced save promotes the draft into a stored session 300ms into
+    // the request; the promotion must not kill the stream it just started
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450))
+    })
+    expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument(),
+    )
   })
 
   it('keeps the conversation when leaving the chat view and coming back', async () => {
