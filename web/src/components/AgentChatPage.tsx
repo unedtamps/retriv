@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
-import { CirclePlus, CornerDownLeft, Sparkles, Square, Wrench } from 'lucide-react'
+import { CirclePlus, CornerDownLeft, Sparkles, Square, Trash2, Wrench } from 'lucide-react'
 import type { AgentConversation } from '../hooks/useAgentConversation'
 
 const MarkdownText = lazy(() => import('./MarkdownText').then((m) => ({ default: m.MarkdownText })))
@@ -21,7 +21,22 @@ const SUGGESTIONS = [
  * server keeps nothing, and a refresh starts over.
  */
 export function AgentChatPage({ conversation }: { conversation: AgentConversation }) {
-  const { items, draft, setDraft, busy, send, stop, newConversation } = conversation
+  const {
+    items,
+    draft,
+    setDraft,
+    busy,
+    send,
+    stop,
+    newConversation,
+    sessions,
+    activeId,
+    selectSession,
+    deleteSession,
+  } = conversation
+  const orderedSessions = [...sessions].sort((a, b) =>
+    a.updatedAt < b.updatedAt ? 1 : -1,
+  )
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -74,7 +89,57 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
     )
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-4xl flex-col px-4 pb-3 sm:px-6">
+    <div className="flex h-[calc(100dvh-4rem)] min-h-0">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-surface/60 md:flex">
+        <div className="px-3 pt-4">
+          <button type="button" className="btn btn-sm w-full justify-center" onClick={newConversation}>
+            <CirclePlus aria-hidden="true" size={14} />
+            New chat
+          </button>
+        </div>
+        {orderedSessions.length === 0 ? (
+          <p className="px-3 pt-3 text-xs leading-5 text-ink-faint">
+            Conversations you start are listed here, saved in this browser only.
+          </p>
+        ) : (
+          <ul aria-label="Chat sessions" className="scrollbar-none mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+            {orderedSessions.map((session) => {
+              const active = session.id === activeId
+              return (
+                <li key={session.id} className="group relative">
+                  <button
+                    type="button"
+                    className={`w-full rounded-control px-2.5 py-2 pr-7 text-left ${
+                      active
+                        ? 'border border-line bg-hover'
+                        : 'border border-transparent hover:bg-hover'
+                    }`}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => selectSession(session.id)}
+                  >
+                    <span className="block truncate text-xs font-medium text-ink">
+                      {session.title}
+                    </span>
+                    <span className="block text-[0.65rem] text-ink-faint">
+                      {new Date(session.updatedAt).toLocaleDateString()}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete conversation: ${session.title}`}
+                    className="absolute right-1.5 top-2 hidden rounded p-1 text-ink-faint hover:bg-hover group-hover:block"
+                    onClick={() => deleteSession(session.id)}
+                  >
+                    <Trash2 aria-hidden="true" size={12} />
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </aside>
+
+      <div className="mx-auto flex min-w-0 flex-1 max-w-4xl flex-col px-4 pb-3 sm:px-6">
       <style>{MD_STYLES}</style>
       <header className="flex items-baseline justify-between gap-3 border-b border-line py-4">
         <div>
@@ -97,7 +162,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
         </div>
       </header>
 
-      <div ref={scrollRef} className="scrollbar-none min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} data-testid="chat-transcript" className="scrollbar-none min-h-0 flex-1 overflow-y-auto">
         {empty ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
             <Sparkles aria-hidden="true" size={22} className="text-ink-faint" strokeWidth={1.6} />
@@ -213,6 +278,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
       </div>
 
       {empty ? null : composer}
+      </div>
     </div>
   )
 }

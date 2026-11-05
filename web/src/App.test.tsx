@@ -836,8 +836,9 @@ describe('dashboard application', () => {
     expect(await screen.findByText('search_context')).toBeInTheDocument()
     expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
-    expect(screen.getByRole('list')).toBeInTheDocument()
-    expect(screen.getByText('Revenue rose by a tenth.')).toBeInTheDocument()
+    const transcript = screen.getByTestId('chat-transcript')
+    expect(within(transcript).getByRole('list')).toBeInTheDocument()
+    expect(within(transcript).getByText('Revenue rose by a tenth.')).toBeInTheDocument()
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument(),
     )
@@ -947,7 +948,7 @@ describe('dashboard application', () => {
     expect(
       await screen.findByText('The workspace holds one report.'),
     ).toBeInTheDocument()
-    expect(screen.getByText('What is in this workspace?')).toBeInTheDocument()
+    expect(screen.getAllByText('What is in this workspace?').length).toBeGreaterThan(0)
     expect(
       screen.getByRole('button', { name: 'Start a new conversation' }),
     ).toBeInTheDocument()
@@ -967,7 +968,11 @@ describe('dashboard application', () => {
 
     await user.click(screen.getByRole('button', { name: 'Start a new conversation' }))
 
-    expect(await screen.findByText('Ask across your workspaces')).toBeInTheDocument()
+    expect(
+      await screen.findByPlaceholderText('Ask across your workspaces…'),
+    ).toBeInTheDocument()
+    const heading = screen.getByText('Ask across your workspaces')
+    expect(heading).toBeInTheDocument()
     expect(screen.queryByText('The workspace holds one report.')).not.toBeInTheDocument()
   })
 
@@ -983,8 +988,64 @@ describe('dashboard application', () => {
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
 
-    localStorage.removeItem('retriv.chat.conversation.v1')
-    expect(loadChatHistory()).toBeNull()
+    localStorage.removeItem('retriv.chat.conversations.v2')
+    expect(loadChatHistory().conversations).toEqual([])
+  })
+
+  it('lists past sessions in the sidebar and restores the one picked', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi()
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'first conversation question')
+    await user.keyboard('{Enter}')
+    await screen.findByText('The workspace holds one report.')
+
+    await user.click(screen.getByRole('button', { name: 'Start a new conversation' }))
+    const fresh = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(fresh, 'second conversation question')
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450))
+    })
+
+    const sidebar = screen.getByRole('list', { name: 'Chat sessions' })
+    expect(within(sidebar).getByText('first conversation question')).toBeInTheDocument()
+    expect(within(sidebar).getByText('second conversation question')).toBeInTheDocument()
+
+    await user.click(within(sidebar).getByText('first conversation question'))
+    expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
+    expect(screen.getAllByText('first conversation question').length).toBeGreaterThan(0)
+  })
+
+  it('deletes a session from the sidebar and clears it when active', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi()
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'first conversation question')
+    await user.keyboard('{Enter}')
+    await screen.findByText('The workspace holds one report.')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450))
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'Delete conversation: first conversation question' }),
+    )
+
+    expect(await screen.findByText('Ask across your workspaces')).toBeInTheDocument()
+    expect(screen.queryByText('The workspace holds one report.')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Delete conversation: first conversation question' }),
+    ).not.toBeInTheDocument()
   })
 
   it('clears an expired session and returns to sign in', async () => {
