@@ -59,11 +59,18 @@ from app.retrieval.context import (  # noqa: E402
 DEFAULT_GOLDEN = Path("evals/retrieval_golden.json")
 
 SAMPLE_CHUNKS = text("""
-    SELECT chunk.id, chunk.workspace_id, chunk.document_id, chunk.text
+    SELECT chunk.id, link.workspace_id, chunk.document_id, chunk.text
     FROM document_chunks AS chunk
     JOIN documents AS document
       ON document.id = chunk.document_id
-     AND document.workspace_id = chunk.workspace_id
+    JOIN LATERAL (
+        SELECT link.workspace_id
+        FROM document_workspaces AS link
+        WHERE link.document_id = document.id
+          AND link.deleted_at IS NULL
+        ORDER BY link.workspace_id
+        LIMIT 1
+    ) AS link ON TRUE
     WHERE document.deleted_at IS NULL
       AND document.active_processing_run_id = chunk.processing_run_id
       AND chunk.token_count >= :min_tokens
