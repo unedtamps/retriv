@@ -18,6 +18,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.chat import ChatTurn
+from app.agents.harness import MAX_SEARCH_LIMIT, _execute_tool
 from app.db.models import AgentModelSetting
 from app.mcp.runtime import McpRuntime
 from app.retrieval.context import ContextRetriever, RetrievalUnavailable
@@ -719,3 +720,28 @@ async def test_the_client_session_id_reaches_the_provider(
     generated = captured["session_id"]
     assert isinstance(generated, str)
     UUID(generated)
+
+
+class _LimitRecordingKit:
+    """A toolkit stub that records the limit the harness dispatches."""
+
+    default_search_limit = 3
+
+    def __init__(self) -> None:
+        self.limits: list[int] = []
+
+    async def search_context(
+        self, *, query: str, limit: int, workspace_id: Any = None
+    ) -> str:
+        del query, workspace_id
+        self.limits.append(limit)
+        return "ok"
+
+
+async def test_search_limit_defaults_to_the_configured_value_and_is_clamped() -> None:
+    """The env default applies, and a model cannot ask for an unbounded page."""
+    kit: Any = _LimitRecordingKit()
+    await _execute_tool(kit, "search_context", {"query": "revenue"})
+    await _execute_tool(kit, "search_context", {"query": "revenue", "limit": 500})
+    await _execute_tool(kit, "search_context", {"query": "revenue", "limit": 0})
+    assert kit.limits == [3, MAX_SEARCH_LIMIT, 1]

@@ -115,6 +115,11 @@ class AgentToolKit:
         """Whether this deployment can serve row queries at all."""
         return self._runtime.row_query is not None
 
+    @property
+    def default_search_limit(self) -> int:
+        """The server's default match count for a search that names none."""
+        return self._runtime.settings.max_context_chunks
+
     async def search_context(
         self,
         *,

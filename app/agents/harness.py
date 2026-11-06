@@ -29,6 +29,9 @@ from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 MAX_TURNS = 12
 MAX_TOOL_RESULT_CHARS = 20_000
 TOOL_RESULT_PREVIEW_CHARS = 1_200
+# The tool schema advertises this ceiling; the loop enforces it too, because
+# a model's arguments are not validated against the schema before dispatch.
+MAX_SEARCH_LIMIT = 20
 
 
 _WORKSPACE_ID_PARAM = {
@@ -88,7 +91,11 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "minLength": 1, "maxLength": 2000},
-                        "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": MAX_SEARCH_LIMIT,
+                        },
                     },
                     "required": ["query"],
                 },
@@ -251,9 +258,10 @@ async def _execute_tool(
         query = arguments.get("query")
         if not isinstance(query, str) or not query.strip():
             raise ToolRejection("The 'query' argument is required.")
+        limit = _int_argument(arguments, "limit", kit.default_search_limit)
         return await kit.search_context(
             query=query[:2000],
-            limit=_int_argument(arguments, "limit", 8),
+            limit=max(1, min(limit, MAX_SEARCH_LIMIT)),
             workspace_id=None,
         )
     if name == "find_documents":
