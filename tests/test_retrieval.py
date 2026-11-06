@@ -107,8 +107,14 @@ class StubbedFetch:
         self.calls = 0
 
     async def __call__(
-        self, vector: list[float], workspace_ids: list[UUID], limit: int
+        self,
+        vector: list[float],
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        document_id: UUID | None = None,
     ) -> list[dict[str, object]]:
+        del document_id
         self.calls += 1
         assert workspace_ids, "the scope must reach the fetch"
         return self.rows[:limit]
@@ -826,6 +832,73 @@ async def test_completion_never_reaches_outside_the_signed_scope() -> None:
     assert "SECRET" not in joined
     assert all(source.workspace_id == workspace_id for source in sources), (
         "every source stays inside the requested scope"
+    )
+
+
+async def test_document_scoped_completion_stays_inside_that_document() -> None:
+    """A search narrowed to one document must not complete a sibling's section."""
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "section_expand_chunks": 4,
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings, links = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    seeded = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [
+            (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
+            (
+                11,
+                "Regulation 16.01 in the chosen document.",
+                ["PMK", "Pasal 16: Kerangka Umum", "16.01"],
+            ),
+        ],
+    )
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [
+            (10, "Pasal 16: Kerangka Umum", ["PMK", "Pasal 16: Kerangka Umum"]),
+            (
+                11,
+                "SIBLING document text.",
+                ["PMK", "Pasal 16: Kerangka Umum", "16.01"],
+            ),
+        ],
+    )
+    document_id = UUID(str(seeded[0]["document_id"]))
+    retriever, _, _ = await make_retriever(
+        settings, engine, [match_row(seeded[0], 0.81)]
+    )
+    try:
+        scoped = await retriever.retrieve(
+            "details about article 16", [workspace_id], 6, document_id=document_id
+        )
+        unscoped = await retriever.retrieve("details about article 16", [workspace_id], 6)
+    finally:
+        await retriever.aclose()
+
+    scoped_text = " ".join(source.text for source in scoped)
+    assert "Regulation 16.01 in the chosen document." in scoped_text
+    assert "SIBLING document text." not in scoped_text
+    assert all(source.document_id == document_id for source in scoped)
+    assert "SIBLING document text." in " ".join(source.text for source in unscoped), (
+        "without the filter, the sibling document is a legitimate completion"
     )
 
 

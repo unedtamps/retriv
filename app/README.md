@@ -309,8 +309,10 @@ Four things keep this honest:
    client-supplied list. Naming a `workspace_id` can only narrow the set the key
    already had; it cannot widen it, and the refusal is the same for "not yours" and
    "does not exist".
-2. **The `search_context` tool accepts a query and nothing else.** A model has no
-   argument with which to argue for a wider scope.
+2. **`search_context` cannot widen the scope.** Its `workspace_id` and
+   `document_id` arguments only narrow the set the key already had, and
+   `limit`/`min_score` tune the page and the relevance floor, not who the
+   caller is.
 3. **The vector search is validated by construction**: its join only returns a
    chunk whose document is live, whose run is the document's active one, whose
    embedding is indexed under the current profile, and whose content hash matches.

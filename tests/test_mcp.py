@@ -75,6 +75,7 @@ class FakeRetriever(ContextRetriever):
         self.calls: list[list[UUID]] = []
         self.budgets: list[int | None] = []
         self.min_scores: list[float | None] = []
+        self.document_ids: list[UUID | None] = []
         self.results: list[list[ContextSource]] = []
 
     async def retrieve(
@@ -85,11 +86,13 @@ class FakeRetriever(ContextRetriever):
         *,
         budget: int | None = None,
         min_score: float | None = None,
+        document_id: UUID | None = None,
     ) -> list[ContextSource]:
         del query, limit
         self.calls.append(list(workspace_ids))
         self.budgets.append(budget)
         self.min_scores.append(min_score)
+        self.document_ids.append(document_id)
         return self.results.pop(0) if self.results else []
 
 
@@ -409,6 +412,21 @@ async def test_search_context_passes_a_per_call_score_floor(mcp: McpEnv) -> None
     await mcp.session.call(mcp.alice_key, "search_context", query="revenue", min_score=0.8)
 
     assert mcp.retriever.min_scores == [None, 0.8]
+
+
+async def test_search_context_can_stay_inside_one_document(mcp: McpEnv) -> None:
+    """document_id narrows the search; omitting it keeps the whole scope."""
+    document_id = uuid4()
+
+    await mcp.session.call(
+        mcp.alice_key,
+        "search_context",
+        query="revenue",
+        document_id=str(document_id),
+    )
+    await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+
+    assert mcp.retriever.document_ids == [document_id, None]
 
 
 async def test_search_context_labels_each_source_with_its_section(mcp: McpEnv) -> None:

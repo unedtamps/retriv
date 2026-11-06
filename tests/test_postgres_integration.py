@@ -1660,6 +1660,99 @@ async def test_vectors_live_in_postgres_and_search_serves_only_the_active_scoped
             elsewhere_sources = await retriever.retrieve("alpha", [elsewhere.id], 5)
             assert elsewhere_sources == [], "a workspace without the link sees nothing"
 
+            other_document_id = uuid4()
+            other_run_id = uuid4()
+            other_text = "Other document paragraph."
+            async with factory() as session, session.begin():
+                other = Document(
+                    id=other_document_id,
+                    origin_workspace_id=workspace.id,
+                    original_filename="other.pdf",
+                    detected_media_type="application/pdf",
+                    size_bytes=1024,
+                    sha256="b" * 64,
+                    bucket="raw-documents",
+                    object_key=f"workspaces/{workspace.id}/objects/{uuid4()}",
+                )
+                session.add(other)
+                await session.flush()
+                session.add(
+                    DocumentWorkspace(
+                        workspace_id=workspace.id,
+                        document_id=other_document_id,
+                        filename="other.pdf",
+                    )
+                )
+                session.add(
+                    ProcessingRun(
+                        id=other_run_id,
+                        origin_workspace_id=workspace.id,
+                        document_id=other_document_id,
+                        job_kind=JOB_EXTRACT,
+                        pipeline_version=worker_settings.pipeline_version,
+                        status=RUN_READY,
+                        chunk_count=1,
+                        embedded_chunk_count=1,
+                        embedding_profile=worker_settings.embedding_profile,
+                        embedding_model=worker_settings.embedding_model,
+                        embedding_dimensions=worker_settings.embedding_dimensions,
+                    )
+                )
+                await session.flush()
+                other.active_processing_run_id = other_run_id
+                other_chunk_id = uuid4()
+                session.add(
+                    DocumentChunk(
+                        id=other_chunk_id,
+                        origin_workspace_id=workspace.id,
+                        document_id=other_document_id,
+                        processing_run_id=other_run_id,
+                        ordinal=0,
+                        text=other_text,
+                        token_count=len(other_text.split()),
+                        content_hash=hashlib.sha256(other_text.encode()).hexdigest(),
+                        section_path=["Other"],
+                        section_key=encode_section_key(["Other"]),
+                        is_heading_only=False,
+                        page_numbers=[1],
+                    )
+                )
+                await session.flush()
+                session.add(
+                    ChunkEmbedding(
+                        chunk_id=other_chunk_id,
+                        embedding_profile=worker_settings.embedding_profile,
+                        origin_workspace_id=workspace.id,
+                        document_id=other_document_id,
+                        processing_run_id=other_run_id,
+                        model=worker_settings.embedding_model,
+                        dimensions=worker_settings.embedding_dimensions,
+                        content_hash=hashlib.sha256(other_text.encode()).hexdigest(),
+                        status=EMBEDDING_INDEXED,
+                    )
+                )
+            async with factory() as session, session.begin():
+                await session.execute(
+                    text(
+                        "UPDATE chunk_embeddings SET embedding = "
+                        "(SELECT embedding FROM chunk_embeddings "
+                        "WHERE processing_run_id = :active_run LIMIT 1) "
+                        "WHERE processing_run_id = :other_run"
+                    ),
+                    {"active_run": run_id, "other_run": other_run_id},
+                )
+
+            scoped = await retriever.retrieve(
+                "alpha", [workspace.id], 5, document_id=document.id
+            )
+            assert all(source.document_id == document.id for source in scoped)
+            assert other_text not in {source.text for source in scoped}
+
+            other_scoped = await retriever.retrieve(
+                "alpha", [workspace.id], 5, document_id=other_document_id
+            )
+            assert {source.text for source in other_scoped} == {other_text}
+
             stale_run_id = uuid4()
             stale_chunk_id = uuid4()
             stale_text = "Stale superseded text."

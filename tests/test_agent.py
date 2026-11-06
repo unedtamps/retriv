@@ -47,8 +47,9 @@ class FakeRetriever(ContextRetriever):
         *,
         budget: int | None = None,
         min_score: float | None = None,
+        document_id: Any = None,
     ) -> list[ContextSource]:
-        del query, limit, budget, min_score
+        del query, limit, budget, min_score, document_id
         self.scopes.append(list(workspace_ids))
         if self.error is not None:
             raise self.error
@@ -731,6 +732,7 @@ class _LimitRecordingKit:
     def __init__(self) -> None:
         self.limits: list[int] = []
         self.min_scores: list[float | None] = []
+        self.document_ids: list[Any] = []
 
     async def search_context(
         self,
@@ -738,11 +740,13 @@ class _LimitRecordingKit:
         query: str,
         limit: int,
         workspace_id: Any = None,
+        document_id: Any = None,
         min_score: float | None = None,
     ) -> str:
         del query, workspace_id
         self.limits.append(limit)
         self.min_scores.append(min_score)
+        self.document_ids.append(document_id)
         return "ok"
 
 
@@ -763,3 +767,16 @@ async def test_search_min_score_is_optional_and_clamped() -> None:
     await _execute_tool(kit, "search_context", {"query": "revenue", "min_score": 5})
     await _execute_tool(kit, "search_context", {"query": "revenue", "min_score": -5})
     assert kit.min_scores == [None, 0.8, 1.0, -1.0]
+
+
+async def test_search_document_id_is_passed_through() -> None:
+    """A document_id narrows the search; omitting it leaves the whole scope."""
+    kit: Any = _LimitRecordingKit()
+    document_id = uuid4()
+    await _execute_tool(
+        kit,
+        "search_context",
+        {"query": "revenue", "document_id": str(document_id)},
+    )
+    await _execute_tool(kit, "search_context", {"query": "revenue"})
+    assert kit.document_ids == [document_id, None]

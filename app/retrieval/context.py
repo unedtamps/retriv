@@ -89,6 +89,7 @@ SEARCH_VECTORS = (
       AND embedding.content_hash = chunk.content_hash
       AND document.deleted_at IS NULL
       AND document.active_processing_run_id = chunk.processing_run_id
+      AND (:document_id IS NULL OR chunk.document_id = :document_id)
       AND EXISTS (
           SELECT 1
           FROM document_workspaces AS link
@@ -101,6 +102,7 @@ SEARCH_VECTORS = (
     """)
     .bindparams(
         bindparam("workspace_ids", type_=Uuid(as_uuid=True), expanding=True),
+        bindparam("document_id", type_=Uuid(as_uuid=True)),
     )
     .columns(
         score=Float(),
@@ -200,6 +202,7 @@ class ContextRetriever:
         *,
         budget: int | None = None,
         min_score: float | None = None,
+        document_id: UUID | None = None,
     ) -> list[ContextSource]:
         """Return up to ``limit`` vector matches, plus the sections they belong to.
 
@@ -212,6 +215,10 @@ class ContextRetriever:
 
         ``min_score`` overrides the deployment's relevance floor for this call
         only; ``None`` keeps the configured ``min_relevance_score``.
+
+        ``document_id`` narrows the search to one document; it must still be
+        inside ``workspace_ids``. Section completion is narrowed with it, or a
+        same-named section in another document could leak into the answer.
         """
         if not workspace_ids:
             raise RetrievalUnavailable("A verified non-empty workspace scope is required")
@@ -225,10 +232,17 @@ class ContextRetriever:
         try:
             vector = await self._embed_query(query)
             sources = await self._search_vectors(
-                vector, workspace_ids, limit, min_score=floor
+                vector,
+                workspace_ids,
+                limit,
+                min_score=floor,
+                document_id=document_id,
             )
             completed = await self._complete_sections(
-                sources, workspace_ids, min_score=floor
+                sources,
+                workspace_ids,
+                min_score=floor,
+                document_id=document_id,
             )
             room = max(0, cap - len(sources))
             return sources + completed[:room]
@@ -277,6 +291,7 @@ class ContextRetriever:
         limit: int,
         *,
         min_score: float,
+        document_id: UUID | None,
     ) -> list[ContextSource]:
         """The nearest ``limit`` indexed chunks, servable by construction.
 
@@ -294,11 +309,18 @@ class ContextRetriever:
         the nearest ``limit`` rows and anything under the floor is dropped
         here. A match that falls below it costs a slot, exactly as before.
         """
-        rows = await self._fetch_vector_rows(vector, workspace_ids, limit)
+        rows = await self._fetch_vector_rows(
+            vector, workspace_ids, limit, document_id=document_id
+        )
         return self._validated_sources(rows, min_score=min_score)
 
     async def _fetch_vector_rows(
-        self, vector: list[float], workspace_ids: list[UUID], limit: int
+        self,
+        vector: list[float],
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        document_id: UUID | None,
     ) -> list[RowMapping]:
         async with self._sessions() as session:
             result = await session.execute(
@@ -309,6 +331,7 @@ class ContextRetriever:
                     "embedding_profile": self._settings.embedding_profile,
                     "embedding_model": self._settings.embedding_model,
                     "embedding_dimensions": self._settings.embedding_dimensions,
+                    "document_id": document_id,
                     "limit": limit,
                 },
             )
@@ -353,6 +376,7 @@ class ContextRetriever:
         workspace_ids: list[UUID],
         *,
         min_score: float,
+        document_id: UUID | None,
     ) -> list[ContextSource]:
         """Fill in the sections the matched chunks belong to, under the same validation.
 
@@ -441,6 +465,8 @@ class ContextRetriever:
                 DocumentChunk.ordinal,
             )
         )
+        if document_id is not None:
+            statement = statement.where(DocumentChunk.document_id == document_id)
 
         async with self._sessions() as session:
             result = await session.execute(statement)

@@ -126,6 +126,7 @@ class AgentToolKit:
         query: str,
         limit: int,
         workspace_id: UUID | None = None,
+        document_id: UUID | None = None,
         min_score: float | None = None,
     ) -> str:
         scope = self._scope(workspace_id)
@@ -137,6 +138,7 @@ class AgentToolKit:
             limit,
             budget=self._runtime.settings.max_context_sources,
             min_score=min_score,
+            document_id=document_id,
         )
         if not sources:
             return "No relevant sources were found."

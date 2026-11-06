@@ -131,7 +131,8 @@ that held the picture.
 ### Retrieval
 
 - `search_context` embeds the question and runs one scoped SQL search over the
-  pgvector index inside the caller's workspace scope.
+  pgvector index inside the caller's workspace scope, optionally narrowed to a
+  single document.
 - `read_document` reads chunks by `ordinal`, which answers “what comes after
   this” where a vector search cannot.
 - `query_rows` runs model-written SQL under a read-only role and PostgreSQL

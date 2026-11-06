@@ -60,7 +60,9 @@ def _instructions(*, row_queries: bool) -> str:
         "Call find_documents when a question names a file and you need its "
         "document_id and whether it is ready to search; omit the name to see "
         "everything you may read. Then use search_context for narrative "
-        "documents. It finds passages by meaning and returns each source's "
+        "documents. Pass the document_id find_documents returned to keep the "
+        "search inside that one file; omit it to search every document in "
+        "scope. It finds passages by meaning and returns each source's "
         "ordinal. When a source is marked kind=heading it is a title rather "
         "than text, and the wording it points at is further into the document: "
         "call read_document with that document_id and start_ordinal to read on "
@@ -145,6 +147,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         query: Annotated[str, Field(min_length=1, max_length=2000)],
         limit: Annotated[int, Field(ge=1, le=20)] = settings.max_context_chunks,
         workspace_id: UUID | None = None,
+        document_id: UUID | None = None,
         min_score: Annotated[
             float | None,
             Field(
@@ -166,13 +169,15 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         ordinal to read on from there. Call list_queryable_files instead when
         the question is about CSV columns or rows.
 
-        `min_score` raises or lowers the relevance floor for this search only;
-        omit it to keep the deployment's setting.
+        `document_id`, from find_documents, restricts the search to that one
+        document; omit it to search every document in scope. `min_score`
+        raises or lowers the relevance floor for this search only.
         """
         return await (await _kit(box.runtime, ctx.headers)).search_context(
             query=query,
             limit=limit,
             workspace_id=workspace_id,
+            document_id=document_id,
             min_score=min_score,
         )
 
