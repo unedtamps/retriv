@@ -16,6 +16,7 @@ Two rules carry over from the MCP server and are non-negotiable here:
 """
 
 import json
+import math
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
@@ -95,6 +96,15 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                             "type": "integer",
                             "minimum": 1,
                             "maximum": MAX_SEARCH_LIMIT,
+                        },
+                        "min_score": {
+                            "type": "number",
+                            "minimum": -1,
+                            "maximum": 1,
+                            "description": (
+                                "Minimum cosine similarity for a match to be "
+                                "kept; omit for the server default."
+                            ),
                         },
                     },
                     "required": ["query"],
@@ -251,6 +261,19 @@ def _int_argument(args: dict[str, Any], name: str, default: int) -> int:
         raise ToolRejection(f"The '{name}' argument must be an integer.") from exc
 
 
+def _float_argument(args: dict[str, Any], name: str) -> float | None:
+    raw = args.get(name)
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ToolRejection(f"The '{name}' argument must be a number.") from exc
+    if not math.isfinite(value):
+        raise ToolRejection(f"The '{name}' argument must be a finite number.")
+    return value
+
+
 async def _execute_tool(
     kit: AgentToolKit, name: str, arguments: dict[str, Any]
 ) -> str:
@@ -259,10 +282,12 @@ async def _execute_tool(
         if not isinstance(query, str) or not query.strip():
             raise ToolRejection("The 'query' argument is required.")
         limit = _int_argument(arguments, "limit", kit.default_search_limit)
+        min_score = _float_argument(arguments, "min_score")
         return await kit.search_context(
             query=query[:2000],
             limit=max(1, min(limit, MAX_SEARCH_LIMIT)),
             workspace_id=None,
+            min_score=None if min_score is None else max(-1.0, min(1.0, min_score)),
         )
     if name == "find_documents":
         pattern = arguments.get("pattern")

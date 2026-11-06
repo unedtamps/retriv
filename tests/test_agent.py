@@ -46,8 +46,9 @@ class FakeRetriever(ContextRetriever):
         limit: int,
         *,
         budget: int | None = None,
+        min_score: float | None = None,
     ) -> list[ContextSource]:
-        del query, limit, budget
+        del query, limit, budget, min_score
         self.scopes.append(list(workspace_ids))
         if self.error is not None:
             raise self.error
@@ -723,18 +724,25 @@ async def test_the_client_session_id_reaches_the_provider(
 
 
 class _LimitRecordingKit:
-    """A toolkit stub that records the limit the harness dispatches."""
+    """A toolkit stub that records the arguments the harness dispatches."""
 
     default_search_limit = 3
 
     def __init__(self) -> None:
         self.limits: list[int] = []
+        self.min_scores: list[float | None] = []
 
     async def search_context(
-        self, *, query: str, limit: int, workspace_id: Any = None
+        self,
+        *,
+        query: str,
+        limit: int,
+        workspace_id: Any = None,
+        min_score: float | None = None,
     ) -> str:
         del query, workspace_id
         self.limits.append(limit)
+        self.min_scores.append(min_score)
         return "ok"
 
 
@@ -745,3 +753,13 @@ async def test_search_limit_defaults_to_the_configured_value_and_is_clamped() ->
     await _execute_tool(kit, "search_context", {"query": "revenue", "limit": 500})
     await _execute_tool(kit, "search_context", {"query": "revenue", "limit": 0})
     assert kit.limits == [3, MAX_SEARCH_LIMIT, 1]
+
+
+async def test_search_min_score_is_optional_and_clamped() -> None:
+    """Omitted means the server default; out-of-range values are clamped."""
+    kit: Any = _LimitRecordingKit()
+    await _execute_tool(kit, "search_context", {"query": "revenue"})
+    await _execute_tool(kit, "search_context", {"query": "revenue", "min_score": 0.8})
+    await _execute_tool(kit, "search_context", {"query": "revenue", "min_score": 5})
+    await _execute_tool(kit, "search_context", {"query": "revenue", "min_score": -5})
+    assert kit.min_scores == [None, 0.8, 1.0, -1.0]

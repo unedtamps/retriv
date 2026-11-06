@@ -126,12 +126,17 @@ class AgentToolKit:
         query: str,
         limit: int,
         workspace_id: UUID | None = None,
+        min_score: float | None = None,
     ) -> str:
         scope = self._scope(workspace_id)
         if not scope:
             return "No searchable workspace is in scope for this API key."
         sources = await self._runtime.retriever.retrieve(
-            query, scope, limit, budget=self._runtime.settings.max_context_sources
+            query,
+            scope,
+            limit,
+            budget=self._runtime.settings.max_context_sources,
+            min_score=min_score,
         )
         if not sources:
             return "No relevant sources were found."

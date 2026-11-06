@@ -199,6 +199,7 @@ class ContextRetriever:
         limit: int,
         *,
         budget: int | None = None,
+        min_score: float | None = None,
     ) -> list[ContextSource]:
         """Return up to ``limit`` vector matches, plus the sections they belong to.
 
@@ -208,6 +209,9 @@ class ContextRetriever:
         the total. Without it, a full page of matches leaves no room to complete a
         section -- which is exactly the case that matters, since a section named
         without its content is only visible when the search returned its quota.
+
+        ``min_score`` overrides the deployment's relevance floor for this call
+        only; ``None`` keeps the configured ``min_relevance_score``.
         """
         if not workspace_ids:
             raise RetrievalUnavailable("A verified non-empty workspace scope is required")
@@ -216,11 +220,16 @@ class ContextRetriever:
 
         width = self._settings.section_expand_chunks
         cap = limit if budget is None else min(limit + width, budget)
+        floor = self._settings.min_relevance_score if min_score is None else min_score
 
         try:
             vector = await self._embed_query(query)
-            sources = await self._search_vectors(vector, workspace_ids, limit)
-            completed = await self._complete_sections(sources, workspace_ids)
+            sources = await self._search_vectors(
+                vector, workspace_ids, limit, min_score=floor
+            )
+            completed = await self._complete_sections(
+                sources, workspace_ids, min_score=floor
+            )
             room = max(0, cap - len(sources))
             return sources + completed[:room]
         except (
@@ -262,7 +271,12 @@ class ContextRetriever:
         return truncate_normalize(vector, self._settings.embedding_dimensions)
 
     async def _search_vectors(
-        self, vector: list[float], workspace_ids: list[UUID], limit: int
+        self,
+        vector: list[float],
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        min_score: float,
     ) -> list[ContextSource]:
         """The nearest ``limit`` indexed chunks, servable by construction.
 
@@ -281,7 +295,7 @@ class ContextRetriever:
         here. A match that falls below it costs a slot, exactly as before.
         """
         rows = await self._fetch_vector_rows(vector, workspace_ids, limit)
-        return self._validated_sources(rows)
+        return self._validated_sources(rows, min_score=min_score)
 
     async def _fetch_vector_rows(
         self, vector: list[float], workspace_ids: list[UUID], limit: int
@@ -300,11 +314,13 @@ class ContextRetriever:
             )
             return list(result.mappings())
 
-    def _validated_sources(self, rows: Sequence[RowMapping]) -> list[ContextSource]:
+    def _validated_sources(
+        self, rows: Sequence[RowMapping], *, min_score: float
+    ) -> list[ContextSource]:
         sources: list[ContextSource] = []
         for row in rows:
             score = float(row["score"])
-            if not math.isfinite(score) or score < self._settings.min_relevance_score:
+            if not math.isfinite(score) or score < min_score:
                 continue
             text_hash = hashlib.sha256(str(row["text"]).encode()).hexdigest()
             if text_hash != row["content_hash"]:
@@ -335,6 +351,8 @@ class ContextRetriever:
         self,
         sources: Sequence[ContextSource],
         workspace_ids: list[UUID],
+        *,
+        min_score: float,
     ) -> list[ContextSource]:
         """Fill in the sections the matched chunks belong to, under the same validation.
 
@@ -458,7 +476,7 @@ class ContextRetriever:
                     processing_run_id=row[3],
                     chunk_id=chunk_id,
                     ordinal=int(row[4]),
-                    score=self._settings.min_relevance_score,
+                    score=min_score,
                     content_hash=str(row[7]),
                     filename=row[11],
                     section_path=list(row[8] or []),

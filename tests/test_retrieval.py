@@ -400,6 +400,46 @@ async def test_below_threshold_match_is_not_materialized_as_context() -> None:
     assert sources == []
 
 
+async def test_a_call_can_override_the_relevance_floor() -> None:
+    """The configured floor is a default, not a constant: one call can move it."""
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+            "min_relevance_score": 0.25,
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    workspace_id = uuid4()
+    text = "Some text."
+    seed: dict[str, object] = {
+        "workspace_id": workspace_id,
+        "document_id": uuid4(),
+        "processing_run_id": uuid4(),
+        "chunk_id": uuid4(),
+        "content_hash": hashlib.sha256(text.encode()).hexdigest(),
+        "ordinal": 2,
+        "text": text,
+        "token_count": 2,
+        "section_path": [],
+        "section_key": None,
+        "is_heading_only": False,
+        "page_numbers": [1],
+        "filename": "report.pdf",
+    }
+    retriever, _, _ = await make_retriever(settings, engine, [match_row(seed, 0.4)])
+    try:
+        default = await retriever.retrieve("question", [workspace_id], 3)
+        lowered = await retriever.retrieve("question", [workspace_id], 3, min_score=0.1)
+        raised = await retriever.retrieve("question", [workspace_id], 3, min_score=0.5)
+    finally:
+        await retriever.aclose()
+
+    assert [source.text for source in default] == [text]
+    assert [source.text for source in lowered] == [text]
+    assert raised == []
+
+
 async def test_chunk_text_must_match_persisted_content_hash() -> None:
     settings = make_settings().model_copy(
         update={

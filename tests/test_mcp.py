@@ -74,6 +74,7 @@ class FakeRetriever(ContextRetriever):
     def __init__(self) -> None:
         self.calls: list[list[UUID]] = []
         self.budgets: list[int | None] = []
+        self.min_scores: list[float | None] = []
         self.results: list[list[ContextSource]] = []
 
     async def retrieve(
@@ -83,10 +84,12 @@ class FakeRetriever(ContextRetriever):
         limit: int,
         *,
         budget: int | None = None,
+        min_score: float | None = None,
     ) -> list[ContextSource]:
         del query, limit
         self.calls.append(list(workspace_ids))
         self.budgets.append(budget)
+        self.min_scores.append(min_score)
         return self.results.pop(0) if self.results else []
 
 
@@ -398,6 +401,14 @@ async def test_search_context_grants_room_for_section_completion(mcp: McpEnv) ->
 
     assert mcp.retriever.budgets == [mcp.settings.max_context_sources]
     assert mcp.settings.max_context_sources > mcp.settings.max_context_chunks
+
+
+async def test_search_context_passes_a_per_call_score_floor(mcp: McpEnv) -> None:
+    """A caller can raise or lower the floor; omitting it keeps the server's."""
+    await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+    await mcp.session.call(mcp.alice_key, "search_context", query="revenue", min_score=0.8)
+
+    assert mcp.retriever.min_scores == [None, 0.8]
 
 
 async def test_search_context_labels_each_source_with_its_section(mcp: McpEnv) -> None:

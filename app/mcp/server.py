@@ -145,6 +145,15 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         query: Annotated[str, Field(min_length=1, max_length=2000)],
         limit: Annotated[int, Field(ge=1, le=20)] = settings.max_context_chunks,
         workspace_id: UUID | None = None,
+        min_score: Annotated[
+            float | None,
+            Field(
+                ge=-1.0,
+                le=1.0,
+                description="Minimum cosine similarity for a match to be kept. "
+                "Omit it to use the deployment's configured floor.",
+            ),
+        ] = None,
     ) -> str:
         """Search the documents for passages relevant to a query.
 
@@ -156,9 +165,15 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         at is elsewhere in the document; call read_document with that source's
         ordinal to read on from there. Call list_queryable_files instead when
         the question is about CSV columns or rows.
+
+        `min_score` raises or lowers the relevance floor for this search only;
+        omit it to keep the deployment's setting.
         """
         return await (await _kit(box.runtime, ctx.headers)).search_context(
-            query=query, limit=limit, workspace_id=workspace_id
+            query=query,
+            limit=limit,
+            workspace_id=workspace_id,
+            min_score=min_score,
         )
 
     @mcp.tool()
