@@ -1,0 +1,61 @@
+{"id": "ws-01", "question": "Workspace apa saja yang bisa saya akses?", "expected": "list_workspaces", "category": "orientation"}
+{"id": "ws-02", "question": "Saya anggota di workspace mana saja?", "expected": "list_workspaces", "category": "orientation"}
+{"id": "ws-03", "question": "Tampilkan daftar workspace beserta role saya.", "expected": "list_workspaces", "category": "orientation"}
+{"id": "ws-04", "question": "Ada berapa workspace yang bisa saya baca?", "expected": "list_workspaces", "category": "orientation"}
+{"id": "find-01", "question": "Cari file bernama Procurement Manual.", "expected": "find_documents", "category": "discovery"}
+{"id": "find-02", "question": "Dokumen apa saja yang ada di workspace legal?", "expected": "find_documents", "category": "discovery", "two_turn": true}
+{"id": "find-03", "question": "Apakah ada file invoices.csv?", "expected": "find_documents", "category": "discovery"}
+{"id": "find-04", "question": "Saya butuh document_id dari file UNDP Financial Regulations.pdf.", "expected": "find_documents", "category": "discovery"}
+{"id": "find-05", "question": "Daftar semua dokumen yang tersedia.", "expected": "find_documents", "category": "discovery"}
+{"id": "sem-01", "question": "Bagaimana prosedur pengadaan langsung?", "expected": "search_context", "category": "semantic"}
+{"id": "sem-02", "question": "Apa isi kebijakan cuti tahunan?", "expected": "search_context", "category": "semantic"}
+{"id": "sem-03", "question": "Jelaskan aturan tentang konflik kepentingan.", "expected": "search_context", "category": "semantic"}
+{"id": "sem-04", "question": "Di mana dijelaskan sanksi pelanggaran kontrak?", "expected": "search_context", "category": "semantic"}
+{"id": "sem-05", "question": "Ringkas ketentuan tentang kerahasiaan data.", "expected": "search_context", "category": "semantic"}
+{"id": "sem-06", "question": "Apa yang dokumen katakan tentang audit internal?", "expected": "search_context", "category": "semantic"}
+{"id": "lit-01", "question": "Cari INV-2024-001.", "expected": "search_text", "category": "literal", "args": {"query": "INV-2024-001"}}
+{"id": "lit-02", "question": "Di mana tertulis Pasal 7?", "expected": "search_text", "category": "literal", "args": {"query": "Pasal 7"}}
+{"id": "lit-03", "question": "Cari teks 'ISO 9001:2015'.", "expected": "search_text", "category": "literal", "args": {"query": "ISO 9001:2015"}}
+{"id": "lit-04", "question": "Cari kode anggaran B-07.", "expected": "search_text", "category": "literal", "args": {"query": "B-07"}}
+{"id": "lit-05", "question": "Di bagian mana disebut 'UNDP Financial Regulations'?", "expected": "search_text", "category": "literal", "args": {"query": "UNDP Financial Regulations"}}
+{"id": "lit-06", "question": "Cari nomor kontrak CTR-2023-045.", "expected": "search_text", "category": "literal", "args": {"query": "CTR-2023-045"}}
+{"id": "out-01", "question": "Tampilkan daftar section dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.", "expected": "get_document_outline", "category": "navigation", "args": {"document_id": "11111111-1111-4111-8111-111111111111", "workspace_id": "22222222-2222-4222-8222-222222222222"}, "two_turn": true}
+{"id": "out-02", "question": "Bab apa saja yang ada di document_id 11111111-1111-4111-8111-111111111111?", "expected": "get_document_outline", "category": "navigation", "two_turn": true}
+{"id": "out-03", "question": "Di halaman berapa bagian 'Procurement Methods' dimulai pada document_id 11111111-1111-4111-8111-111111111111?", "expected": "get_document_outline", "category": "navigation", "two_turn": true}
+{"id": "out-04", "question": "Buat outline document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.", "expected": "get_document_outline", "category": "navigation", "args": {"document_id": "11111111-1111-4111-8111-111111111111", "workspace_id": "22222222-2222-4222-8222-222222222222"}, "two_turn": true}
+{"id": "read-01", "question": "Lanjutkan membaca document_id 11111111-1111-4111-8111-111111111111 dari ordinal 40.", "expected": "read_document", "category": "navigation", "args": {"document_id": "11111111-1111-4111-8111-111111111111"}, "two_turn": true}
+{"id": "read-02", "question": "Baca document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222 mulai awal.", "expected": "read_document", "category": "navigation", "args": {"document_id": "11111111-1111-4111-8111-111111111111", "workspace_id": "22222222-2222-4222-8222-222222222222"}, "two_turn": true}
+{"id": "read-03", "question": "Tampilkan 20 chunk berikutnya dari document_id 11111111-1111-4111-8111-111111111111 setelah ordinal 100.", "expected": "read_document", "category": "navigation", "args": {"document_id": "11111111-1111-4111-8111-111111111111"}, "two_turn": true}
+{"id": "read-04", "question": "Baca bagian setelah ordinal 31 pada document_id 11111111-1111-4111-8111-111111111111.", "expected": "read_document", "category": "navigation", "args": {"document_id": "11111111-1111-4111-8111-111111111111"}, "two_turn": true}
+{"id": "desc-01", "question": "Apakah document_id 11111111-1111-4111-8111-111111111111 berhasil diekstrak? Berapa chunk-nya?", "expected": "describe_document", "category": "health", "two_turn": true}
+{"id": "desc-02", "question": "Kenapa document_id 11111111-1111-4111-8111-111111111111 tidak menemukan apa-apa saat dicari?", "expected": "describe_document", "category": "health", "two_turn": true}
+{"id": "desc-03", "question": "Berapa halaman dan gambar yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?", "expected": "describe_document", "category": "health", "two_turn": true}
+{"id": "desc-04", "question": "Cek status dan error terakhir document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.", "expected": "describe_document", "category": "health", "args": {"document_id": "11111111-1111-4111-8111-111111111111", "workspace_id": "22222222-2222-4222-8222-222222222222"}, "two_turn": true}
+{"id": "csv-01", "question": "File CSV apa saja yang bisa di-query?", "expected": "list_queryable_files", "category": "tabular"}
+{"id": "csv-02", "question": "Kolom apa saja yang ada di invoices.csv?", "expected": "list_queryable_files", "category": "tabular"}
+{"id": "csv-03", "question": "Tampilkan katalog file spreadsheet yang bisa di-query.", "expected": "list_queryable_files", "category": "tabular"}
+{"id": "qry-01", "question": "Dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222, hitung total kolom amount.", "expected": "query_rows", "category": "tabular", "args": {"sql": "11111111-1111-4111-8111-111111111111"}, "two_turn": true}
+{"id": "qry-02", "question": "Berapa rata-rata amount per vendor di document_id 11111111-1111-4111-8111-111111111111? Kolom: vendor, amount.", "expected": "query_rows", "category": "tabular", "args": {"sql": "11111111-1111-4111-8111-111111111111"}, "two_turn": true}
+{"id": "qry-03", "question": "Jalankan SELECT count(*) dari document_rows untuk document_id 11111111-1111-4111-8111-111111111111.", "expected": "query_rows", "category": "tabular", "args": {"sql": "11111111-1111-4111-8111-111111111111"}, "two_turn": true}
+{"id": "qry-04", "question": "Di document_id 11111111-1111-4111-8111-111111111111, tampilkan 10 baris dengan amount terbesar.", "expected": "query_rows", "category": "tabular", "two_turn": true}
+{"id": "img-01", "question": "Gambar apa saja yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?", "expected": "list_images", "category": "images", "two_turn": true}
+{"id": "img-02", "question": "Tampilkan daftar gambar dan caption document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.", "expected": "list_images", "category": "images", "two_turn": true}
+{"id": "img-03", "question": "Ada berapa gambar di document_id 11111111-1111-4111-8111-111111111111?", "expected": "list_images", "category": "images", "two_turn": true}
+{"id": "getimg-01", "question": "Tampilkan gambar dengan ref image-p3-0 dari document_id 11111111-1111-4111-8111-111111111111.", "expected": "get_image", "category": "images", "args": {"ref": "image-p3-0"}, "two_turn": true}
+{"id": "getimg-02", "question": "Ambil gambar ref image-p1-1 pada document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.", "expected": "get_image", "category": "images", "args": {"ref": "image-p1-1"}, "two_turn": true}
+{"id": "getimg-03", "question": "Tunjukkan grafik dengan ref image-p5-2 dari document_id 11111111-1111-4111-8111-111111111111.", "expected": "get_image", "category": "images", "args": {"ref": "image-p5-2"}, "two_turn": true}
+{"id": "dl-01", "question": "Berikan link download untuk document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.", "expected": "download_document", "category": "download", "args": {"document_id": "11111111-1111-4111-8111-111111111111", "workspace_id": "22222222-2222-4222-8222-222222222222"}, "two_turn": true}
+{"id": "dl-02", "question": "Saya butuh file asli document_id 11111111-1111-4111-8111-111111111111; kirim alamatnya.", "expected": "download_document", "category": "download", "two_turn": true}
+{"id": "dl-03", "question": "Di mana saya bisa mengunduh document_id 11111111-1111-4111-8111-111111111111?", "expected": "download_document", "category": "download", "two_turn": true}
+{"id": "none-01", "question": "Halo, apa kabar?", "expected": "none", "category": "no_tool"}
+{"id": "none-02", "question": "Terima kasih!", "expected": "none", "category": "no_tool"}
+{"id": "none-03", "question": "Apa yang bisa kamu lakukan?", "expected": "none", "category": "no_tool"}
+{"id": "none-04", "question": "Siapa kamu?", "expected": "none", "category": "no_tool"}
+{"id": "none-05", "question": "Bisa jelaskan cara kerja Retriv secara singkat?", "expected": "none", "category": "no_tool"}
+{"id": "none-06", "question": "Tolong tuliskan email singkat untuk meminta rapat.", "expected": "none", "category": "no_tool"}
+{"id": "amb-01", "question": "Pasal 7 isinya apa?", "expected": "search_text", "acceptable": ["search_text", "search_context"], "category": "literal", "difficulty": "ambiguous", "args": {"query": "Pasal 7"}}
+{"id": "amb-02", "question": "Workspace mana yang punya file procurement?", "expected": "list_workspaces", "acceptable": ["list_workspaces", "find_documents"], "category": "orientation", "difficulty": "ambiguous"}
+{"id": "amb-03", "question": "Berapa total amount di invoices.csv?", "expected": "list_queryable_files", "acceptable": ["list_queryable_files", "query_rows"], "category": "tabular", "difficulty": "ambiguous"}
+{"id": "amb-04", "question": "Cari dokumen tentang pengadaan.", "expected": "search_context", "acceptable": ["search_context", "find_documents"], "category": "semantic", "difficulty": "ambiguous"}
+{"id": "amb-05", "question": "Tampilkan grafik revenue.", "expected": "list_images", "acceptable": ["list_images", "get_image"], "category": "images", "difficulty": "ambiguous"}
+{"id": "amb-06", "question": "Apa isi dokumen 3M 10-K?", "expected": "find_documents", "acceptable": ["find_documents", "search_context"], "category": "discovery", "difficulty": "ambiguous"}

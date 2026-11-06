@@ -2,6 +2,7 @@ import json
 from html import escape
 from uuid import UUID
 
+from app.retrieval.navigation import DocumentOutline
 from app.retrieval.schemas import ContextSource, NavigationWindow
 
 
@@ -86,3 +87,41 @@ def navigation_footer(window: NavigationWindow) -> str:
 
 def source_indices(sources: dict[UUID, ContextSource]) -> dict[UUID, int]:
     return {chunk_id: index for index, chunk_id in enumerate(sources, start=1)}
+
+
+def format_outline(outline: DocumentOutline) -> str:
+    """Render a document's sections as the table of contents it never had.
+
+    Each line carries the ordinal a read should start at, because the point of
+    an outline is to enter the document somewhere rather than read it from the
+    top. Nesting is shown by indentation, which is the only structure the
+    section paths reliably share.
+    """
+    header = (
+        f"filename={json.dumps(outline.filename, ensure_ascii=True)} "
+        f"document_id={outline.document_id} chunks={outline.total_chunks} "
+        f"pages={outline.page_count or 'unknown'} sections={outline.section_count}"
+    )
+    if not outline.has_headings:
+        return (
+            f"{header}\n"
+            "No section headings were extracted from this document, so it has "
+            "no outline. Read it in order with read_document instead."
+        )
+
+    lines = [header]
+    for section in outline.sections:
+        depth = max(0, len(section.section_path) - 1)
+        label = section.section_path[-1] if section.section_path else section.section_key
+        page = f"page {section.page}" if section.page is not None else "page unknown"
+        lines.append(
+            f"{'  ' * (depth + 1)}{label}  "
+            f"[ordinal {section.ordinal}, {page}, {section.chunks} chunk(s)]"
+        )
+    if outline.truncated:
+        lines.append(
+            f"... showing {len(outline.sections)} of {outline.section_count} sections. "
+            "Read from an ordinal above, or read_document from 0 to walk the document."
+        )
+    return "\n".join(lines)
+

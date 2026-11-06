@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.chat import ChatTurn
 from app.agents.harness import MAX_SEARCH_LIMIT, _execute_tool
+from app.agents.toolkit import ToolRejection
 from app.db.models import AgentModelSetting
 from app.mcp.runtime import McpRuntime
 from app.retrieval.context import ContextRetriever, RetrievalUnavailable
@@ -579,6 +580,42 @@ async def test_stream_turn_assembles_fragmented_tool_calls() -> None:
     ]
 
 
+async def test_complete_sends_temperature_only_when_asked() -> None:
+    """An eval pins temperature; production must keep sending none at all."""
+    import httpx as httpx_module
+
+    from app.agents.chat import OpenAICompatibleChatProvider
+
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx_module.Request) -> httpx_module.Response:
+        bodies.append(json.loads(request.content))
+        return httpx_module.Response(
+            200,
+            json={
+                "model": "test-model",
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            },
+        )
+
+    provider = OpenAICompatibleChatProvider(
+        base_url="https://gateway.test/v1",
+        api_key="k",
+        model="test-model",
+        transport=httpx_module.MockTransport(handler),
+    )
+    try:
+        await provider.complete(
+            messages=[{"role": "user", "content": "hi"}], tools=[], temperature=0.0
+        )
+        await provider.complete(messages=[{"role": "user", "content": "hi"}], tools=[])
+    finally:
+        await provider.aclose()
+
+    assert bodies[0]["temperature"] == 0.0
+    assert "temperature" not in bodies[1]
+
+
 class FakeAdminProvider:
     """Stands in for the real chat client during admin saves: no network."""
 
@@ -733,6 +770,10 @@ class _LimitRecordingKit:
         self.limits: list[int] = []
         self.min_scores: list[float | None] = []
         self.document_ids: list[Any] = []
+        self.text_queries: list[tuple[str, int, Any]] = []
+        self.outlines: list[tuple[Any, Any, int]] = []
+        self.described: list[tuple[Any, Any]] = []
+        self.workspaces_called = False
 
     async def search_context(
         self,
@@ -747,6 +788,32 @@ class _LimitRecordingKit:
         self.limits.append(limit)
         self.min_scores.append(min_score)
         self.document_ids.append(document_id)
+        return "ok"
+
+    async def search_text(
+        self,
+        *,
+        query: str,
+        limit: int,
+        workspace_id: Any = None,
+        document_id: Any = None,
+    ) -> str:
+        del workspace_id
+        self.text_queries.append((query, limit, document_id))
+        return "ok"
+
+    async def list_workspaces(self) -> str:
+        self.workspaces_called = True
+        return "ok"
+
+    async def get_document_outline(
+        self, *, document_id: Any, workspace_id: Any, limit: int = 200
+    ) -> str:
+        self.outlines.append((document_id, workspace_id, limit))
+        return "ok"
+
+    async def describe_document(self, *, document_id: Any, workspace_id: Any) -> str:
+        self.described.append((document_id, workspace_id))
         return "ok"
 
 
@@ -780,3 +847,46 @@ async def test_search_document_id_is_passed_through() -> None:
     )
     await _execute_tool(kit, "search_context", {"query": "revenue"})
     assert kit.document_ids == [document_id, None]
+
+
+async def test_the_new_tools_dispatch_with_clamped_arguments() -> None:
+    """The schema is a promise the loop still has to keep at dispatch time."""
+    kit: Any = _LimitRecordingKit()
+    document_id = uuid4()
+    workspace_id = uuid4()
+
+    await _execute_tool(kit, "search_text", {"query": "Pasal 7", "limit": 500})
+    await _execute_tool(kit, "search_text", {"query": "Pasal 7"})
+    await _execute_tool(kit, "list_workspaces", {})
+    await _execute_tool(
+        kit,
+        "get_document_outline",
+        {
+            "document_id": str(document_id),
+            "workspace_id": str(workspace_id),
+            "limit": 900,
+        },
+    )
+    await _execute_tool(
+        kit,
+        "describe_document",
+        {"document_id": str(document_id), "workspace_id": str(workspace_id)},
+    )
+
+    assert [entry[1] for entry in kit.text_queries] == [MAX_SEARCH_LIMIT, 3]
+    assert kit.workspaces_called is True
+    assert kit.outlines == [(document_id, workspace_id, 500)]
+    assert kit.described == [(document_id, workspace_id)]
+
+
+async def test_an_outline_without_a_workspace_is_rejected_before_the_call() -> None:
+    kit: Any = _LimitRecordingKit()
+
+    with pytest.raises(ToolRejection):
+        await _execute_tool(
+            kit,
+            "get_document_outline",
+            {"document_id": str(uuid4())},
+        )
+
+    assert kit.outlines == []

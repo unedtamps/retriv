@@ -62,11 +62,11 @@ from app.infrastructure.storage import (
 )
 from app.main import create_app
 from app.processing.worker import ProcessingWorker
+from app.retrieval.context import ContextRetriever
 from app.retrieval.sql import RowQuery, RowQueryError
+from app.sections import encode_section_key
 from app.security.auth import hash_password
 from tests.conftest import CleanScanner, InMemoryObjectStorage
-from app.retrieval.context import ContextRetriever
-from app.sections import encode_section_key
 from tests.test_worker import (
     FakeEmbeddingProvider,
     FakeExtractor,
@@ -1813,6 +1813,101 @@ async def test_vectors_live_in_postgres_and_search_serves_only_the_active_scoped
             assert all(source.text != stale_text for source in sources), (
                 "the active-run join is what excludes a superseded run's vectors"
             )
+        finally:
+            await retriever.aclose()
+    finally:
+        async with factory() as session:
+            await clear_database(session)
+        await engine.dispose()
+
+
+async def test_text_search_matches_literals_under_postgres() -> None:
+    """ILIKE with an ESCAPE clause is Postgres syntax; SQLite cannot prove it.
+
+    The two properties worth pinning here are the ones a hand-written pattern
+    gets wrong: a query is case-insensitive, and a ``%`` in it is a percent
+    sign rather than a wildcard that returns the whole workspace.
+    """
+    engine = create_async_engine(database_url(), pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    settings = get_settings().model_copy(
+        update={
+            "environment": "test",
+            "database_url": database_url(),
+            "antivirus_enabled": False,
+        }
+    )
+    workspace_id = uuid4()
+    document_id = uuid4()
+    run_id = uuid4()
+    texts = [
+        "Invoice INV-2024-001 was settled in March.",
+        "Invoice INV-2024-002 is still overdue.",
+    ]
+    try:
+        async with factory() as session:
+            await clear_database(session)
+            session.add(Workspace(id=workspace_id, slug="text-search", name="Text search"))
+            await session.flush()
+            document = Document(
+                id=document_id,
+                origin_workspace_id=workspace_id,
+                original_filename="invoices.pdf",
+                detected_media_type="application/pdf",
+                size_bytes=1024,
+                sha256="c" * 64,
+                bucket="raw-documents",
+                object_key=f"workspaces/{workspace_id}/objects/{uuid4()}",
+            )
+            session.add(document)
+            await session.flush()
+            session.add(
+                DocumentWorkspace(
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    filename=document.original_filename,
+                )
+            )
+            session.add(
+                ProcessingRun(
+                    id=run_id,
+                    origin_workspace_id=workspace_id,
+                    document_id=document_id,
+                    job_kind=JOB_EXTRACT,
+                    pipeline_version=settings.pipeline_version,
+                    status=RUN_READY,
+                )
+            )
+            await session.flush()
+            document.active_processing_run_id = run_id
+            for ordinal, chunk_text in enumerate(texts):
+                session.add(
+                    DocumentChunk(
+                        origin_workspace_id=workspace_id,
+                        document_id=document_id,
+                        processing_run_id=run_id,
+                        ordinal=ordinal,
+                        text=chunk_text,
+                        token_count=len(chunk_text.split()),
+                        content_hash=hashlib.sha256(chunk_text.encode()).hexdigest(),
+                        section_path=["Billing"],
+                        section_key=encode_section_key(["Billing"]),
+                        is_heading_only=False,
+                        page_numbers=[ordinal + 1],
+                    )
+                )
+            await session.commit()
+
+        retriever = ContextRetriever(settings, engine)
+        try:
+            matches = await retriever.search_text("INV-2024-001", [workspace_id], 10)
+            assert [source.text for source in matches] == [texts[0]]
+
+            lowered = await retriever.search_text("invoice inv-2024-001", [workspace_id], 10)
+            assert [source.text for source in lowered] == [texts[0]]
+
+            assert await retriever.search_text("%", [workspace_id], 10) == []
+            assert await retriever.search_text("INV-2024-001", [uuid4()], 10) == []
         finally:
             await retriever.aclose()
     finally:

@@ -1,7 +1,7 @@
 import hashlib
 import logging
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +10,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     Float,
+    RowMapping,
     String,
     Uuid,
     and_,
@@ -20,7 +21,6 @@ from sqlalchemy import (
     select,
     text,
 )
-from sqlalchemy import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -32,6 +32,7 @@ from app.db.models import (
     DocumentChunk,
     DocumentWorkspace,
 )
+from app.documents.search import escape_like
 from app.embeddings.base import EmbeddingProviderError
 from app.embeddings.openai_compatible import truncate_normalize
 from app.embeddings.pgvector import vector_literal
@@ -257,6 +258,101 @@ class ContextRetriever:
         ) as exc:
             raise RetrievalUnavailable("Scoped context retrieval failed validation") from exc
 
+    async def search_text(
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        document_id: UUID | None = None,
+    ) -> list[ContextSource]:
+        """Chunks containing ``query`` as literal text, not by meaning.
+
+        An embedding answers "what is this about" and does that well, but it is
+        the wrong instrument for an identifier: an invoice number, an article
+        reference, a name. Those are strings, and a string search is exact
+        where a vector is approximate.
+
+        The rows are validated exactly as a vector match is -- live document,
+        active run, workspace link, matching content hash -- but the embedding
+        ledger is deliberately not joined. Text that failed to embed is still
+        text a reader can use, and a lexical tool that refuses it would be
+        hiding the one thing it exists to find.
+        """
+        if not workspace_ids:
+            raise RetrievalUnavailable("A verified non-empty workspace scope is required")
+        if len(workspace_ids) != len(set(workspace_ids)):
+            raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
+        if not query.strip():
+            raise RetrievalUnavailable("A non-empty text query is required")
+
+        pattern = f"%{escape_like(query)}%"
+        link_workspace = (
+            select(DocumentWorkspace.workspace_id)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
+        link_filename = (
+            select(DocumentWorkspace.filename)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
+        statement = (
+            select(
+                DocumentChunk.id,
+                link_workspace.label("workspace_id"),
+                DocumentChunk.document_id,
+                DocumentChunk.processing_run_id,
+                DocumentChunk.ordinal,
+                DocumentChunk.text,
+                DocumentChunk.token_count,
+                DocumentChunk.content_hash,
+                DocumentChunk.section_path,
+                DocumentChunk.section_key,
+                DocumentChunk.is_heading_only,
+                DocumentChunk.page_numbers,
+                link_filename.label("filename"),
+            )
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .where(
+                DocumentChunk.text.ilike(pattern, escape="\\"),
+                exists().where(
+                    DocumentWorkspace.document_id == DocumentChunk.document_id,
+                    DocumentWorkspace.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.deleted_at.is_(None),
+                ),
+                Document.deleted_at.is_(None),
+                Document.active_processing_run_id == DocumentChunk.processing_run_id,
+            )
+            .order_by(
+                case((DocumentChunk.text.like(pattern, escape="\\"), 0), else_=1),
+                DocumentChunk.document_id,
+                DocumentChunk.ordinal,
+            )
+            .limit(limit)
+        )
+        if document_id is not None:
+            statement = statement.where(DocumentChunk.document_id == document_id)
+
+        try:
+            async with self._sessions() as session:
+                rows = (await session.execute(statement)).all()
+        except (SQLAlchemyError, IndexError, KeyError, TypeError, ValueError) as exc:
+            raise RetrievalUnavailable("Scoped text search failed validation") from exc
+        return self._text_sources(rows)
+
     async def _embed_query(self, query: str) -> list[float]:
         response = await self._embedding_client.post(
             "embeddings",
@@ -272,7 +368,10 @@ class ContextRetriever:
         if data[0].get("index") != 0:
             raise ValueError("Embedding response has an invalid vector index")
         raw_vector = data[0].get("embedding")
-        if not isinstance(raw_vector, list) or len(raw_vector) < self._settings.embedding_dimensions:
+        if (
+            not isinstance(raw_vector, list)
+            or len(raw_vector) < self._settings.embedding_dimensions
+        ):
             raise ValueError("Embedding response dimensions do not match the configured profile")
         vector: list[float] = []
         for value in raw_vector:
@@ -366,6 +465,41 @@ class ContextRetriever:
                     page_numbers=list(row["page_numbers"] or []),
                     text=str(row["text"]),
                     token_count=int(row["token_count"]),
+                )
+            )
+        return sources
+
+    def _text_sources(self, rows: Sequence[Any]) -> list[ContextSource]:
+        """Text-search rows in the same shape a vector match produces.
+
+        The score is 1.0 rather than a similarity: a substring either is
+        present or is not, and inventing a number between those two would
+        invite a caller to compare it against the relevance floor, which does
+        not apply here.
+        """
+        sources: list[ContextSource] = []
+        for row in rows:
+            text_value = str(row[5])
+            if hashlib.sha256(text_value.encode()).hexdigest() != row[7]:
+                raise RetrievalUnavailable(
+                    "PostgreSQL chunk text does not match its content hash"
+                )
+            sources.append(
+                ContextSource(
+                    workspace_id=UUID(str(row[1])),
+                    document_id=UUID(str(row[2])),
+                    processing_run_id=UUID(str(row[3])),
+                    chunk_id=UUID(str(row[0])),
+                    ordinal=int(row[4]),
+                    score=1.0,
+                    content_hash=str(row[7]),
+                    filename=row[12],
+                    section_path=list(row[8] or []),
+                    section_key=str(row[9] or ""),
+                    is_heading_only=bool(row[10]),
+                    page_numbers=list(row[11] or []),
+                    text=text_value,
+                    token_count=int(row[6]),
                 )
             )
         return sources

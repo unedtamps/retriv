@@ -133,8 +133,17 @@ that held the picture.
 - `search_context` embeds the question and runs one scoped SQL search over the
   pgvector index inside the caller's workspace scope, optionally narrowed to a
   single document.
+- `search_text` matches literal words inside the same scope, for identifiers,
+  article numbers and names that an embedding resolves only approximately.
 - `read_document` reads chunks by `ordinal`, which answers “what comes after
   this” where a vector search cannot.
+- `get_document_outline` lists a document's sections with the ordinal and page
+  each starts at, so a long document is entered at the right place.
+- `list_workspaces` names the workspaces the credential can read, with roles
+  and document counts.
+- `describe_document` reports what extraction produced (pages, chunks, images,
+  rows) and the pipeline's last error, separating “the document does not say”
+  from “the document was never extracted”.
 - `query_rows` runs model-written SQL under a read-only role and PostgreSQL
   row-level security.
 - `download_document` returns a short-lived signed object-store link and a

@@ -70,6 +70,17 @@ def _instructions(*, row_queries: bool) -> str:
         "straight through. For CSV files, call list_queryable_files as well: "
         "it gives the column names a query has to name."
     )
+    extra = (
+        "\n\nlist_workspaces names the workspaces this key can read. "
+        "search_text finds literal words -- identifiers, article numbers, "
+        "exact names -- where search_context finds meaning, and the two are "
+        "complements rather than substitutes. get_document_outline lists a "
+        "document's sections with the ordinal each starts at, so a long "
+        "document is entered at the right place instead of read from the top. "
+        "describe_document reports what was actually extracted -- pages, "
+        "chunks, images, rows -- which is how a document that is silent is "
+        "told apart from one that was never extracted."
+    )
     tail = (
         "\n\nWhen you need a document's original file rather than a passage "
         "from it, call download_document. It returns two addresses: `link`, a "
@@ -82,12 +93,12 @@ def _instructions(*, row_queries: bool) -> str:
         "dashboard."
     )
     if not row_queries:
-        return lead + tail
+        return lead + extra + tail
     return (
         lead + " Pass that document_id to query_rows, run one query per file:"
         " the cells are text inside the JSONB column `data`, so cast before"
         " comparing."
-    ) + tail
+    ) + extra + tail
 
 
 def _guarded[**P, R](fn: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
@@ -183,6 +194,35 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
 
     @mcp.tool()
     @_guarded
+    async def search_text(
+        ctx: Context,
+        query: Annotated[str, Field(min_length=2, max_length=200)],
+        limit: Annotated[int, Field(ge=1, le=20)] = settings.max_context_chunks,
+        workspace_id: UUID | None = None,
+        document_id: UUID | None = None,
+    ) -> str:
+        """Find chunks containing an exact word or phrase.
+
+        search_context answers "what is this about" and is the right tool for a
+        concept. It is the wrong one for a string: an invoice number, an
+        article reference, a name, a code. An embedding represents those
+        approximately, so a query for `Pasal 7` can return Pasal 6 and Pasal 8
+        while the passage that says Pasal 7 is not in the result set at all.
+        This matches the text literally, case-insensitively.
+
+        Every word is matched as written, so `net revenue` finds only that
+        phrase and not either word alone. Pass `document_id` to stay inside one
+        file; omit it to search every document in scope.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).search_text(
+            query=query,
+            limit=limit,
+            workspace_id=workspace_id,
+            document_id=document_id,
+        )
+
+    @mcp.tool()
+    @_guarded
     async def read_document(
         ctx: Context,
         document_id: UUID,
@@ -210,6 +250,55 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             workspace_id=workspace_id,
             start_ordinal=start_ordinal,
             limit=limit,
+        )
+
+    @mcp.tool()
+    @_guarded
+    async def get_document_outline(
+        ctx: Context,
+        document_id: UUID,
+        workspace_id: UUID,
+        limit: Annotated[int, Field(ge=1, le=500)] = 200,
+    ) -> str:
+        """List a document's sections, with where each one starts.
+
+        Reading a long document from ordinal 0 to find "Bab 3" spends the
+        context budget on chapters nobody asked about. This returns the
+        document's headings in reading order, each with the `ordinal` and page
+        it begins at, so the next call is `read_document` at that ordinal.
+
+        The reply also states the document's chunk and page counts. A document
+        with no headings -- a scan without structure, or a plain text file --
+        says so and points at read_document instead of returning an empty list
+        that reads like a failure.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).get_document_outline(
+            document_id=document_id,
+            workspace_id=workspace_id,
+            limit=limit,
+        )
+
+    @mcp.tool()
+    @_guarded
+    async def describe_document(
+        ctx: Context,
+        document_id: UUID,
+        workspace_id: UUID,
+    ) -> str:
+        """Report what was extracted from a document, and whether it worked.
+
+        `find_documents` says a document is `ready`; that only means the
+        pipeline finished. This says what it produced: pages, chunks, how many
+        of them were embedded, sections, images and CSV rows. A scanned PDF
+        without a text layer is `ready` with zero chunks, and searching it will
+        never find anything -- the difference between "the document does not
+        say" and "the document was never readable" is exactly this report.
+
+        `last_error` carries the pipeline's own message when a run failed.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).describe_document(
+            document_id=document_id,
+            workspace_id=workspace_id,
         )
 
     @mcp.tool()
@@ -264,6 +353,23 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         return await (await _kit(box.runtime, ctx.headers)).find_documents(
             pattern=pattern, workspace_id=workspace_id, limit=limit
         )
+
+    @mcp.tool()
+    @_guarded
+    async def list_workspaces(ctx: Context) -> str:
+        """List the workspaces this API key can read.
+
+        Every document line carries a workspace_id, but nothing so far turns
+        one into a name, so "which workspace holds the procurement files" is a
+        question a model can restate and not answer. This returns each
+        workspace's id, slug, name, the caller's role in it, and how many live
+        documents it holds.
+
+        The list is the key's own scope, resolved from the owning user's
+        memberships: a workspace the user cannot search does not appear here,
+        and one they join appears on the next call.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).list_workspaces()
 
     if settings.sql_database_url:
 

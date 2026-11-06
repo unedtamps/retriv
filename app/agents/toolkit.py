@@ -23,24 +23,46 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from anyio import to_thread
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Document, DocumentImage, DocumentWorkspace
+from app.db.models import (
+    Document,
+    DocumentChunk,
+    DocumentImage,
+    DocumentWorkspace,
+    ProcessingRun,
+    Workspace,
+    WorkspaceMembership,
+)
 from app.infrastructure.storage import ObjectNotFoundError, ObjectTooLargeError, StorageError
 from app.mcp.auth import McpPrincipal, require_workspace
 from app.mcp.documents import find_documents as search_documents
 from app.mcp.documents import format_documents
+from app.mcp.overview import (
+    DocumentReport,
+    WorkspaceSummary,
+    format_document_report,
+    format_workspaces,
+)
 from app.mcp.runtime import McpRuntime
+from app.processing.service import derived_document_status
 from app.retrieval.catalogue import format_catalogue, format_values, mentions_document_id
 from app.retrieval.format import (
     format_context,
+    format_outline,
     navigation_footer,
     navigation_hint,
     source_indices,
 )
+from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 from app.retrieval.schemas import ContextSource
-from app.retrieval.sql import Catalogue, RowQueryError
+from app.retrieval.sql import (
+    ROW_STORED_MEDIA_TYPES,
+    Catalogue,
+    RowQueryError,
+    catalogue_entries,
+)
 
 if TYPE_CHECKING:
     from app.infrastructure.storage import ArtifactStorage
@@ -147,6 +169,29 @@ class AgentToolKit:
         hint = navigation_hint(sources, indices)
         return f"{body}\n\n{hint}" if hint else body
 
+    async def search_text(
+        self,
+        *,
+        query: str,
+        limit: int,
+        workspace_id: UUID | None = None,
+        document_id: UUID | None = None,
+    ) -> str:
+        """Literal matches, for identifiers an embedding cannot resolve."""
+        scope = self._scope(workspace_id)
+        if not scope:
+            return "No searchable workspace is in scope for this API key."
+        sources = await self._runtime.retriever.search_text(
+            query, scope, limit, document_id=document_id
+        )
+        if not sources:
+            return (
+                f"No chunk contains the literal text {query!r}. This search "
+                "matches exact words rather than meaning; use search_context "
+                "for a paraphrase."
+            )
+        return format_context(sources, source_indices(_by_chunk(sources)))
+
     async def read_document(
         self,
         *,
@@ -167,6 +212,21 @@ class AgentToolKit:
         indices = source_indices(_by_chunk(window.sources))
         body = format_context(window.sources, indices)
         return f"{body}\n\n{navigation_footer(window)}"
+
+    async def get_document_outline(
+        self, *, document_id: UUID, workspace_id: UUID, limit: int = 200
+    ) -> str:
+        """A document's sections, so a long read starts at the right place."""
+        scope = self._scope(workspace_id)
+        try:
+            outline = await self._runtime.navigator.outline(
+                document_id=document_id,
+                workspace_ids=scope,
+                limit=limit,
+            )
+        except (DocumentNotFound, DocumentNotNavigable) as exc:
+            raise ToolRejection(str(exc)) from exc
+        return format_outline(outline)
 
     async def list_queryable_files(
         self,
@@ -214,6 +274,167 @@ class AgentToolKit:
                 session, scope, pattern=pattern, limit=limit
             )
         return format_documents(summaries, total=total, pattern=pattern)
+
+    async def list_workspaces(self) -> str:
+        """The workspaces this credential may read, with their sizes.
+
+        The document tools return a workspace_id but never a name, so without
+        this a question about "the legal workspace" can only be answered by
+        guessing which id belongs to it. Membership is the scope: the same rows
+        that decided ``workspace_ids`` decide this list.
+        """
+        scope = tuple(self._principal.workspace_ids)
+        if not scope:
+            return "No workspaces are in scope for this API key."
+        async with self._runtime.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Workspace, WorkspaceMembership.role)
+                    .join(
+                        WorkspaceMembership,
+                        WorkspaceMembership.workspace_id == Workspace.id,
+                    )
+                    .where(
+                        Workspace.id.in_(scope),
+                        WorkspaceMembership.user_id == self._principal.user.id,
+                    )
+                    .order_by(Workspace.slug)
+                )
+            ).all()
+            counts: dict[UUID, int] = {}
+            for workspace_id, total in (
+                await session.execute(
+                    select(DocumentWorkspace.workspace_id, func.count())
+                    .join(Document, Document.id == DocumentWorkspace.document_id)
+                    .where(
+                        DocumentWorkspace.workspace_id.in_(scope),
+                        DocumentWorkspace.deleted_at.is_(None),
+                        Document.deleted_at.is_(None),
+                    )
+                    .group_by(DocumentWorkspace.workspace_id)
+                )
+            ).all():
+                counts[workspace_id] = int(total)
+        return format_workspaces(
+            [
+                WorkspaceSummary(
+                    workspace_id=workspace.id,
+                    slug=workspace.slug,
+                    name=workspace.name,
+                    role=role,
+                    description=workspace.description,
+                    documents=int(counts.get(workspace.id, 0)),
+                )
+                for workspace, role in rows
+            ]
+        )
+
+    async def describe_document(self, *, document_id: UUID, workspace_id: UUID) -> str:
+        """What the pipeline extracted, so absence is not mistaken for silence.
+
+        ``find_documents`` reports whether a document is ready; this reports
+        what ready actually contains. A scanned PDF with no text layer is
+        ready and yields zero chunks, and a model that only sees "ready" will
+        answer "the document does not mention it" to a question the extraction
+        never gave it a chance to answer.
+        """
+        runtime = self._runtime
+        async with runtime.session_factory() as session:
+            workspace = await require_workspace(
+                session,
+                user=self._principal.user,
+                workspace_id=workspace_id,
+                permission="read",
+            )
+            document = await _scoped_document(session, workspace_id, document_id)
+            link = await session.scalar(
+                select(DocumentWorkspace).where(
+                    DocumentWorkspace.document_id == document.id,
+                    DocumentWorkspace.workspace_id == workspace_id,
+                )
+            )
+            run = (
+                await session.get(ProcessingRun, document.active_processing_run_id)
+                if document.active_processing_run_id is not None
+                else None
+            )
+            chunks = 0
+            if run is not None:
+                chunks = int(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(DocumentChunk)
+                        .where(DocumentChunk.processing_run_id == run.id)
+                    )
+                    or 0
+                )
+            images = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(DocumentImage)
+                    .where(DocumentImage.document_id == document.id)
+                )
+                or 0
+            )
+            described = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(DocumentImage)
+                    .where(
+                        DocumentImage.document_id == document.id,
+                        DocumentImage.described.is_(True),
+                    )
+                )
+                or 0
+            )
+
+        row_stored = document.detected_media_type in ROW_STORED_MEDIA_TYPES
+        pages = 0
+        sections = 0
+        if not row_stored and run is not None:
+            outline = await runtime.navigator.outline(
+                document_id=document.id,
+                workspace_ids=[workspace_id],
+                limit=1,
+            )
+            pages = outline.page_count
+            sections = outline.section_count
+
+        columns: list[str] = []
+        if run is not None and run.csv_columns:
+            for _sheet, sheet_columns, _rows in catalogue_entries(
+                run.csv_columns, run.row_count
+            ):
+                for column in sheet_columns:
+                    if column not in columns:
+                        columns.append(column)
+
+        return format_document_report(
+            DocumentReport(
+                filename=link.filename if link is not None else document.original_filename,
+                document_id=document.id,
+                workspace_name=workspace.name,
+                workspace_id=workspace_id,
+                media_type=document.detected_media_type,
+                size_bytes=document.size_bytes,
+                uploaded_at=document.created_at,
+                status=derived_document_status(document, run),
+                pipeline=(
+                    f"{run.job_kind} {run.pipeline_version}" if run is not None else None
+                ),
+                chunks=chunks,
+                embedded_chunks=run.embedded_chunk_count if run is not None else 0,
+                pages=pages,
+                sections=sections,
+                images=images,
+                described_images=described,
+                rows=run.row_count if run is not None else 0,
+                columns=columns,
+                last_error=run.last_error if run is not None else None,
+                queryable=self.row_queries,
+                row_stored=row_stored,
+            )
+        )
 
     async def query_rows(self, *, sql: str) -> str:
         runtime = self._runtime

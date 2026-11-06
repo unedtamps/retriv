@@ -8,6 +8,7 @@ for real here against seeded tables.
 
 import hashlib
 from collections.abc import Mapping, Sequence
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
@@ -1052,3 +1053,175 @@ async def test_a_document_linked_to_two_workspaces_is_found_from_either() -> Non
     assert len(sources) == 1
     assert sources[0].workspace_id == second_workspace
     assert sources[0].filename == "shared.pdf"
+
+
+async def text_search_env() -> tuple[ContextRetriever, AsyncEngine, Any, Any, Any, Any]:
+    """A retriever over the minimal tables, with no embedding client in play."""
+    settings = make_settings()
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings, links = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    return ContextRetriever(settings, engine), engine, documents, chunks, embeddings, links
+
+
+async def test_text_search_finds_an_identifier_a_vector_would_miss() -> None:
+    """The whole point of a lexical tool: a code is a string, not a topic."""
+    retriever, engine, documents, chunks, embeddings, links = await text_search_env()
+    workspace_id = uuid4()
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [
+            (10, "Invoice INV-2024-001 was settled in March.", ["Billing"]),
+            (11, "Invoice INV-2024-002 is still overdue.", ["Billing"]),
+        ],
+    )
+    try:
+        sources = await retriever.search_text("INV-2024-001", [workspace_id], 10)
+    finally:
+        await retriever.aclose()
+
+    assert [source.text for source in sources] == [
+        "Invoice INV-2024-001 was settled in March."
+    ]
+    assert sources[0].workspace_id == workspace_id
+    assert sources[0].score == 1.0
+
+
+async def test_text_search_is_case_insensitive() -> None:
+    retriever, engine, documents, chunks, embeddings, links = await text_search_env()
+    workspace_id = uuid4()
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "Pasal 7 mengatur pengadaan langsung.", ["Pasal 7"])],
+    )
+    try:
+        sources = await retriever.search_text("pasal 7", [workspace_id], 10)
+    finally:
+        await retriever.aclose()
+
+    assert len(sources) == 1
+    assert sources[0].text.startswith("Pasal 7")
+
+
+async def test_text_search_treats_wildcards_as_literal_text() -> None:
+    """A query of ``%`` must not turn into "every chunk in the workspace"."""
+    retriever, engine, documents, chunks, embeddings, links = await text_search_env()
+    workspace_id = uuid4()
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "No percent sign here.", ["Summary"])],
+    )
+    try:
+        sources = await retriever.search_text("%", [workspace_id], 10)
+    finally:
+        await retriever.aclose()
+
+    assert sources == []
+
+
+async def test_text_search_stays_inside_the_signed_scope() -> None:
+    retriever, engine, documents, chunks, embeddings, links = await text_search_env()
+    workspace_id = uuid4()
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "Confidential memo about the merger.", ["Memo"])],
+    )
+    try:
+        sources = await retriever.search_text("merger", [uuid4()], 10)
+    finally:
+        await retriever.aclose()
+
+    assert sources == []
+
+
+async def test_text_search_can_be_narrowed_to_one_document() -> None:
+    retriever, engine, documents, chunks, embeddings, links = await text_search_env()
+    workspace_id = uuid4()
+    first = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "Procurement policy, revision A.", ["Policy"])],
+        filename="policy-a.pdf",
+    )
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "Procurement policy, revision B.", ["Policy"])],
+        filename="policy-b.pdf",
+    )
+    try:
+        both = await retriever.search_text("Procurement policy", [workspace_id], 10)
+        narrowed = await retriever.search_text(
+            "Procurement policy",
+            [workspace_id],
+            10,
+            document_id=first[0]["document_id"],  # type: ignore[arg-type]
+        )
+    finally:
+        await retriever.aclose()
+
+    assert len(both) == 2
+    assert [source.text for source in narrowed] == ["Procurement policy, revision A."]
+
+
+async def test_text_search_does_not_require_an_indexed_embedding() -> None:
+    """Text that failed to embed is still text a reader can use."""
+    retriever, engine, documents, chunks, embeddings, links = await text_search_env()
+    workspace_id = uuid4()
+    await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "Unembedded but readable paragraph.", ["Summary"])],
+    )
+    async with engine.begin() as connection:
+        await connection.execute(update(embeddings).values(status="pending"))
+    try:
+        sources = await retriever.search_text("readable paragraph", [workspace_id], 10)
+    finally:
+        await retriever.aclose()
+
+    assert [source.text for source in sources] == ["Unembedded but readable paragraph."]
+
+
+async def test_text_search_refuses_an_empty_query_or_scope() -> None:
+    retriever, engine, _documents, _chunks, _embeddings, _links = await text_search_env()
+    try:
+        with pytest.raises(RetrievalUnavailable):
+            await retriever.search_text("   ", [uuid4()], 5)
+        with pytest.raises(RetrievalUnavailable):
+            await retriever.search_text("merger", [], 5)
+    finally:
+        await retriever.aclose()

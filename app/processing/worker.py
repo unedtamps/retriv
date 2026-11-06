@@ -52,7 +52,6 @@ from app.db.models import (
     DocumentChunk,
     DocumentImage,
     DocumentRow,
-    DocumentWorkspace,
     ProcessingRun,
 )
 from app.documents import conversion

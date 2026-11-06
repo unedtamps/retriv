@@ -213,15 +213,37 @@ keeps `Authorization: Bearer rk_...` on every request. The key identifies a user
 workspaces it can see are derived live from that user's memberships, so demoting or
 removing the user narrows the next call rather than the next login.
 
-The tools are `find_documents`, `search_context`, `read_document`,
-`list_queryable_files`, `query_rows`, and `download_document`. `query_rows` is registered only
-when `RETRIV_SQL_DATABASE_URL` is set: an absent tool is something a model stops trying,
-whereas a tool that always answers "not enabled" is one it keeps retrying.
+![MCP and Chat Agent call routes](../docs/images/mcp-vs-chat-routes.png)
+
+Both entry points converge on the same `AgentToolKit` and `McpRuntime`. The left lane
+is an external MCP client: the ASGI gate authenticates the API key before a session is
+allocated, and every tool re-authenticates from its own request, so a revoked key stops
+working on the next call. The right lane is the in-browser agent: the JWT resolves the
+user once per request, then `run_agent` drives the model loop and executes tool calls
+through the same toolkit. Dashed arrows are response paths. An editable copy lives in
+[Excalidraw](https://excalidraw.com/#json=B1bizafSKgFjM3RAjQJsf,kwYcBF1nFTCYJLfNpE38jA).
+
+The tools are `list_workspaces`, `find_documents`, `search_context`,
+`search_text`, `read_document`, `get_document_outline`, `describe_document`,
+`list_queryable_files`, `query_rows`, `download_document`, `list_images` and
+`get_image`. `query_rows` is registered only when `RETRIV_SQL_DATABASE_URL` is
+set: an absent tool is something a model stops trying, whereas a tool that
+always answers "not enabled" is one it keeps retrying.
 
 Nothing here writes. Upload, status and deletion live in the HTTP API and the dashboard,
 because they are decisions a person takes rather than ones a model should reach for
 unprompted. An API key is therefore read-only: a leaked one exposes documents the holder
 could already search, and can destroy nothing.
+
+Tool selection is measured separately from retrieval. `scripts/eval_tool_selection.py`
+sends `evals/tool_selection.jsonl` through the same model, system prompt and tool
+specs the Chat Agent uses, and reports two numbers per run: the first-call accuracy
+and the coverage -- whether the expected tool appears by the end of the turn. Prompts
+marked `two_turn` feed a canned tool result and take a second turn, because a document
+tool cannot be chosen before an id exists; without that, a cautious two-step plan
+scores as a miss. It executes no real tool, so a result is about the catalogue rather
+than the corpus. Run it before adding tools and after rewriting descriptions; a merged
+or renamed variant belongs in `build_toolset` so an A/B run differs in one dimension.
 
 A turn has two possible doors into the documents. `search_context` retrieves prose by
 meaning; `query_rows` runs SQL over tabular rows. The client's model picks, which is
@@ -376,10 +398,12 @@ document read through from the top.
 
 | | Axis | Answers |
 |---|---|---|
-| `search_context` | `section_key`, hierarchical | "what is section X?" |
+| `search_context` | embedding, semantic | "what is this about?" |
+| `search_text` | substring, literal | "where does it say INV-2024-001?" |
+| `get_document_outline` | `section_key`, hierarchical | "where does Bab 3 start?" |
 | `read_document` | `ordinal`, positional | "what comes after this chunk?" |
 
-The two compose, and the bridge between them is a number: every source label carries the
+They compose, and the bridge between them is a number: every source label carries the
 `ordinal` it sits at, so a search hit hands the reader exactly the argument
 `read_document` needs. A hit that is only a title is also marked `kind=heading`, and the
 search reply says so explicitly -- otherwise the reader takes a bare heading as evidence

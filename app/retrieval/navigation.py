@@ -20,6 +20,7 @@ run, indexed embedding of the configured profile, and a recomputed content hash.
 
 import hashlib
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -54,6 +55,49 @@ class DocumentNotNavigable(RuntimeError):
     thing this server can do. Saying so and naming the tool that can is more use
     to the caller than a generic failure.
     """
+
+
+MAX_OUTLINE_CHUNKS = 20_000
+"""How many chunk positions one outline may scan.
+
+An outline reads positions, not text, so a row is a few dozen bytes; twenty
+thousand of them is a document far longer than any the pipeline has seen and
+still bounded. The cap is what keeps a pathological file from turning a
+metadata call into a memory problem.
+"""
+
+
+@dataclass(frozen=True)
+class OutlineSection:
+    """One heading's place in a document, and how much text sits under it."""
+
+    section_key: str
+    section_path: list[str]
+    ordinal: int
+    page: int | None
+    chunks: int
+
+
+@dataclass(frozen=True)
+class DocumentOutline:
+    """A document's section tree, as positions rather than prose.
+
+    ``sections`` is capped by the caller's limit; ``section_count`` is the
+    number that exists, so a caller can say "showing 20 of 140" without
+    counting the list it was handed.
+    """
+
+    filename: str
+    document_id: UUID
+    sections: list[OutlineSection]
+    section_count: int
+    total_chunks: int
+    page_count: int
+    truncated: bool
+
+    @property
+    def has_headings(self) -> bool:
+        return self.section_count > 0
 
 
 def _embedding_join() -> Any:
@@ -146,6 +190,150 @@ class DocumentNavigator:
             raise DocumentNotFound("That document could not be read.") from exc
 
         return self._to_window(rows, total=int(total or 0))
+
+    async def outline(
+        self,
+        *,
+        document_id: UUID,
+        workspace_ids: list[UUID],
+        limit: int = 200,
+    ) -> DocumentOutline:
+        """The document's headings, each with the ordinal and page it starts at.
+
+        Reading order is not a table of contents: it says where every chunk is,
+        not where a section begins. A caller that wants "Bab 3" needs the
+        latter, and the chunk rows already know it through ``section_key``.
+
+        The embedding ledger is not joined. A section exists whether or not its
+        chunks embedded, and an outline is metadata about the document rather
+        than a passage from it -- hiding unembedded sections would describe a
+        document that is not the one stored.
+        """
+        if not workspace_ids:
+            raise DocumentNotFound("No readable document is in scope.")
+        if len(workspace_ids) != len(set(workspace_ids)):
+            raise DocumentNotFound("The workspace scope contains duplicate IDs.")
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+
+        try:
+            async with self._sessions() as session:
+                row = (
+                    await session.execute(
+                        select(Document, DocumentWorkspace.filename)
+                        .join(
+                            DocumentWorkspace,
+                            DocumentWorkspace.document_id == Document.id,
+                        )
+                        .where(
+                            Document.id == document_id,
+                            DocumentWorkspace.workspace_id.in_(workspace_ids),
+                            DocumentWorkspace.deleted_at.is_(None),
+                        )
+                    )
+                ).one_or_none()
+                if row is None:
+                    raise DocumentNotFound("No readable document matches that id in this scope.")
+                document, filename = row
+                if document.deleted_at is not None:
+                    raise DocumentNotFound(
+                        "That document is being deleted and can no longer be read."
+                    )
+                if document.detected_media_type == CSV_MEDIA_TYPE:
+                    raise DocumentNotNavigable(
+                        "That file is a CSV, which is stored as rows rather than "
+                        "text. Use list_queryable_files to see its columns, then "
+                        "query_rows to ask questions of the data."
+                    )
+                run_id = document.active_processing_run_id
+                if run_id is None:
+                    raise DocumentNotFound(
+                        "That document is not indexed yet, so it has no sections to list."
+                    )
+
+                total = await session.scalar(
+                    select(func.count())
+                    .select_from(DocumentChunk)
+                    .where(DocumentChunk.processing_run_id == run_id)
+                )
+                rows = (
+                    await session.execute(
+                        select(
+                            DocumentChunk.section_key,
+                            DocumentChunk.section_path,
+                            DocumentChunk.ordinal,
+                            DocumentChunk.page_numbers,
+                        )
+                        .where(DocumentChunk.processing_run_id == run_id)
+                        .order_by(DocumentChunk.ordinal)
+                        .limit(MAX_OUTLINE_CHUNKS)
+                    )
+                ).all()
+        except (DocumentNotFound, DocumentNotNavigable):
+            raise
+        except (SQLAlchemyError, IndexError, KeyError, TypeError, ValueError) as exc:
+            raise DocumentNotFound("That document could not be outlined.") from exc
+
+        return self._to_outline(
+            rows,
+            filename=filename,
+            document_id=document_id,
+            total=int(total or 0),
+            limit=limit,
+        )
+
+    def _to_outline(
+        self,
+        rows: Sequence[Any],
+        *,
+        filename: str,
+        document_id: UUID,
+        total: int,
+        limit: int,
+    ) -> DocumentOutline:
+        order: list[str] = []
+        first: dict[str, tuple[list[str], int, int | None]] = {}
+        counts: dict[str, int] = {}
+        page_count = 0
+        for section_key, section_path, ordinal, page_numbers in rows:
+            pages = [int(page) for page in (page_numbers or [])]
+            if pages:
+                page_count = max(page_count, max(pages))
+            path = list(section_path or [])
+            if not path:
+                # A chunk with no heading is preamble, not a section; it still
+                # contributes to the page count but has no line in the outline.
+                continue
+            key = str(section_key or "")
+            counts[key] = counts.get(key, 0) + 1
+            if key not in first:
+                first[key] = (
+                    path,
+                    int(ordinal),
+                    pages[0] if pages else None,
+                )
+                order.append(key)
+
+        keys = order
+        sections = [
+            OutlineSection(
+                section_key=key,
+                section_path=first[key][0],
+                ordinal=first[key][1],
+                page=first[key][2],
+                chunks=counts[key],
+            )
+            for key in keys[:limit]
+        ]
+        return DocumentOutline(
+            filename=filename,
+            document_id=document_id,
+            sections=sections,
+            section_count=len(keys),
+            total_chunks=total,
+            page_count=page_count,
+            truncated=len(keys) > limit or len(rows) < total,
+        )
 
     def _window_query(
         self,

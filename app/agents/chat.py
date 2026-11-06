@@ -78,8 +78,11 @@ class OpenAICompatibleChatProvider:
         *,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        temperature: float | None = None,
     ) -> ChatTurn:
         body: dict[str, Any] = {"model": self._model, "messages": messages}
+        if temperature is not None:
+            body["temperature"] = temperature
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
