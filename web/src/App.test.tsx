@@ -900,8 +900,12 @@ describe('dashboard application', () => {
     await user.type(input, 'who is the executive officer of 3M?')
     await user.keyboard('{Enter}')
 
-    expect(await screen.findByText('find_documents')).toBeInTheDocument()
     expect(await screen.findByText('read_document')).toBeInTheDocument()
+    expect(screen.getByText('2 tool calls')).toBeInTheDocument()
+    expect(screen.queryByText('find_documents')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /2 tool calls/ }))
+    expect(await screen.findByText('find_documents')).toBeInTheDocument()
   })
 
   it('does not abort the first message of a new chat while the draft promotes', async () => {

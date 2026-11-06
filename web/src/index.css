@@ -517,6 +517,23 @@
   animation: roster-enter 180ms ease-out both;
 }
 
+/* The tool trail's current call rises into place when the run moves on, so
+ * the change is noticed without the list jumping. */
+@keyframes tool-swap {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-swap {
+  animation: tool-swap 180ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

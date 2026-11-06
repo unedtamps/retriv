@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useRef } from 'react'
-import { CirclePlus, CornerDownLeft, Sparkles, Square, Trash2, Wrench } from 'lucide-react'
-import type { AgentConversation } from '../hooks/useAgentConversation'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { ChevronDown, CirclePlus, CornerDownLeft, Sparkles, Square, Trash2, Wrench } from 'lucide-react'
+import type { AgentConversation, ToolStep } from '../hooks/useAgentConversation'
 
 const MarkdownText = lazy(() => import('./MarkdownText').then((m) => ({ default: m.MarkdownText })))
 
@@ -9,6 +9,88 @@ const SUGGESTIONS = [
   'Summarize the most recent report',
   'Which rows have the highest amounts?',
 ]
+
+/**
+ * The tool trail, folded into one line.
+ *
+ * A turn can run a dozen tools, and a full card per call buried the answer
+ * it produced. The summary names the call running now (re-keyed so the name
+ * animates when the trail moves on) and counts the rest; the disclosure
+ * opens the whole trail when someone wants to audit it.
+ */
+function ToolActivity({ calls, busy }: { calls: ToolStep[]; busy: boolean }) {
+  const [open, setOpen] = useState(false)
+  if (calls.length === 0) {
+    return (
+      <p className="text-xs text-ink-faint" role="status">
+        Working…
+      </p>
+    )
+  }
+  const latest = calls[calls.length - 1]
+  const running = busy && latest.preview === ''
+  return (
+    <div className="rounded-md border border-line bg-muted/30 text-xs">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
+      >
+        <Wrench aria-hidden="true" size={11} className="shrink-0 text-ink-faint" />
+        <span key={`${calls.length}-${latest.name}`} className="tool-swap font-medium text-ink">
+          {latest.name}
+        </span>
+        <span className="text-ink-faint">
+          {calls.length} tool call{calls.length === 1 ? '' : 's'}
+        </span>
+        {running ? (
+          <span className="flex items-center gap-1 text-ink-faint">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+            running
+          </span>
+        ) : null}
+        <ChevronDown
+          aria-hidden="true"
+          size={12}
+          className={`ml-auto shrink-0 text-ink-faint transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+      {open ? (
+        <div className="roster-enter space-y-1.5 border-t border-line px-2.5 py-1.5">
+          {calls.map((call, index) => {
+            const argumentsText = Object.entries(call.arguments)
+              .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+              .join('  ')
+            const callRunning = busy && index === calls.length - 1 && call.preview === ''
+            return (
+              <div key={index} className="text-[0.7rem]">
+                <div className="flex items-baseline gap-2">
+                  <span className="shrink-0 font-medium text-ink">{call.name}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-ink-faint">
+                    {argumentsText}
+                  </span>
+                  {callRunning ? (
+                    <span className="shrink-0 text-ink-faint">running</span>
+                  ) : call.truncated ? (
+                    <span className="shrink-0 text-ink-faint">truncated</span>
+                  ) : null}
+                </div>
+                {call.preview !== '' ? (
+                  <p className="mt-0.5 line-clamp-1 whitespace-pre-wrap text-[0.65rem] text-ink-faint">
+                    {call.preview}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 /**
  * The agent, as a page.
@@ -232,46 +314,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
                   </p>
                 )
               }
-              if (item.calls.length === 0) {
-                return (
-                  <p key={index} className="text-xs text-ink-faint" role="status">
-                    Working…
-                  </p>
-                )
-              }
-              return (
-                <div key={index} className="space-y-1.5">
-                  {item.calls.map((call, callIndex) => (
-                    <div
-                      key={callIndex}
-                      className="rounded-md border bg-muted/50 px-2.5 py-1.5 text-xs"
-                    >
-                      <p className="flex items-center gap-1.5 font-medium">
-                        <Wrench aria-hidden="true" size={11} className="text-ink-faint" />
-                        {call.name}
-                        {busy && callIndex === item.calls.length - 1 && call.preview === '' ? (
-                          <span className="text-ink-faint">· running</span>
-                        ) : null}
-                      </p>
-                      {Object.keys(call.arguments).length > 0 ? (
-                        <p className="mt-0.5 truncate font-mono text-[0.65rem] text-ink-muted">
-                          {Object.entries(call.arguments)
-                            .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-                            .join('  ')}
-                        </p>
-                      ) : null}
-                      {call.preview !== '' ? (
-                        <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-ink-faint">
-                          {call.preview}
-                        </p>
-                      ) : null}
-                      {call.truncated ? (
-                        <p className="mt-1 text-ink-faint">Result was truncated.</p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )
+              return <ToolActivity key={index} calls={item.calls} busy={busy} />
             })}
           </div>
         )}
