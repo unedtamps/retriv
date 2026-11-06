@@ -74,7 +74,10 @@ function installApi(
   } = {},
   members: { list?: unknown } = {},
   auth: { refresh?: 'ok' | 'rejected'; meFirst?: 'ok' | 'expired' } = {},
-  chat: { holdBeforeFinalMs?: number } = {},
+  chat: {
+    holdBeforeFinalMs?: number
+    toolCalls?: { name: string; arguments: Record<string, unknown>; preview: string }[]
+  } = {},
 ) {
   const refreshes: string[] = []
   const logouts: string[] = []
@@ -129,10 +132,21 @@ function installApi(
               // the stream was already closed
             }
           })
+          const toolCalls = chat.toolCalls ?? [
+            { name: 'search_context', arguments: { query: 'anything' }, preview: 'top hit' },
+          ]
           const early = [
             { type: 'turn_start', turns_allowed: 12 },
-            { type: 'tool_call', name: 'search_context', arguments: { query: 'anything' } },
-            { type: 'tool_result', name: 'search_context', length: 8, truncated: false, preview: 'top hit' },
+            ...toolCalls.flatMap((call) => [
+              { type: 'tool_call', name: call.name, arguments: call.arguments },
+              {
+                type: 'tool_result',
+                name: call.name,
+                length: call.preview.length,
+                truncated: false,
+                preview: call.preview,
+              },
+            ]),
           ]
           for (const frame of early) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
@@ -864,6 +878,30 @@ describe('dashboard application', () => {
     const headers = chatCall[1]?.headers
     if (!(headers instanceof Headers)) throw new Error('Expected request headers')
     expect(headers.get('Authorization')).toBe('Bearer member-token')
+  })
+
+  it('shows every tool call, not only the first', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi(admin, [workspace], undefined, {}, {}, {}, {}, {
+      toolCalls: [
+        { name: 'find_documents', arguments: { pattern: '3M' }, preview: 'found the 10-K' },
+        {
+          name: 'read_document',
+          arguments: { document_id: 'doc-1', workspace_id: workspace.id },
+          preview: 'executive officers',
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    writeSessionToken('member-token')
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'who is the executive officer of 3M?')
+    await user.keyboard('{Enter}')
+
+    expect(await screen.findByText('find_documents')).toBeInTheDocument()
+    expect(await screen.findByText('read_document')).toBeInTheDocument()
   })
 
   it('does not abort the first message of a new chat while the draft promotes', async () => {

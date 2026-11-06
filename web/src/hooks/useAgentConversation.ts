@@ -19,7 +19,7 @@ export interface ToolStep {
 export type ChatItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string; streaming?: boolean }
-  | { kind: 'activity'; calls: ToolStep[] }
+  | { kind: 'activity'; id?: string; calls: ToolStep[] }
   | { kind: 'error'; text: string }
 
 export const HISTORY_LIMIT = 20
@@ -154,7 +154,10 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
     setDraft('')
     setBusy(true)
     const withQuestion: ChatItem[] = [...items, { kind: 'user', text: message }]
-    const activity: ChatItem = { kind: 'activity', calls: [] }
+    // A stable id, not object identity: the first patch replaces the item,
+    // and an identity check would then miss every later tool call.
+    const activityId = crypto.randomUUID()
+    const activity: ChatItem = { kind: 'activity', id: activityId, calls: [] }
     setItems([...withQuestion, activity])
     // The one moment the session's sidebar position may change: a message
     // was sent. Saves and switches leave the order alone.
@@ -193,7 +196,9 @@ export function useAgentConversation(onUnauthorized: () => void): AgentConversat
     const patchActivity = (patch: (calls: ToolStep[]) => ToolStep[]) => {
       setItems((current) =>
         current.map((item) =>
-          item === activity ? { kind: 'activity', calls: patch(item.calls) } : item,
+          item.kind === 'activity' && item.id === activityId
+            ? { kind: 'activity', id: activityId, calls: patch(item.calls) }
+            : item,
         ),
       )
     }
