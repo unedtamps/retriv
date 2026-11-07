@@ -9,6 +9,8 @@ import httpx
 from sqlalchemy import (
     JSON,
     Boolean,
+    Float,
+    RowMapping,
     String,
     Uuid,
     and_,
@@ -30,24 +32,19 @@ from app.db.models import (
     DocumentChunk,
     DocumentWorkspace,
 )
+from app.documents.search import escape_like
+from app.embeddings.base import EmbeddingProviderError
+from app.embeddings.openai_compatible import truncate_normalize
+from app.embeddings.pgvector import vector_literal
 from app.retrieval.schemas import ContextSource
 from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
 
 logger = logging.getLogger(__name__)
 
-PAYLOAD_FIELDS = (
-    "origin_workspace_id",
-    "workspace_ids",
-    "document_id",
-    "processing_run_id",
-    "chunk_id",
-    "content_hash",
-    "embedding_profile",
-)
-
-VALIDATE_CHUNKS = (
+SEARCH_VECTORS = (
     text("""
     SELECT
+        1 - (embedding.embedding <=> CAST(:query_vector AS vector)) AS score,
         chunk.id AS chunk_id,
         (
             SELECT link.workspace_id
@@ -77,17 +74,23 @@ VALIDATE_CHUNKS = (
               AND link.deleted_at IS NULL
             ORDER BY link.workspace_id
             LIMIT 1
-        ) AS filename,
-        embedding.qdrant_point_id
-    FROM document_chunks AS chunk
-    JOIN chunk_embeddings AS embedding
-      ON embedding.chunk_id = chunk.id
-     AND embedding.origin_workspace_id = chunk.origin_workspace_id
-     AND embedding.document_id = chunk.document_id
-     AND embedding.processing_run_id = chunk.processing_run_id
+        ) AS filename
+    FROM chunk_embeddings AS embedding
+    JOIN document_chunks AS chunk
+      ON chunk.id = embedding.chunk_id
+     AND chunk.origin_workspace_id = embedding.origin_workspace_id
+     AND chunk.document_id = embedding.document_id
+     AND chunk.processing_run_id = embedding.processing_run_id
     JOIN documents AS document
       ON document.id = chunk.document_id
-    WHERE chunk.id IN :chunk_ids
+    WHERE embedding.embedding_profile = :embedding_profile
+      AND embedding.model = :embedding_model
+      AND embedding.dimensions = :embedding_dimensions
+      AND embedding.status = 'indexed'
+      AND embedding.content_hash = chunk.content_hash
+      AND document.deleted_at IS NULL
+      AND document.active_processing_run_id = chunk.processing_run_id
+      AND (:document_id IS NULL OR chunk.document_id = :document_id)
       AND EXISTS (
           SELECT 1
           FROM document_workspaces AS link
@@ -95,19 +98,15 @@ VALIDATE_CHUNKS = (
             AND link.workspace_id IN :workspace_ids
             AND link.deleted_at IS NULL
       )
-      AND document.deleted_at IS NULL
-      AND document.active_processing_run_id = chunk.processing_run_id
-      AND embedding.embedding_profile = :embedding_profile
-      AND embedding.model = :embedding_model
-      AND embedding.dimensions = :embedding_dimensions
-      AND embedding.status = 'indexed'
-      AND embedding.content_hash = chunk.content_hash
+    ORDER BY embedding.embedding <=> CAST(:query_vector AS vector)
+    LIMIT :limit
     """)
     .bindparams(
-        bindparam("chunk_ids", type_=Uuid(as_uuid=True), expanding=True),
         bindparam("workspace_ids", type_=Uuid(as_uuid=True), expanding=True),
+        bindparam("document_id", type_=Uuid(as_uuid=True)),
     )
     .columns(
+        score=Float(),
         chunk_id=Uuid(as_uuid=True),
         workspace_id=Uuid(as_uuid=True),
         origin_workspace_id=Uuid(as_uuid=True),
@@ -118,7 +117,6 @@ VALIDATE_CHUNKS = (
         is_heading_only=Boolean(),
         page_numbers=JSON(),
         filename=String(),
-        qdrant_point_id=Uuid(as_uuid=True),
     )
 )
 
@@ -180,10 +178,6 @@ class RetrievalUnavailable(RuntimeError):
     """Raised when embedding, vector search, or row validation cannot complete."""
 
 
-class OutOfScopeSearchResult(RuntimeError):
-    """Raised when Qdrant returns a result outside the signed workspace scope."""
-
-
 class ContextRetriever:
     def __init__(
         self,
@@ -191,7 +185,6 @@ class ContextRetriever:
         engine: AsyncEngine,
         *,
         embedding_client: httpx.AsyncClient | None = None,
-        qdrant_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._settings = settings
         self._engine = engine
@@ -201,11 +194,6 @@ class ContextRetriever:
             headers={"Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"},
             timeout=settings.embedding_timeout_seconds,
         )
-        self._qdrant_client = qdrant_client or httpx.AsyncClient(
-            base_url=f"{settings.qdrant_url.rstrip('/')}/",
-            headers={"api-key": settings.qdrant_read_only_api_key.get_secret_value()},
-            timeout=settings.qdrant_timeout_seconds,
-        )
 
     async def retrieve(
         self,
@@ -214,6 +202,8 @@ class ContextRetriever:
         limit: int,
         *,
         budget: int | None = None,
+        min_score: float | None = None,
+        document_id: UUID | None = None,
     ) -> list[ContextSource]:
         """Return up to ``limit`` vector matches, plus the sections they belong to.
 
@@ -223,6 +213,13 @@ class ContextRetriever:
         the total. Without it, a full page of matches leaves no room to complete a
         section -- which is exactly the case that matters, since a section named
         without its content is only visible when the search returned its quota.
+
+        ``min_score`` overrides the deployment's relevance floor for this call
+        only; ``None`` keeps the configured ``min_relevance_score``.
+
+        ``document_id`` narrows the search to one document; it must still be
+        inside ``workspace_ids``. Section completion is narrowed with it, or a
+        same-named section in another document could leak into the answer.
         """
         if not workspace_ids:
             raise RetrievalUnavailable("A verified non-empty workspace scope is required")
@@ -231,17 +228,27 @@ class ContextRetriever:
 
         width = self._settings.section_expand_chunks
         cap = limit if budget is None else min(limit + width, budget)
+        floor = self._settings.min_relevance_score if min_score is None else min_score
 
         try:
             vector = await self._embed_query(query)
-            matches = await self._query_qdrant(vector, workspace_ids, limit)
-            sources = await self._load_validated_chunks(matches, workspace_ids)
-            completed = await self._complete_sections(sources, workspace_ids)
+            sources = await self._search_vectors(
+                vector,
+                workspace_ids,
+                limit,
+                min_score=floor,
+                document_id=document_id,
+            )
+            completed = await self._complete_sections(
+                sources,
+                workspace_ids,
+                min_score=floor,
+                document_id=document_id,
+            )
             room = max(0, cap - len(sources))
             return sources + completed[:room]
-        except OutOfScopeSearchResult:
-            raise
         except (
+            EmbeddingProviderError,
             httpx.HTTPError,
             SQLAlchemyError,
             IndexError,
@@ -250,6 +257,101 @@ class ContextRetriever:
             ValueError,
         ) as exc:
             raise RetrievalUnavailable("Scoped context retrieval failed validation") from exc
+
+    async def search_text(
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        document_id: UUID | None = None,
+    ) -> list[ContextSource]:
+        """Chunks containing ``query`` as literal text, not by meaning.
+
+        An embedding answers "what is this about" and does that well, but it is
+        the wrong instrument for an identifier: an invoice number, an article
+        reference, a name. Those are strings, and a string search is exact
+        where a vector is approximate.
+
+        The rows are validated exactly as a vector match is -- live document,
+        active run, workspace link, matching content hash -- but the embedding
+        ledger is deliberately not joined. Text that failed to embed is still
+        text a reader can use, and a lexical tool that refuses it would be
+        hiding the one thing it exists to find.
+        """
+        if not workspace_ids:
+            raise RetrievalUnavailable("A verified non-empty workspace scope is required")
+        if len(workspace_ids) != len(set(workspace_ids)):
+            raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
+        if not query.strip():
+            raise RetrievalUnavailable("A non-empty text query is required")
+
+        pattern = f"%{escape_like(query)}%"
+        link_workspace = (
+            select(DocumentWorkspace.workspace_id)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
+        link_filename = (
+            select(DocumentWorkspace.filename)
+            .where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            )
+            .order_by(DocumentWorkspace.workspace_id)
+            .limit(1)
+            .scalar_subquery()
+        )
+        statement = (
+            select(
+                DocumentChunk.id,
+                link_workspace.label("workspace_id"),
+                DocumentChunk.document_id,
+                DocumentChunk.processing_run_id,
+                DocumentChunk.ordinal,
+                DocumentChunk.text,
+                DocumentChunk.token_count,
+                DocumentChunk.content_hash,
+                DocumentChunk.section_path,
+                DocumentChunk.section_key,
+                DocumentChunk.is_heading_only,
+                DocumentChunk.page_numbers,
+                link_filename.label("filename"),
+            )
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .where(
+                DocumentChunk.text.ilike(pattern, escape="\\"),
+                exists().where(
+                    DocumentWorkspace.document_id == DocumentChunk.document_id,
+                    DocumentWorkspace.workspace_id.in_(workspace_ids),
+                    DocumentWorkspace.deleted_at.is_(None),
+                ),
+                Document.deleted_at.is_(None),
+                Document.active_processing_run_id == DocumentChunk.processing_run_id,
+            )
+            .order_by(
+                case((DocumentChunk.text.like(pattern, escape="\\"), 0), else_=1),
+                DocumentChunk.document_id,
+                DocumentChunk.ordinal,
+            )
+            .limit(limit)
+        )
+        if document_id is not None:
+            statement = statement.where(DocumentChunk.document_id == document_id)
+
+        try:
+            async with self._sessions() as session:
+                rows = (await session.execute(statement)).all()
+        except (SQLAlchemyError, IndexError, KeyError, TypeError, ValueError) as exc:
+            raise RetrievalUnavailable("Scoped text search failed validation") from exc
+        return self._text_sources(rows)
 
     async def _embed_query(self, query: str) -> list[float]:
         response = await self._embedding_client.post(
@@ -268,7 +370,7 @@ class ContextRetriever:
         raw_vector = data[0].get("embedding")
         if (
             not isinstance(raw_vector, list)
-            or len(raw_vector) != self._settings.embedding_dimensions
+            or len(raw_vector) < self._settings.embedding_dimensions
         ):
             raise ValueError("Embedding response dimensions do not match the configured profile")
         vector: list[float] = []
@@ -279,129 +381,74 @@ class ContextRetriever:
             if not math.isfinite(number):
                 raise ValueError("Embedding response contains a non-finite vector value")
             vector.append(number)
-        return vector
+        return truncate_normalize(vector, self._settings.embedding_dimensions)
 
-    async def _query_qdrant(
-        self, vector: list[float], workspace_ids: list[UUID], limit: int
-    ) -> list[dict[str, Any]]:
-        response = await self._qdrant_client.post(
-            f"collections/{self._settings.qdrant_collection}/points/query",
-            json={
-                "query": vector,
-                "filter": {
-                    "must": [
-                        {
-                            "key": "workspace_ids",
-                            "match": {"any": [str(workspace_id) for workspace_id in workspace_ids]},
-                        },
-                        {
-                            "key": "embedding_profile",
-                            "match": {"value": self._settings.embedding_profile},
-                        },
-                    ]
-                },
-                "limit": limit,
-                "with_payload": list(PAYLOAD_FIELDS),
-                "with_vector": False,
-            },
-        )
-        response.raise_for_status()
-        payload: Any = response.json()
-        matches = payload["result"]["points"]
-        if not isinstance(matches, list):
-            raise ValueError("Qdrant response points must be a list")
-        if len(matches) > limit:
-            raise ValueError("Qdrant returned more points than requested")
-
-        allowed_workspace_ids = {str(workspace_id) for workspace_id in workspace_ids}
-        seen_chunk_ids: set[UUID] = set()
-        relevant_matches: list[dict[str, Any]] = []
-        for match in matches:
-            if not isinstance(match, dict):
-                raise ValueError("Qdrant returned a malformed point")
-            point_id = UUID(str(match["id"]))
-            score = float(match["score"])
-            point_payload = match["payload"]
-            if not math.isfinite(score) or not isinstance(point_payload, dict):
-                raise ValueError("Qdrant returned invalid score or payload metadata")
-            point_workspaces = point_payload.get("workspace_ids")
-            if not isinstance(point_workspaces, list) or not (
-                allowed_workspace_ids & {str(value) for value in point_workspaces}
-            ):
-                raise OutOfScopeSearchResult(
-                    f"Qdrant returned point {point_id} outside the signed workspace scope"
-                )
-            for field in PAYLOAD_FIELDS:
-                if field not in point_payload:
-                    raise ValueError(f"Qdrant point is missing required {field} metadata")
-            chunk_id = UUID(str(point_payload["chunk_id"]))
-            if chunk_id in seen_chunk_ids:
-                raise ValueError("Qdrant returned a duplicate chunk")
-            seen_chunk_ids.add(chunk_id)
-            if score >= self._settings.min_relevance_score:
-                relevant_matches.append(match)
-        return relevant_matches
-
-    async def _load_validated_chunks(
-        self, matches: Sequence[dict[str, Any]], workspace_ids: list[UUID]
+    async def _search_vectors(
+        self,
+        vector: list[float],
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        min_score: float,
+        document_id: UUID | None,
     ) -> list[ContextSource]:
-        """Return the matches PostgreSQL still vouches for, dropping the rest.
+        """The nearest ``limit`` indexed chunks, servable by construction.
 
-        A match with no active, indexed chunk is skipped rather than raised on.
-        The common cause is benign: a superseded run's points linger in the
-        collection until a sweep removes them, and failing the whole search
-        over one of those makes every document in that workspace unsearchable.
-        Dropping it costs nothing, because the chunk it stood for is not part
-        of any run retrieval is allowed to serve.
+        One statement does the work the two-store design split in two. The
+        join is the validation: a row can only come back if its document is
+        live, its run is the document's active one, its embedding is indexed
+        under the current profile with the configured dimensions, its hash
+        matches the chunk's, and a workspace link puts it inside the signed
+        scope. The payload metadata a Qdrant match used to carry and be
+        checked against is simply not needed -- the row is its own payload.
 
-        The checks below are a different matter and still abort. They fire when
-        a point and the row it claims to belong to disagree -- metadata, point
-        id, or the text's own hash -- which is evidence of a substituted or
-        corrupted index, not of ordinary lag between the two stores.
+        The ordering is on raw cosine distance because that is what lets the
+        planner use the HNSW index. The relevance floor is applied after the
+        fetch, so the semantics match what Qdrant's were: the index returns
+        the nearest ``limit`` rows and anything under the floor is dropped
+        here. A match that falls below it costs a slot, exactly as before.
         """
-        if not matches:
-            return []
-        candidate_ids = [UUID(str(match["payload"]["chunk_id"])) for match in matches]
+        rows = await self._fetch_vector_rows(
+            vector, workspace_ids, limit, document_id=document_id
+        )
+        return self._validated_sources(rows, min_score=min_score)
+
+    async def _fetch_vector_rows(
+        self,
+        vector: list[float],
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        document_id: UUID | None,
+    ) -> list[RowMapping]:
         async with self._sessions() as session:
             result = await session.execute(
-                VALIDATE_CHUNKS,
+                SEARCH_VECTORS,
                 {
-                    "chunk_ids": candidate_ids,
+                    "query_vector": vector_literal(vector),
                     "workspace_ids": workspace_ids,
                     "embedding_profile": self._settings.embedding_profile,
                     "embedding_model": self._settings.embedding_model,
                     "embedding_dimensions": self._settings.embedding_dimensions,
+                    "document_id": document_id,
+                    "limit": limit,
                 },
             )
-            rows = {UUID(str(row["chunk_id"])): row for row in result.mappings()}
+            return list(result.mappings())
 
+    def _validated_sources(
+        self, rows: Sequence[RowMapping], *, min_score: float
+    ) -> list[ContextSource]:
         sources: list[ContextSource] = []
-        skipped = 0
-        for match in matches:
-            point_payload = match["payload"]
-            chunk_id = UUID(str(point_payload["chunk_id"]))
-            row = rows.get(chunk_id)
-            if row is None:
-                skipped += 1
+        for row in rows:
+            score = float(row["score"])
+            if not math.isfinite(score) or score < min_score:
                 continue
-            point_id = UUID(str(match["id"]))
-            expected_metadata = {
-                "origin_workspace_id": str(UUID(str(row["origin_workspace_id"]))),
-                "document_id": str(UUID(str(row["document_id"]))),
-                "processing_run_id": str(UUID(str(row["processing_run_id"]))),
-                "chunk_id": str(UUID(str(row["chunk_id"]))),
-                "content_hash": row["content_hash"],
-                "embedding_profile": self._settings.embedding_profile,
-            }
-            if any(point_payload.get(key) != value for key, value in expected_metadata.items()):
-                raise RetrievalUnavailable("Qdrant point metadata does not match PostgreSQL")
-            if UUID(str(row["qdrant_point_id"])) != point_id:
-                raise RetrievalUnavailable(
-                    "Qdrant point ID does not match its embedding ledger row"
-                )
             text_hash = hashlib.sha256(str(row["text"]).encode()).hexdigest()
             if text_hash != row["content_hash"]:
-                raise RetrievalUnavailable("PostgreSQL chunk text does not match its content hash")
+                raise RetrievalUnavailable(
+                    "PostgreSQL chunk text does not match its content hash"
+                )
             sources.append(
                 ContextSource(
                     workspace_id=UUID(str(row["workspace_id"])),
@@ -409,7 +456,7 @@ class ContextRetriever:
                     processing_run_id=UUID(str(row["processing_run_id"])),
                     chunk_id=UUID(str(row["chunk_id"])),
                     ordinal=int(row["ordinal"]),
-                    score=float(match["score"]),
+                    score=score,
                     content_hash=str(row["content_hash"]),
                     filename=row["filename"],
                     section_path=list(row["section_path"] or []),
@@ -420,14 +467,40 @@ class ContextRetriever:
                     token_count=int(row["token_count"]),
                 )
             )
-        if skipped:
-            logger.warning(
-                "Skipped vector matches with no active indexed chunk",
-                extra={
-                    "skipped_matches": skipped,
-                    "returned_sources": len(sources),
-                    "workspace_ids": [str(value) for value in workspace_ids],
-                },
+        return sources
+
+    def _text_sources(self, rows: Sequence[Any]) -> list[ContextSource]:
+        """Text-search rows in the same shape a vector match produces.
+
+        The score is 1.0 rather than a similarity: a substring either is
+        present or is not, and inventing a number between those two would
+        invite a caller to compare it against the relevance floor, which does
+        not apply here.
+        """
+        sources: list[ContextSource] = []
+        for row in rows:
+            text_value = str(row[5])
+            if hashlib.sha256(text_value.encode()).hexdigest() != row[7]:
+                raise RetrievalUnavailable(
+                    "PostgreSQL chunk text does not match its content hash"
+                )
+            sources.append(
+                ContextSource(
+                    workspace_id=UUID(str(row[1])),
+                    document_id=UUID(str(row[2])),
+                    processing_run_id=UUID(str(row[3])),
+                    chunk_id=UUID(str(row[0])),
+                    ordinal=int(row[4]),
+                    score=1.0,
+                    content_hash=str(row[7]),
+                    filename=row[12],
+                    section_path=list(row[8] or []),
+                    section_key=str(row[9] or ""),
+                    is_heading_only=bool(row[10]),
+                    page_numbers=list(row[11] or []),
+                    text=text_value,
+                    token_count=int(row[6]),
+                )
             )
         return sources
 
@@ -435,12 +508,15 @@ class ContextRetriever:
         self,
         sources: Sequence[ContextSource],
         workspace_ids: list[UUID],
+        *,
+        min_score: float,
+        document_id: UUID | None,
     ) -> list[ContextSource]:
         """Fill in the sections the matched chunks belong to, under the same validation.
 
-        Every condition ``VALIDATE_CHUNKS`` enforces is repeated here -- workspace scope,
-        non-deleted document, active processing run, indexed embedding, matching content
-        hash -- because these rows are not backed by a Qdrant match in this search and
+        Every condition the vector search's join enforces is repeated here -- workspace
+        scope, non-deleted document, active processing run, indexed embedding, matching
+        content hash -- because these rows are not backed by a match in this search and
         would otherwise reach the model unvetted.
 
         Each anchor takes at most ``section_expand_chunks``. A large section must not
@@ -523,6 +599,8 @@ class ContextRetriever:
                 DocumentChunk.ordinal,
             )
         )
+        if document_id is not None:
+            statement = statement.where(DocumentChunk.document_id == document_id)
 
         async with self._sessions() as session:
             result = await session.execute(statement)
@@ -558,7 +636,7 @@ class ContextRetriever:
                     processing_run_id=row[3],
                     chunk_id=chunk_id,
                     ordinal=int(row[4]),
-                    score=self._settings.min_relevance_score,
+                    score=min_score,
                     content_hash=str(row[7]),
                     filename=row[11],
                     section_path=list(row[8] or []),
@@ -573,5 +651,4 @@ class ContextRetriever:
 
     async def aclose(self) -> None:
         await self._embedding_client.aclose()
-        await self._qdrant_client.aclose()
         await self._engine.dispose()

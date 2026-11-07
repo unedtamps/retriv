@@ -1,6 +1,11 @@
 import type {
   AdminUserList,
   AdminWorkspaceList,
+  AgentChatEvent,
+  AgentChatHistoryMessage,
+  AgentModelSettings,
+  AgentModelTestResult,
+  AgentModelUpdate,
   ProcessingActivity,
   ApiKeyList,
   CreatedApiKey,
@@ -405,8 +410,11 @@ export const api = {
     return response.blob()
   },
 
-  listProcessingActivity(signal?: AbortSignal): Promise<ProcessingActivity> {
-    return request<ProcessingActivity>('/v1/processing-runs', { signal })
+  listProcessingActivity(
+    options?: { today?: boolean; signal?: AbortSignal },
+  ): Promise<ProcessingActivity> {
+    const path = options?.today === true ? '/v1/processing-runs?today=true' : '/v1/processing-runs'
+    return request<ProcessingActivity>(path, { signal: options?.signal })
   },
 
   searchDocuments(options: {
@@ -520,4 +528,78 @@ export function getErrorMessage(error: unknown): string {
 
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401
+}
+
+export async function streamAgentChat(input: {
+  message: string
+  history: AgentChatHistoryMessage[]
+  sessionId: string
+  signal: AbortSignal
+  onEvent: (event: AgentChatEvent) => void
+}): Promise<void> {
+  const response = await send('/v1/agent/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: input.message,
+      history: input.history,
+      session_id: input.sessionId,
+    }),
+    signal: input.signal,
+  })
+  if (!response.ok) {
+    const isJson = response.headers.get('content-type')?.includes('json') ?? false
+    const payload = isJson ? ((await response.json()) as unknown) : null
+    throw new ApiError(response.status, payload as ProblemDetail | null)
+  }
+  const body = response.body
+  if (body === null) throw new ApiError(response.status, null)
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary !== -1) {
+      const frame = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      for (const line of frame.split('\n')) {
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload) continue
+        try {
+          input.onEvent(JSON.parse(payload) as AgentChatEvent)
+        } catch {
+          // A malformed frame is skipped, not fatal: the next one carries on.
+        }
+      }
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
+}
+
+function adminAgentPath(suffix = ''): string {
+  return `/v1/admin/agent-model${suffix}`
+}
+
+export const agentAdmin = {
+  get(signal?: AbortSignal): Promise<AgentModelSettings> {
+    return request<AgentModelSettings>(adminAgentPath(), { signal })
+  },
+
+  set(update: AgentModelUpdate): Promise<AgentModelSettings> {
+    return request<AgentModelSettings>(adminAgentPath(), {
+      method: 'PUT',
+      ...jsonOptions(update),
+    })
+  },
+
+  test(update: AgentModelUpdate): Promise<AgentModelTestResult> {
+    return request<AgentModelTestResult>(adminAgentPath('/test'), {
+      method: 'POST',
+      ...jsonOptions(update),
+    })
+  },
 }

@@ -47,7 +47,7 @@ object storage and model endpoints are external services.*
 
 The API answers requests. The worker does the expensive, untrusted part: native
 markdown extraction (PyMuPDF, python-docx and a RapidOCR ONNX engine) in a
-sandboxed subprocess, chunking, embeddings, and Qdrant writes. Replicas claim
+sandboxed subprocess, chunking, and embedding writes. Replicas claim
 work through a lease on the run row, so `--scale worker=N` is how you add
 capacity; there is no direct HTTP call between the two processes.
 
@@ -56,10 +56,9 @@ capacity; there is no direct HTTP call between the two processes.
 | Dashboard | Workspace catalogue, uploads, members, inline PDF and Word preview. |
 | MCP client | Claude Code, Codex or a custom agent using read-only tools. |
 | `app/` | Auth, document intake, scoped retrieval, and the MCP server on `/mcp`. |
-| PostgreSQL | Canonical documents, workspace links, runs, chunks, CSV rows, refresh tokens. |
-| Qdrant | Candidate vectors filtered by the `workspace_ids` payload. |
+| PostgreSQL | Canonical documents, workspace links, runs, chunks, CSV rows, embedding vectors, refresh tokens. |
 | S3 / R2 | Two buckets: `raw-documents` (content-addressed uploads) and `context-documents` (per-run artifacts and image previews). |
-| `worker/` | Sandboxed native extraction, chunking, embeddings and payload sync. |
+| `worker/` | Sandboxed native extraction, chunking and embedding writes. |
 | ClamAV | Scans the staged bytes before anything is stored. |
 | Model endpoints | LM Studio for embeddings (local); an OpenAI-compatible VLM for picture descriptions. |
 
@@ -131,18 +130,28 @@ that held the picture.
 
 ### Retrieval
 
-- `search_context` embeds the question, searches Qdrant inside the caller's
-  workspace scope, then re-validates every returned point against PostgreSQL.
+- `search_context` embeds the question and runs one scoped SQL search over the
+  pgvector index inside the caller's workspace scope, optionally narrowed to a
+  single document.
+- `search_text` matches literal words inside the same scope, for identifiers,
+  article numbers and names that an embedding resolves only approximately.
 - `read_document` reads chunks by `ordinal`, which answers “what comes after
   this” where a vector search cannot.
+- `get_document_outline` lists a document's sections with the ordinal and page
+  each starts at, so a long document is entered at the right place.
+- `list_workspaces` names the workspaces the credential can read, with roles
+  and document counts.
+- `describe_document` reports what extraction produced (pages, chunks, images,
+  rows) and the pipeline's last error, separating “the document does not say”
+  from “the document was never extracted”.
 - `query_rows` runs model-written SQL under a read-only role and PostgreSQL
   row-level security.
 - `download_document` returns a short-lived signed object-store link and a
   permission-checked API URL; the bytes never pass through the model context.
 
-The Qdrant payload carries a `workspace_ids` array. A link change queues a small
-worker job that updates that array for every chunk of the document in one
-Qdrant call; nothing is re-chunked or re-embedded.
+The search reads workspace scope from the `document_workspaces` table at query
+time, so a link change needs no vector work; the small job the change queues
+just acknowledges it.
 
 ## Document lifecycle at a glance
 
@@ -227,8 +236,8 @@ MinIO service runs locally.
 - API keys are read-only and reach only `/mcp` and the document download route.
 - Uploaded files are scanned by ClamAV before storage. Encrypted PDFs and
   macro-enabled Office files are rejected.
-- MCP search results are validated against PostgreSQL; Qdrant is a candidate
-  index, not an authority.
+- Vector search results are validated rows of PostgreSQL itself; the vector
+  index is an ordering over the same rows the ledger vouches for.
 - PDF/DOCX extraction runs in a sandboxed subprocess with memory, process,
   file-size and time limits.
 
@@ -242,7 +251,7 @@ MinIO service runs locally.
 | `web/` | the dashboard |
 | `tests/` | unit and PostgreSQL integration tests |
 | `docker/` | one-shot Postgres init scripts |
-| `compose.yaml` | local PostgreSQL, Qdrant, ClamAV and worker |
+| `compose.yaml` | local PostgreSQL (pgvector), ClamAV and worker |
 
 Detailed app documentation: [`app/README.md`](app/README.md).
 
@@ -251,10 +260,10 @@ Detailed app documentation: [`app/README.md`](app/README.md).
 - Apply schema changes with `alembic upgrade head` (or `make migrate`).
 - The worker image contains a copy of `app/`; rebuild it after changing any
   shared code with `make worker`.
-- The multi-workspace change uses a new Qdrant payload shape (`workspace_ids`).
-  If upgrading an existing deployment, drop or reindex the Qdrant collection.
-- Health: `GET /health/live` is liveness; `GET /health/ready` checks PostgreSQL,
-  object storage, ClamAV and Qdrant.
+- Vectors live in PostgreSQL (pgvector); the whole schema arrives as a single
+  baseline migration.
+- Health: `GET /health/live` is liveness; `GET /health/ready` checks PostgreSQL
+  (the pgvector extension included), object storage and ClamAV.
 - Tracing: with `RETRIV_TRACING_ENABLED=true` both processes export OTLP spans
   to the Jaeger container (`docker compose up -d jaeger`); the UI is at
   `http://localhost:16686`. One trace per request on the API, one per claimed

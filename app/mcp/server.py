@@ -1,9 +1,10 @@
-"""The MCP server: three read tools and a download link over a workspace.
+"""The MCP server: read tools and a download link over a workspace.
 
-Everything a tool does, an HTTP route already does behind a JWT. The tools are
-not a second implementation of those routes: they share the retrieval, the CSV
-reader, and the permission checks, and differ only in how the caller is
-authenticated and how the answer is shaped.
+Everything a tool does, an HTTP route already does behind a JWT. The tools
+are not a second implementation of those routes: they share the retrieval,
+the CSV reader, and the permission checks -- now literally, through
+``app.agents.toolkit`` -- and differ only in how the caller is authenticated
+and how the answer is shaped.
 
 There is no write tool here. Upload, status and deletion live in the HTTP API
 and the dashboard, because they are operations a person decides to take, not
@@ -12,56 +13,36 @@ file gets its address from ``download_document`` and fetches it itself.
 
 Two rules shape every tool here:
 
-* The caller is re-derived from the request headers on every call. Tool
-  handlers run in the session manager's task group rather than in the HTTP
-  request that carried them, so an identity set by the endpoint middleware
-  cannot reach them. Re-authenticating is also what makes revoking a key bite
-  on the next call instead of at the end of a session.
+* The caller is re-derived from the request headers on every call, and the
+  toolkit is built fresh around that principal. Tool handlers run in the
+  session manager's task group rather than in the HTTP request that carried
+  them, so an identity set by the endpoint middleware cannot reach them.
+  Re-authenticating is also what makes revoking a key bite on the next call
+  instead of at the end of a session.
 * Failures the caller could act on are raised as ``ToolError`` so they reach
   the model. Anything else is left alone: the SDK turns it into a crash, which
   deliberately withholds the text of an unexpected failure.
 """
 
 import base64
-import tempfile
 from collections.abc import Awaitable, Callable, Mapping
-from functools import partial, wraps
-from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from functools import wraps
+from typing import Annotated
 from uuid import UUID
 
-from anyio import to_thread
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ImageContent, TextContent
 from pydantic import Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
 
+from app.agents.toolkit import AgentToolKit, ToolRejection
 from app.core.config import Settings
 from app.core.errors import AppError
-from app.db.models import Document, DocumentImage, DocumentWorkspace
-from app.infrastructure.storage import ObjectNotFoundError, ObjectTooLargeError, StorageError
-from app.mcp.auth import McpPrincipal, principal_from_headers, require_workspace
-from app.mcp.documents import find_documents as search_documents
-from app.mcp.documents import format_documents
+from app.mcp.auth import McpPrincipal, principal_from_headers
 from app.mcp.runtime import McpNotReadyError, McpRuntime, McpRuntimeBox
-from app.retrieval.catalogue import format_catalogue, format_values, mentions_document_id
-from app.retrieval.context import OutOfScopeSearchResult, RetrievalUnavailable
-from app.retrieval.format import (
-    format_context,
-    navigation_footer,
-    navigation_hint,
-    source_indices,
-)
-from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
-from app.retrieval.schemas import ContextSource
-from app.retrieval.sql import Catalogue, RowQueryError
-
-if TYPE_CHECKING:
-    from app.infrastructure.storage import ArtifactStorage
 
 
 def _instructions(*, row_queries: bool) -> str:
@@ -79,13 +60,26 @@ def _instructions(*, row_queries: bool) -> str:
         "Call find_documents when a question names a file and you need its "
         "document_id and whether it is ready to search; omit the name to see "
         "everything you may read. Then use search_context for narrative "
-        "documents. It finds passages by meaning and returns each source's "
+        "documents. Pass the document_id find_documents returned to keep the "
+        "search inside that one file; omit it to search every document in "
+        "scope. It finds passages by meaning and returns each source's "
         "ordinal. When a source is marked kind=heading it is a title rather "
         "than text, and the wording it points at is further into the document: "
         "call read_document with that document_id and start_ordinal to read on "
         "from there. Use read_document from ordinal 0 to read a document "
         "straight through. For CSV files, call list_queryable_files as well: "
         "it gives the column names a query has to name."
+    )
+    extra = (
+        "\n\nlist_workspaces names the workspaces this key can read. "
+        "search_text finds literal words -- identifiers, article numbers, "
+        "exact names -- where search_context finds meaning, and the two are "
+        "complements rather than substitutes. get_document_outline lists a "
+        "document's sections with the ordinal each starts at, so a long "
+        "document is entered at the right place instead of read from the top. "
+        "describe_document reports what was actually extracted -- pages, "
+        "chunks, images, rows -- which is how a document that is silent is "
+        "told apart from one that was never extracted."
     )
     tail = (
         "\n\nWhen you need a document's original file rather than a passage "
@@ -99,12 +93,12 @@ def _instructions(*, row_queries: bool) -> str:
         "dashboard."
     )
     if not row_queries:
-        return lead + tail
+        return lead + extra + tail
     return (
         lead + " Pass that document_id to query_rows, run one query per file:"
         " the cells are text inside the JSONB column `data`, so cast before"
         " comparing."
-    ) + tail
+    ) + extra + tail
 
 
 def _guarded[**P, R](fn: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
@@ -120,106 +114,14 @@ def _guarded[**P, R](fn: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]
             return await fn(*args, **kwargs)
         except ToolError:
             raise
+        except ToolRejection as exc:
+            raise ToolError(str(exc)) from exc
         except AppError as exc:
             raise ToolError(f"{exc.title}: {exc.detail}") from exc
         except McpNotReadyError as exc:
             raise ToolError(str(exc)) from exc
-        except RowQueryError as exc:
-            raise ToolError(f"The query was rejected: {exc}") from exc
-        except (DocumentNotFound, DocumentNotNavigable) as exc:
-            raise ToolError(str(exc)) from exc
-        except (OutOfScopeSearchResult, RetrievalUnavailable) as exc:
-            raise ToolError(str(exc)) from exc
 
     return wrapped
-
-
-def _scope(principal: McpPrincipal, workspace_id: UUID | None) -> list[UUID]:
-    """The workspaces one read may span.
-
-    Without an argument it is everything the key can see; with one it is that
-    workspace alone, and only if the key already saw it. Naming a workspace
-    cannot grant access to it, so the failure message is the same for
-    "not yours" and "does not exist".
-    """
-    if workspace_id is None:
-        return principal.workspace_ids
-    if workspace_id not in principal.workspace_ids:
-        raise ToolError("That workspace is not in scope for this API key.")
-    return [workspace_id]
-
-
-async def _scoped_document(
-    session: AsyncSession, workspace_id: UUID, document_id: UUID
-) -> Document:
-    """The document a workspace-scoped tool may touch, or the error to raise.
-
-    The document must be linked into the named workspace through
-    ``document_workspaces``, and neither link nor document may be under
-    deletion. The failure is the same for "not yours" and "does not exist".
-    """
-    row = (
-        await session.execute(
-            select(Document, DocumentWorkspace)
-            .join(
-                DocumentWorkspace,
-                DocumentWorkspace.document_id == Document.id,
-            )
-            .where(
-                Document.id == document_id,
-                DocumentWorkspace.workspace_id == workspace_id,
-            )
-        )
-    ).one_or_none()
-    if row is None:
-        raise ToolError("No such document in that workspace.")
-    document, document_link = row
-    if document.deleted_at is not None or document_link.deleted_at is not None:
-        raise ToolError("That document is being deleted and can no longer be read.")
-    return document
-
-
-def _artifact_bytes(
-    storage: "ArtifactStorage", bucket: str, key: str, max_bytes: int
-) -> bytes:
-    """One artifact object fully in memory, bounded by the picture cap."""
-    with tempfile.TemporaryDirectory(prefix="mcp-image-") as folder:
-        path = Path(folder) / "artifact"
-        storage.download_file(path, bucket=bucket, key=key, max_bytes=max_bytes)
-        return path.read_bytes()
-
-
-async def _catalogue_for(
-    runtime: McpRuntime,
-    workspace_ids: tuple[UUID, ...],
-    *,
-    offset: int = 0,
-    limit: int = 100,
-    pattern: str | None = None,
-) -> Catalogue:
-    """The queryable CSV files, without caching across tool calls.
-
-    The agent cached these per answer because a turn made many calls; each
-    MCP call stands alone, so the honest list is the current one.
-    """
-    if not workspace_ids:
-        return Catalogue(entries=[], hidden=0)
-    if runtime.row_query is None:
-        return await runtime.catalogue_reader.queryable_files(workspace_ids=workspace_ids)
-    return await runtime.row_query.queryable_files(
-        workspace_ids=workspace_ids, offset=offset, limit=limit, pattern=pattern
-    )
-
-
-async def _rejection_prefix(runtime: McpRuntime, scope: tuple[UUID, ...]) -> str:
-    """The catalogue, fetched only when a rejection needs to hand it back.
-
-    Successful queries used to carry it too, which repeated up to 100 files
-    with their columns in every answer; the model fetches it once with
-    list_queryable_files instead.
-    """
-    catalogue = await _catalogue_for(runtime, scope)
-    return format_catalogue(catalogue, queryable=True)
 
 
 async def _principal(
@@ -228,6 +130,10 @@ async def _principal(
 ) -> McpPrincipal:
     async with session_factory() as session:
         return await principal_from_headers(headers, session)
+
+
+async def _kit(runtime: McpRuntime, headers: Mapping[str, str] | None) -> AgentToolKit:
+    return AgentToolKit(runtime, await _principal(runtime.session_factory, headers))
 
 
 def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer, Starlette]:
@@ -252,6 +158,16 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         query: Annotated[str, Field(min_length=1, max_length=2000)],
         limit: Annotated[int, Field(ge=1, le=20)] = settings.max_context_chunks,
         workspace_id: UUID | None = None,
+        document_id: UUID | None = None,
+        min_score: Annotated[
+            float | None,
+            Field(
+                ge=-1.0,
+                le=1.0,
+                description="Minimum cosine similarity for a match to be kept. "
+                "Omit it to use the deployment's configured floor.",
+            ),
+        ] = None,
     ) -> str:
         """Search the documents for passages relevant to a query.
 
@@ -263,21 +179,47 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         at is elsewhere in the document; call read_document with that source's
         ordinal to read on from there. Call list_queryable_files instead when
         the question is about CSV columns or rows.
+
+        `document_id`, from find_documents, restricts the search to that one
+        document; omit it to search every document in scope. `min_score`
+        raises or lowers the relevance floor for this search only.
         """
-        runtime = box.runtime
-        principal = await _principal(runtime.session_factory, ctx.headers)
-        scope = _scope(principal, workspace_id)
-        if not scope:
-            return "No searchable workspace is in scope for this API key."
-        sources = await runtime.retriever.retrieve(
-            query, scope, limit, budget=settings.max_context_sources
+        return await (await _kit(box.runtime, ctx.headers)).search_context(
+            query=query,
+            limit=limit,
+            workspace_id=workspace_id,
+            document_id=document_id,
+            min_score=min_score,
         )
-        if not sources:
-            return "No relevant sources were found."
-        indices = source_indices(_by_chunk(sources))
-        body = format_context(sources, indices)
-        hint = navigation_hint(sources, indices)
-        return f"{body}\n\n{hint}" if hint else body
+
+    @mcp.tool()
+    @_guarded
+    async def search_text(
+        ctx: Context,
+        query: Annotated[str, Field(min_length=2, max_length=200)],
+        limit: Annotated[int, Field(ge=1, le=20)] = settings.max_context_chunks,
+        workspace_id: UUID | None = None,
+        document_id: UUID | None = None,
+    ) -> str:
+        """Find chunks containing an exact word or phrase.
+
+        search_context answers "what is this about" and is the right tool for a
+        concept. It is the wrong one for a string: an invoice number, an
+        article reference, a name, a code. An embedding represents those
+        approximately, so a query for `Pasal 7` can return Pasal 6 and Pasal 8
+        while the passage that says Pasal 7 is not in the result set at all.
+        This matches the text literally, case-insensitively.
+
+        Every word is matched as written, so `net revenue` finds only that
+        phrase and not either word alone. Pass `document_id` to stay inside one
+        file; omit it to search every document in scope.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).search_text(
+            query=query,
+            limit=limit,
+            workspace_id=workspace_id,
+            document_id=document_id,
+        )
 
     @mcp.tool()
     @_guarded
@@ -303,20 +245,61 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         CSV files are stored as rows, not text, and are not readable here; use
         list_queryable_files and query_rows for those.
         """
-        runtime = box.runtime
-        principal = await _principal(runtime.session_factory, ctx.headers)
-        scope = _scope(principal, workspace_id)
-        window = await runtime.navigator.read_window(
+        return await (await _kit(box.runtime, ctx.headers)).read_document(
             document_id=document_id,
-            workspace_ids=scope,
+            workspace_id=workspace_id,
             start_ordinal=start_ordinal,
             limit=limit,
         )
-        if not window.sources:
-            return navigation_footer(window)
-        indices = source_indices(_by_chunk(window.sources))
-        body = format_context(window.sources, indices)
-        return f"{body}\n\n{navigation_footer(window)}"
+
+    @mcp.tool()
+    @_guarded
+    async def get_document_outline(
+        ctx: Context,
+        document_id: UUID,
+        workspace_id: UUID,
+        limit: Annotated[int, Field(ge=1, le=500)] = 200,
+    ) -> str:
+        """List a document's sections, with where each one starts.
+
+        Reading a long document from ordinal 0 to find "Bab 3" spends the
+        context budget on chapters nobody asked about. This returns the
+        document's headings in reading order, each with the `ordinal` and page
+        it begins at, so the next call is `read_document` at that ordinal.
+
+        The reply also states the document's chunk and page counts. A document
+        with no headings -- a scan without structure, or a plain text file --
+        says so and points at read_document instead of returning an empty list
+        that reads like a failure.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).get_document_outline(
+            document_id=document_id,
+            workspace_id=workspace_id,
+            limit=limit,
+        )
+
+    @mcp.tool()
+    @_guarded
+    async def describe_document(
+        ctx: Context,
+        document_id: UUID,
+        workspace_id: UUID,
+    ) -> str:
+        """Report what was extracted from a document, and whether it worked.
+
+        `find_documents` says a document is `ready`; that only means the
+        pipeline finished. This says what it produced: pages, chunks, how many
+        of them were embedded, sections, images and CSV rows. A scanned PDF
+        without a text layer is `ready` with zero chunks, and searching it will
+        never find anything -- the difference between "the document does not
+        say" and "the document was never readable" is exactly this report.
+
+        `last_error` carries the pipeline's own message when a run failed.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).describe_document(
+            document_id=document_id,
+            workspace_id=workspace_id,
+        )
 
     @mcp.tool()
     @_guarded
@@ -332,30 +315,9 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         many. `pattern` matches part of the filename and is usually faster
         than paging through offsets.
         """
-        runtime = box.runtime
-        principal = await _principal(runtime.session_factory, ctx.headers)
-        scope = tuple(principal.workspace_ids)
-        if not scope:
-            return format_catalogue(
-                Catalogue(entries=[], hidden=0),
-                header="CSV files:",
-                queryable=runtime.row_query is not None,
-            )
-        catalogue = await _catalogue_for(
-            runtime, scope, offset=offset, limit=limit, pattern=pattern
+        return await (await _kit(box.runtime, ctx.headers)).list_queryable_files(
+            offset=offset, limit=limit, pattern=pattern
         )
-        body = format_catalogue(
-            catalogue, header="CSV files:", queryable=runtime.row_query is not None
-        )
-        if offset:
-            body = f"{body}\n(showing from offset {offset})"
-        if runtime.row_query is None and (offset or pattern):
-            body += (
-                "\nPaging and filename search need the row-query reader, which "
-                "this deployment does not have; the list above is the whole "
-                "catalogue.\n"
-            )
-        return body
 
     @mcp.tool()
     @_guarded
@@ -388,14 +350,26 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         workspace_id, size and status to pick, and never assume the first
         line is the one wanted.
         """
-        runtime = box.runtime
-        principal = await _principal(runtime.session_factory, ctx.headers)
-        scope = _scope(principal, workspace_id)
-        if not scope:
-            return "No searchable workspace is in scope for this API key."
-        async with runtime.session_factory() as session:
-            summaries, total = await search_documents(session, scope, pattern=pattern, limit=limit)
-        return format_documents(summaries, total=total, pattern=pattern)
+        return await (await _kit(box.runtime, ctx.headers)).find_documents(
+            pattern=pattern, workspace_id=workspace_id, limit=limit
+        )
+
+    @mcp.tool()
+    @_guarded
+    async def list_workspaces(ctx: Context) -> str:
+        """List the workspaces this API key can read.
+
+        Every document line carries a workspace_id, but nothing so far turns
+        one into a name, so "which workspace holds the procurement files" is a
+        question a model can restate and not answer. This returns each
+        workspace's id, slug, name, the caller's role in it, and how many live
+        documents it holds.
+
+        The list is the key's own scope, resolved from the owning user's
+        memberships: a workspace the user cannot search does not appear here,
+        and one they join appears on the next call.
+        """
+        return await (await _kit(box.runtime, ctx.headers)).list_workspaces()
 
     if settings.sql_database_url:
 
@@ -421,52 +395,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             aggregate such as `count(*)` returns no rows and is reported as a
             value.
             """
-            runtime = box.runtime
-            rows = runtime.row_query
-            if rows is None:
-                raise ToolError("Row queries are not enabled on this deployment.")
-            principal = await _principal(runtime.session_factory, ctx.headers)
-            scope = tuple(principal.workspace_ids)
-            if not scope:
-                return format_catalogue(Catalogue(entries=[], hidden=0))
-            if not mentions_document_id(sql):
-                prefix = await _rejection_prefix(runtime, scope)
-                raise ToolError(
-                    f"{prefix}The query was rejected: it does not name a "
-                    "document_id, so it could read any file at once. Add "
-                    "AND document_id = '<uuid from the catalogue>' and run it "
-                    "once per file."
-                )
-            try:
-                outcome = await rows.run(sql, workspace_ids=scope)
-            except RowQueryError as exc:
-                prefix = await _rejection_prefix(runtime, scope)
-                raise ToolError(f"{prefix}The query was rejected: {exc}") from exc
-
-            computed = format_values(outcome.values)
-            if outcome.sources:
-                filenames = await runtime.catalogue_reader.filenames(
-                    workspace_ids=scope,
-                    document_ids={result.document_id for result in outcome.sources},
-                )
-                sources = [
-                    result.as_source(filenames.get(result.document_id))
-                    for result in outcome.sources
-                ]
-                body = format_context(sources, source_indices(_by_chunk(sources)))
-                return f"{body}{computed}"
-            if computed:
-                return (
-                    f"{computed}\n"
-                    "These values are computed from the rows, so there is no "
-                    "single row to cite. Give the number and name the file it "
-                    "came from.\n"
-                )
-            return (
-                "No rows matched. Check the document_id and column names "
-                "against the catalogue from list_queryable_files; a "
-                "misspelled column returns nothing."
-            )
+            return await (await _kit(box.runtime, ctx.headers)).query_rows(sql=sql)
 
     @mcp.tool()
     @_guarded
@@ -492,60 +421,8 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         Requires the download permission on the workspace, so a viewer is
         refused before either address is minted.
         """
-        runtime = box.runtime
-        async with runtime.session_factory() as session:
-            principal = await principal_from_headers(ctx.headers, session)
-            await require_workspace(
-                session,
-                user=principal.user,
-                workspace_id=workspace_id,
-                permission="download",
-            )
-            row = (
-                await session.execute(
-                    select(Document, DocumentWorkspace)
-                    .join(
-                        DocumentWorkspace,
-                        DocumentWorkspace.document_id == Document.id,
-                    )
-                    .where(
-                        Document.id == document_id,
-                        DocumentWorkspace.workspace_id == workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise ToolError("No such document in that workspace.")
-            document, document_link = row
-            if document.deleted_at is not None or document_link.deleted_at is not None:
-                raise ToolError("That document is being deleted and can no longer be downloaded.")
-
-        ttl = runtime.settings.mcp_download_link_ttl_seconds
-        try:
-            link = await to_thread.run_sync(
-                partial(
-                    runtime.storage.presign_get,
-                    bucket=document.bucket,
-                    key=document.object_key,
-                    expires_in=ttl,
-                )
-            )
-        except StorageError as exc:
-            raise ToolError(
-                "The document could not be signed for download. Its url still "
-                "works: "
-                f"/v1/workspaces/{workspace_id}/documents/{document_id}/download"
-            ) from exc
-
-        return "\n".join(
-            (
-                f"link={link}",
-                f"link_expires_in_seconds={ttl}",
-                f"url=/v1/workspaces/{workspace_id}/documents/{document_id}/download",
-                f"filename={document_link.filename}",
-                f"media_type={document.detected_media_type}",
-                f"size_bytes={document.size_bytes}",
-            )
+        return await (await _kit(box.runtime, ctx.headers)).download_document(
+            workspace_id=workspace_id, document_id=document_id
         )
 
     @mcp.tool()
@@ -559,40 +436,9 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         has no pictures, and neither does a document that was processed
         without the vision stage.
         """
-        runtime = box.runtime
-        async with runtime.session_factory() as session:
-            principal = await principal_from_headers(ctx.headers, session)
-            await require_workspace(
-                session,
-                user=principal.user,
-                workspace_id=workspace_id,
-                permission="read",
-            )
-            document = await _scoped_document(session, workspace_id, document_id)
-            images = (
-                (
-                    await session.execute(
-                        select(DocumentImage)
-                        .where(DocumentImage.document_id == document.id)
-                        .order_by(DocumentImage.page_number, DocumentImage.ref)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-        if not images:
-            return "This document has no extracted pictures."
-        lines = [f"{len(images)} picture(s):"]
-        for image in images:
-            state = "described" if image.described else "undescribed"
-            line = (
-                f"{image.ref} page={image.page_number} {image.media_type} "
-                f"{image.size_bytes}B {state}"
-            )
-            if image.caption:
-                line += f" caption={image.caption}"
-            lines.append(line)
-        return "\n".join(lines)
+        return await (await _kit(box.runtime, ctx.headers)).list_images(
+            workspace_id=workspace_id, document_id=document_id
+        )
 
     @mcp.tool()
     @_guarded
@@ -617,69 +463,16 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         send. One picture per call, so look at the ones the question
         actually turns on.
         """
-        runtime = box.runtime
-        async with runtime.session_factory() as session:
-            principal = await principal_from_headers(ctx.headers, session)
-            await require_workspace(
-                session,
-                user=principal.user,
-                workspace_id=workspace_id,
-                permission="read",
-            )
-            document = await _scoped_document(session, workspace_id, document_id)
-            image = await session.scalar(
-                select(DocumentImage).where(
-                    DocumentImage.document_id == document.id,
-                    DocumentImage.ref == ref,
-                )
-            )
-            if image is None:
-                raise ToolError(
-                    "No such picture in that document; list_images names the ones it has."
-                )
-
-        key = image.object_key
-        try:
-            data = await to_thread.run_sync(
-                partial(
-                    _artifact_bytes,
-                    runtime.artifact_storage,
-                    image.bucket,
-                    key,
-                    runtime.settings.max_image_bytes,
-                )
-            )
-        except ObjectNotFoundError as exc:
-            raise ToolError(
-                "That picture's bytes are missing from storage; the document may "
-                "need re-ingesting."
-            ) from exc
-        except ObjectTooLargeError as exc:
-            raise ToolError(
-                "That picture exceeds the serving size limit and cannot be sent."
-            ) from exc
-        except StorageError as exc:
-            raise ToolError("The picture could not be read from storage.") from exc
-
-        media_type = image.media_type
-        parts = [
-            f"ref={image.ref}",
-            f"page={image.page_number}",
-            f"media_type={media_type}",
-            f"size_bytes={len(data)}",
-            f"described={str(image.described).lower()}",
-        ]
-        if image.caption:
-            parts.append(f"caption={image.caption}")
-        if image.description:
-            parts.append(f"description={image.description}")
+        payload = await (await _kit(box.runtime, ctx.headers)).get_image(
+            workspace_id=workspace_id, document_id=document_id, ref=ref
+        )
         return [
             ImageContent(
                 type="image",
-                data=base64.b64encode(data).decode("ascii"),
-                mime_type=media_type,
+                data=base64.b64encode(payload.data).decode("ascii"),
+                mime_type=payload.media_type,
             ),
-            TextContent(type="text", text="\n".join(parts)),
+            TextContent(type="text", text=payload.text),
         ]
 
     app = mcp.streamable_http_app(
@@ -688,7 +481,3 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         max_request_body_size=1024 * 1024,
     )
     return mcp, app
-
-
-def _by_chunk(sources: list[ContextSource]) -> dict[UUID, ContextSource]:
-    return {source.chunk_id: source for source in sources}

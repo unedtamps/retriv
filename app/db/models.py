@@ -330,27 +330,18 @@ class DocumentImage(Base):
     __tablename__ = "document_images"
     __table_args__ = (
         UniqueConstraint("document_id", "ref", name="uq_document_images_document_ref"),
-        Index(
-            "ix_document_images_active_lookup",
-            "origin_workspace_id",
-            "document_id",
-        ),
+        Index("ix_document_images_document", "document_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    origin_workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     document_id: Mapped[UUID] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
-    )
-    processing_run_id: Mapped[UUID] = mapped_column(
-        ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False
     )
     ref: Mapped[str] = mapped_column(String(100), nullable=False)
     bucket: Mapped[str] = mapped_column(String(255), nullable=False)
     object_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     media_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     describe_hint: Mapped[str] = mapped_column(String(20), nullable=False, default="picture")
     caption: Mapped[str] = mapped_column(String(500), nullable=False, default="")
@@ -371,7 +362,7 @@ class DocumentRow(Base):
     have no foreign key into ``document_chunks``. A tabular document is all
     numeric or identifier columns, so embedding each row buys noise at
     16KB of vector storage per row and finds nothing a filter would not;
-    the rows are the queryable form and Qdrant stays empty for these
+    the rows are the queryable form and no vectors are stored for these
     documents by design.
 
     The id is derived from ``(run_id, sheet, row_number)`` -- a CSV keeps
@@ -414,20 +405,22 @@ class DocumentRow(Base):
 
 
 class ChunkEmbedding(Base):
+    """The embedding ledger, and the vector store itself.
+
+    The ``embedding`` column is deliberately not mapped here: it is a
+    pgvector ``vector(2000)`` that only exists in Postgres, and this
+    metadata drives the SQLite test schema too. Every vector read and
+    write goes through raw SQL that CASTs a text literal -- the worker's
+    batch update in processing, and the search in retrieval.context.
+    """
+
     __tablename__ = "chunk_embeddings"
     __table_args__ = (
-        UniqueConstraint("qdrant_point_id", name="uq_chunk_embeddings_qdrant_point_id"),
         Index(
             "ix_chunk_embeddings_dispatch",
             "processing_run_id",
             "embedding_profile",
             "status",
-        ),
-        Index(
-            "ix_chunk_embeddings_document",
-            "origin_workspace_id",
-            "document_id",
-            "embedding_profile",
         ),
     )
 
@@ -441,7 +434,6 @@ class ChunkEmbedding(Base):
     model: Mapped[str] = mapped_column(String(255), nullable=False)
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    qdrant_point_id: Mapped[UUID] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), default=EMBEDDING_PENDING, server_default=EMBEDDING_PENDING
     )
@@ -518,3 +510,38 @@ class RefreshToken(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentModelSetting(Base):
+    """The one chat model the in-server agent harness uses, chosen by an admin.
+
+    A singleton: the primary key is pinned to 1, so a second row cannot
+    appear and every reader selects the same row. The API key is stored as
+    it was typed -- the database is the only copy -- and is never served
+    back; responses carry its last four characters so an admin can tell
+    which key is configured without seeing it.
+    """
+
+    __tablename__ = "agent_model_settings"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="agent_model_settings_singleton"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    provider: Mapped[str] = mapped_column(
+        String(32), default="custom", server_default="custom", nullable=False
+    )
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    api_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_test_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

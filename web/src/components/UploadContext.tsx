@@ -24,7 +24,7 @@ export function UploadContext({
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="border-b border-line pb-6">
         <p className="eyebrow">Document intake</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-ink">Upload context</h1>
+        <h1 className="mt-2 font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">Upload context</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
           Add a document to a workspace. Once accepted, its content is extracted and indexed in
           the background.

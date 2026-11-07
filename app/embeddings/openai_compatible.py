@@ -6,6 +6,31 @@ import httpx
 from app.embeddings.base import EmbeddingProviderError
 
 
+def truncate_normalize(vector: list[float], dimensions: int) -> list[float]:
+    """Cut an embedding down to ``dimensions`` and make it unit length again.
+
+    Matryoshka-trained models front-load their information, so keeping the
+    first components and re-normalizing is the supported way to shrink a
+    vector. Cosine similarity is scale-invariant, so the renormalization
+    changes no ranking -- it just keeps the stored vectors unit-norm.
+    """
+    if len(vector) < dimensions:
+        raise EmbeddingProviderError(
+            f"Embedding response has {len(vector)} dimensions, "
+            f"fewer than the configured {dimensions}",
+            retryable=False,
+        )
+    if len(vector) == dimensions:
+        return vector
+    truncated = vector[:dimensions]
+    norm = math.sqrt(math.fsum(value * value for value in truncated))
+    if norm == 0:
+        raise EmbeddingProviderError(
+            "Embedding response truncated to a zero vector", retryable=False
+        )
+    return [value / norm for value in truncated]
+
+
 class OpenAICompatibleEmbeddingProvider:
     def __init__(
         self,
@@ -76,9 +101,10 @@ class OpenAICompatibleEmbeddingProvider:
                 raise EmbeddingProviderError(
                     "Embedding response contains a duplicate index", retryable=False
                 )
-            if not isinstance(raw_vector, list) or len(raw_vector) != self._dimensions:
+            if not isinstance(raw_vector, list) or len(raw_vector) < self._dimensions:
                 raise EmbeddingProviderError(
-                    f"Embedding response must contain {self._dimensions} dimensions",
+                    f"Embedding response must contain at least "
+                    f"{self._dimensions} dimensions",
                     retryable=False,
                 )
             vector: list[float] = []
@@ -101,7 +127,11 @@ class OpenAICompatibleEmbeddingProvider:
             raise EmbeddingProviderError(
                 "Embedding response count does not match the request", retryable=False
             )
-        return [vector for vector in ordered if vector is not None]
+        return [
+            truncate_normalize(vector, self._dimensions)
+            for vector in ordered
+            if vector is not None
+        ]
 
     async def aclose(self) -> None:
         await self._client.aclose()

@@ -30,7 +30,7 @@ export function AdminWorkspacesPage({ onUnauthorized, onNotice }: AdminWorkspace
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <header className="border-b border-line pb-5">
         <p className="eyebrow">Platform administration</p>
-        <h1 className="mt-1.5 font-display text-2xl font-medium text-ink">Workspaces</h1>
+        <h1 className="mt-1.5 font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">Workspaces</h1>
         <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-muted">
           Every workspace on the platform. Open a member register to see who holds access, or
           grant a new membership.

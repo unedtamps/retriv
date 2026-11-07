@@ -7,7 +7,7 @@ gap: it sends questions through the same ``ContextRetriever`` the MCP
 ``search_context`` tool uses, and reports recall, MRR, and how much section
 completion contributed.
 
-Two steps, both against the live stack (PostgreSQL, Qdrant and the embedding
+Two steps, both against the live stack (PostgreSQL and the embedding
 server must be running; LM Studio serves the chat model too):
 
     uv run python scripts/eval_retrieval.py generate --chat-model <name> \
@@ -59,11 +59,18 @@ from app.retrieval.context import (  # noqa: E402
 DEFAULT_GOLDEN = Path("evals/retrieval_golden.json")
 
 SAMPLE_CHUNKS = text("""
-    SELECT chunk.id, chunk.workspace_id, chunk.document_id, chunk.text
+    SELECT chunk.id, link.workspace_id, chunk.document_id, chunk.text
     FROM document_chunks AS chunk
     JOIN documents AS document
       ON document.id = chunk.document_id
-     AND document.workspace_id = chunk.workspace_id
+    JOIN LATERAL (
+        SELECT link.workspace_id
+        FROM document_workspaces AS link
+        WHERE link.document_id = document.id
+          AND link.deleted_at IS NULL
+        ORDER BY link.workspace_id
+        LIMIT 1
+    ) AS link ON TRUE
     WHERE document.deleted_at IS NULL
       AND document.active_processing_run_id = chunk.processing_run_id
       AND chunk.token_count >= :min_tokens
@@ -334,7 +341,7 @@ def _report(outcomes: list[QueryOutcome], settings: Settings, args: argparse.Nam
     if errors:
         print(
             f"\n{len(errors)} of {total} queries failed. If every one failed, "
-            "check that LM Studio, Qdrant and PostgreSQL are reachable."
+            "check that LM Studio and PostgreSQL are reachable."
         )
     if args.json_out:
         payload = {

@@ -1,0 +1,4178 @@
+{
+  "generated_at": "2026-11-06T15:27:26.698043+00:00",
+  "model": {
+    "provider": "opencode-go",
+    "model": "deepseek-v4.1-flash",
+    "base_url": "https://opencode.ai/zen/go/v1"
+  },
+  "toolset": "current",
+  "tools": [
+    "list_workspaces",
+    "find_documents",
+    "search_context",
+    "search_text",
+    "read_document",
+    "get_document_outline",
+    "describe_document",
+    "list_images",
+    "get_image",
+    "download_document",
+    "list_queryable_files",
+    "query_rows"
+  ],
+  "repeats": 3,
+  "temperature": 0.0,
+  "summary": {
+    "samples": 183,
+    "errors": 0,
+    "first_call_accuracy": 0.5575757575757576,
+    "coverage": 0.9818181818181818,
+    "clear_n": 165,
+    "ambiguous_accuracy": 0.7777777777777778,
+    "ambiguous_n": 18,
+    "no_call_rate": 0.0,
+    "wrong_tool_rate": 0.4897959183673469,
+    "over_call_rate": 0.05555555555555555,
+    "orientation_rate": 0.2108843537414966,
+    "followup_n": 59,
+    "followup_ok": 57,
+    "followup_accuracy": 0.9661016949152542,
+    "avg_calls": 1.366120218579235,
+    "required_args_rate": 1.0,
+    "avg_latency_ms": 1718.04484093998
+  },
+  "per_tool": {
+    "describe_document": {
+      "n": 12,
+      "first": 3,
+      "first_accuracy": 0.25,
+      "covered": 12,
+      "coverage": 1.0,
+      "avg_calls": 1.5833333333333333,
+      "confused_with": {
+        "find_documents": 3,
+        "list_workspaces": 6
+      }
+    },
+    "download_document": {
+      "n": 9,
+      "first": 2,
+      "first_accuracy": 0.2222222222222222,
+      "covered": 9,
+      "coverage": 1.0,
+      "avg_calls": 1.2222222222222223,
+      "confused_with": {
+        "list_workspaces": 2,
+        "find_documents": 5
+      }
+    },
+    "find_documents": {
+      "n": 15,
+      "first": 11,
+      "first_accuracy": 0.7333333333333333,
+      "covered": 15,
+      "coverage": 1.0,
+      "avg_calls": 1.2666666666666666,
+      "confused_with": {
+        "list_workspaces": 4
+      }
+    },
+    "get_document_outline": {
+      "n": 12,
+      "first": 6,
+      "first_accuracy": 0.5,
+      "covered": 12,
+      "coverage": 1.0,
+      "avg_calls": 1.3333333333333333,
+      "confused_with": {
+        "list_workspaces": 1,
+        "find_documents": 5
+      }
+    },
+    "get_image": {
+      "n": 9,
+      "first": 3,
+      "first_accuracy": 0.3333333333333333,
+      "covered": 7,
+      "coverage": 0.7777777777777778,
+      "avg_calls": 1.1111111111111112,
+      "confused_with": {
+        "find_documents": 4,
+        "list_workspaces": 2
+      }
+    },
+    "list_images": {
+      "n": 9,
+      "first": 3,
+      "first_accuracy": 0.3333333333333333,
+      "covered": 9,
+      "coverage": 1.0,
+      "avg_calls": 1.2222222222222223,
+      "confused_with": {
+        "find_documents": 4,
+        "list_workspaces": 2
+      }
+    },
+    "list_queryable_files": {
+      "n": 9,
+      "first": 9,
+      "first_accuracy": 1.0,
+      "covered": 9,
+      "coverage": 1.0,
+      "avg_calls": 1.0,
+      "confused_with": {}
+    },
+    "list_workspaces": {
+      "n": 12,
+      "first": 12,
+      "first_accuracy": 1.0,
+      "covered": 12,
+      "coverage": 1.0,
+      "avg_calls": 1.0,
+      "confused_with": {}
+    },
+    "none": {
+      "n": 18,
+      "first": 17,
+      "first_accuracy": 0.9444444444444444,
+      "covered": 17,
+      "coverage": 0.9444444444444444,
+      "avg_calls": 0.1111111111111111,
+      "confused_with": {
+        "list_workspaces": 1
+      }
+    },
+    "query_rows": {
+      "n": 12,
+      "first": 0,
+      "first_accuracy": 0.0,
+      "covered": 12,
+      "coverage": 1.0,
+      "avg_calls": 2.0,
+      "confused_with": {
+        "describe_document": 3,
+        "list_queryable_files": 2,
+        "find_documents": 6,
+        "list_workspaces": 1
+      }
+    },
+    "read_document": {
+      "n": 12,
+      "first": 2,
+      "first_accuracy": 0.16666666666666666,
+      "covered": 12,
+      "coverage": 1.0,
+      "avg_calls": 1.3333333333333333,
+      "confused_with": {
+        "find_documents": 9,
+        "list_workspaces": 1
+      }
+    },
+    "search_context": {
+      "n": 18,
+      "first": 8,
+      "first_accuracy": 0.4444444444444444,
+      "covered": 18,
+      "coverage": 1.0,
+      "avg_calls": 2.0,
+      "confused_with": {
+        "list_workspaces": 10
+      }
+    },
+    "search_text": {
+      "n": 18,
+      "first": 16,
+      "first_accuracy": 0.8888888888888888,
+      "covered": 18,
+      "coverage": 1.0,
+      "avg_calls": 1.7777777777777777,
+      "confused_with": {
+        "list_workspaces": 2
+      }
+    }
+  },
+  "confusion": {
+    "list_workspaces": {
+      "list_workspaces": 12
+    },
+    "find_documents": {
+      "find_documents": 11,
+      "list_workspaces": 4
+    },
+    "search_context": {
+      "search_context": 8,
+      "list_workspaces": 10
+    },
+    "search_text": {
+      "search_text": 16,
+      "list_workspaces": 2
+    },
+    "get_document_outline": {
+      "get_document_outline": 6,
+      "list_workspaces": 1,
+      "find_documents": 5
+    },
+    "read_document": {
+      "find_documents": 9,
+      "read_document": 2,
+      "list_workspaces": 1
+    },
+    "describe_document": {
+      "find_documents": 3,
+      "list_workspaces": 6,
+      "describe_document": 3
+    },
+    "list_queryable_files": {
+      "list_queryable_files": 9
+    },
+    "query_rows": {
+      "describe_document": 3,
+      "list_queryable_files": 2,
+      "find_documents": 6,
+      "list_workspaces": 1
+    },
+    "list_images": {
+      "find_documents": 4,
+      "list_workspaces": 2,
+      "list_images": 3
+    },
+    "get_image": {
+      "find_documents": 4,
+      "list_workspaces": 2,
+      "get_image": 3
+    },
+    "download_document": {
+      "download_document": 2,
+      "list_workspaces": 2,
+      "find_documents": 5
+    },
+    "none": {
+      "none": 17,
+      "list_workspaces": 1
+    }
+  },
+  "records": [
+    {
+      "id": "ws-01",
+      "question": "Workspace apa saja yang bisa saya akses?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1260.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "ws-01",
+      "question": "Workspace apa saja yang bisa saya akses?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1176.2,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "ws-01",
+      "question": "Workspace apa saja yang bisa saya akses?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1078.8,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "ws-02",
+      "question": "Saya anggota di workspace mana saja?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1632.2,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "ws-02",
+      "question": "Saya anggota di workspace mana saja?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1141.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "ws-02",
+      "question": "Saya anggota di workspace mana saja?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1441.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "ws-03",
+      "question": "Tampilkan daftar workspace beserta role saya.",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1299.3,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "ws-03",
+      "question": "Tampilkan daftar workspace beserta role saya.",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1263.1,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "ws-03",
+      "question": "Tampilkan daftar workspace beserta role saya.",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1473.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "ws-04",
+      "question": "Ada berapa workspace yang bisa saya baca?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1288.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "ws-04",
+      "question": "Ada berapa workspace yang bisa saya baca?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1339.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "ws-04",
+      "question": "Ada berapa workspace yang bisa saya baca?",
+      "expected": "list_workspaces",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1317.4,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "find-01",
+      "question": "Cari file bernama Procurement Manual.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "Procurement Manual"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1233.9,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "find-01",
+      "question": "Cari file bernama Procurement Manual.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "Procurement Manual"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1362.1,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "find-01",
+      "question": "Cari file bernama Procurement Manual.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "Procurement Manual"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1483.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "find-02",
+      "question": "Dokumen apa saja yang ada di workspace legal?",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "find_documents"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1235.9,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "find-02",
+      "question": "Dokumen apa saja yang ada di workspace legal?",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "find_documents"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1474.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "find-02",
+      "question": "Dokumen apa saja yang ada di workspace legal?",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "find_documents"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1180.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "find-03",
+      "question": "Apakah ada file invoices.csv?",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoices.csv"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1463.2,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "find-03",
+      "question": "Apakah ada file invoices.csv?",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoices"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1561.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "find-03",
+      "question": "Apakah ada file invoices.csv?",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoices"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1438.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "find-04",
+      "question": "Saya butuh document_id dari file UNDP Financial Regulations.pdf.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "UNDP Financial Regulations"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1273.8,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "find-04",
+      "question": "Saya butuh document_id dari file UNDP Financial Regulations.pdf.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "UNDP Financial Regulations"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1341.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "find-04",
+      "question": "Saya butuh document_id dari file UNDP Financial Regulations.pdf.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "UNDP Financial Regulations"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1182.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "find-05",
+      "question": "Daftar semua dokumen yang tersedia.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1223.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "find-05",
+      "question": "Daftar semua dokumen yang tersedia.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1262.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "find-05",
+      "question": "Daftar semua dokumen yang tersedia.",
+      "expected": "find_documents",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1188.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "sem-01",
+      "question": "Bagaimana prosedur pengadaan langsung?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "prosedur pengadaan langsung",
+        "limit": 15
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1334.6,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "sem-01",
+      "question": "Bagaimana prosedur pengadaan langsung?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1564.0,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "sem-01",
+      "question": "Bagaimana prosedur pengadaan langsung?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "prosedur pengadaan langsung",
+        "limit": 10
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1492.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "sem-02",
+      "question": "Apa isi kebijakan cuti tahunan?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "kebijakan cuti tahunan"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1386.2,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "sem-02",
+      "question": "Apa isi kebijakan cuti tahunan?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "find_documents"
+      ],
+      "arguments": {
+        "query": "kebijakan cuti tahunan",
+        "limit": 10
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1441.3,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "sem-02",
+      "question": "Apa isi kebijakan cuti tahunan?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "kebijakan cuti tahunan"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1387.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "sem-03",
+      "question": "Jelaskan aturan tentang konflik kepentingan.",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1413.8,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "sem-03",
+      "question": "Jelaskan aturan tentang konflik kepentingan.",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1443.1,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "sem-03",
+      "question": "Jelaskan aturan tentang konflik kepentingan.",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1435.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "sem-04",
+      "question": "Di mana dijelaskan sanksi pelanggaran kontrak?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "sanksi pelanggaran kontrak"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1296.8,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "sem-04",
+      "question": "Di mana dijelaskan sanksi pelanggaran kontrak?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "sanksi pelanggaran kontrak"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1532.2,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "sem-04",
+      "question": "Di mana dijelaskan sanksi pelanggaran kontrak?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "sanksi pelanggaran kontrak",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1281.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "sem-05",
+      "question": "Ringkas ketentuan tentang kerahasiaan data.",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1412.8,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "sem-05",
+      "question": "Ringkas ketentuan tentang kerahasiaan data.",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1403.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "sem-05",
+      "question": "Ringkas ketentuan tentang kerahasiaan data.",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1281.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "sem-06",
+      "question": "Apa yang dokumen katakan tentang audit internal?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1380.4,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "sem-06",
+      "question": "Apa yang dokumen katakan tentang audit internal?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1480.2,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "sem-06",
+      "question": "Apa yang dokumen katakan tentang audit internal?",
+      "expected": "search_context",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1619.8,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "lit-01",
+      "question": "Cari INV-2024-001.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "find_documents"
+      ],
+      "arguments": {
+        "query": "INV-2024-001"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1525.9,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "lit-01",
+      "question": "Cari INV-2024-001.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text"
+      ],
+      "arguments": {
+        "query": "INV-2024-001"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1364.0,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "lit-01",
+      "question": "Cari INV-2024-001.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "find_documents"
+      ],
+      "arguments": {
+        "query": "INV-2024-001",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1442.0,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "lit-02",
+      "question": "Di mana tertulis Pasal 7?",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "Pasal 7",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1715.2,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "lit-02",
+      "question": "Di mana tertulis Pasal 7?",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_text"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": false,
+      "latency_ms": 2250.1,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "lit-02",
+      "question": "Di mana tertulis Pasal 7?",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_text"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": false,
+      "latency_ms": 1533.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "lit-03",
+      "question": "Cari teks 'ISO 9001:2015'.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text"
+      ],
+      "arguments": {
+        "query": "ISO 9001:2015"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1287.7,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "lit-03",
+      "question": "Cari teks 'ISO 9001:2015'.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text"
+      ],
+      "arguments": {
+        "query": "ISO 9001:2015",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1622.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "lit-03",
+      "question": "Cari teks 'ISO 9001:2015'.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text"
+      ],
+      "arguments": {
+        "query": "ISO 9001:2015"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1270.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "lit-04",
+      "question": "Cari kode anggaran B-07.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "search_context"
+      ],
+      "arguments": {
+        "query": "B-07"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1458.9,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "lit-04",
+      "question": "Cari kode anggaran B-07.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "search_context"
+      ],
+      "arguments": {
+        "query": "B-07",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1658.0,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "lit-04",
+      "question": "Cari kode anggaran B-07.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "search_context"
+      ],
+      "arguments": {
+        "query": "B-07"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1270.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "lit-05",
+      "question": "Di bagian mana disebut 'UNDP Financial Regulations'?",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "search_context"
+      ],
+      "arguments": {
+        "query": "UNDP Financial Regulations",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1581.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "lit-05",
+      "question": "Di bagian mana disebut 'UNDP Financial Regulations'?",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "UNDP Financial Regulations"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1615.1,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "lit-05",
+      "question": "Di bagian mana disebut 'UNDP Financial Regulations'?",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "UNDP Financial Regulations",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1765.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "lit-06",
+      "question": "Cari nomor kontrak CTR-2023-045.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "find_documents"
+      ],
+      "arguments": {
+        "query": "CTR-2023-045"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1248.4,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "lit-06",
+      "question": "Cari nomor kontrak CTR-2023-045.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "search_context"
+      ],
+      "arguments": {
+        "query": "CTR-2023-045"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1402.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "lit-06",
+      "question": "Cari nomor kontrak CTR-2023-045.",
+      "expected": "search_text",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "find_documents"
+      ],
+      "arguments": {
+        "query": "CTR-2023-045"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1425.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "out-01",
+      "question": "Tampilkan daftar section dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_document_outline",
+      "calls": [
+        "get_document_outline"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1628.6,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "out-01",
+      "question": "Tampilkan daftar section dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_document_outline",
+      "calls": [
+        "get_document_outline"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1640.1,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "out-01",
+      "question": "Tampilkan daftar section dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_document_outline",
+      "calls": [
+        "get_document_outline"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1511.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "out-02",
+      "question": "Bab apa saja yang ada di document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_document_outline",
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1679.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "out-02",
+      "question": "Bab apa saja yang ada di document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_document_outline"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1481.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "out-02",
+      "question": "Bab apa saja yang ada di document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_document_outline"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1583.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "out-03",
+      "question": "Di halaman berapa bagian 'Procurement Methods' dimulai pada document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "pattern": "11111111"
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_document_outline"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1360.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "out-03",
+      "question": "Di halaman berapa bagian 'Procurement Methods' dimulai pada document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_document_outline"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1785.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "out-03",
+      "question": "Di halaman berapa bagian 'Procurement Methods' dimulai pada document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_document_outline"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1523.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "out-04",
+      "question": "Buat outline document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_document_outline",
+      "calls": [
+        "get_document_outline",
+        "find_documents"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2228.4,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "out-04",
+      "question": "Buat outline document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_document_outline",
+      "calls": [
+        "get_document_outline",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2191.4,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "out-04",
+      "question": "Buat outline document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_document_outline",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_document_outline",
+      "calls": [
+        "get_document_outline"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1580.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "read-01",
+      "question": "Lanjutkan membaca document_id 11111111-1111-4111-8111-111111111111 dari ordinal 40.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1732.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "read-01",
+      "question": "Lanjutkan membaca document_id 11111111-1111-4111-8111-111111111111 dari ordinal 40.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1724.4,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "read-01",
+      "question": "Lanjutkan membaca document_id 11111111-1111-4111-8111-111111111111 dari ordinal 40.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1243.5,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "read-02",
+      "question": "Baca document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222 mulai awal.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "read_document",
+      "calls": [
+        "read_document"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222",
+        "start_ordinal": 0,
+        "limit": 50
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1750.9,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "read-02",
+      "question": "Baca document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222 mulai awal.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1845.7,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "read-02",
+      "question": "Baca document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222 mulai awal.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "read_document",
+      "calls": [
+        "read_document",
+        "describe_document"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222",
+        "start_ordinal": 0,
+        "limit": 50
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2746.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "read-03",
+      "question": "Tampilkan 20 chunk berikutnya dari document_id 11111111-1111-4111-8111-111111111111 setelah ordinal 100.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1720.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "read-03",
+      "question": "Tampilkan 20 chunk berikutnya dari document_id 11111111-1111-4111-8111-111111111111 setelah ordinal 100.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1505.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "read-03",
+      "question": "Tampilkan 20 chunk berikutnya dari document_id 11111111-1111-4111-8111-111111111111 setelah ordinal 100.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 2111.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "read-04",
+      "question": "Baca bagian setelah ordinal 31 pada document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 2488.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "read-04",
+      "question": "Baca bagian setelah ordinal 31 pada document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "",
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1563.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "read-04",
+      "question": "Baca bagian setelah ordinal 31 pada document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "read_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "limit": 20
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "read_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1819.8,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "desc-01",
+      "question": "Apakah document_id 11111111-1111-4111-8111-111111111111 berhasil diekstrak? Berapa chunk-nya?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1321.6,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "desc-01",
+      "question": "Apakah document_id 11111111-1111-4111-8111-111111111111 berhasil diekstrak? Berapa chunk-nya?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1581.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "desc-01",
+      "question": "Apakah document_id 11111111-1111-4111-8111-111111111111 berhasil diekstrak? Berapa chunk-nya?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1564.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "desc-02",
+      "question": "Kenapa document_id 11111111-1111-4111-8111-111111111111 tidak menemukan apa-apa saat dicari?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1741.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "desc-02",
+      "question": "Kenapa document_id 11111111-1111-4111-8111-111111111111 tidak menemukan apa-apa saat dicari?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document",
+        "search_context"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1488.0,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "desc-02",
+      "question": "Kenapa document_id 11111111-1111-4111-8111-111111111111 tidak menemukan apa-apa saat dicari?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1736.8,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "desc-03",
+      "question": "Berapa halaman dan gambar yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1421.3,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "desc-03",
+      "question": "Berapa halaman dan gambar yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1651.9,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "desc-03",
+      "question": "Berapa halaman dan gambar yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1418.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "desc-04",
+      "question": "Cek status dan error terakhir document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "describe_document",
+      "calls": [
+        "describe_document",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1900.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "desc-04",
+      "question": "Cek status dan error terakhir document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "describe_document",
+      "calls": [
+        "describe_document"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1445.9,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "desc-04",
+      "question": "Cek status dan error terakhir document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "describe_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "describe_document",
+      "calls": [
+        "describe_document"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1865.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "csv-01",
+      "question": "File CSV apa saja yang bisa di-query?",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1789.7,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "csv-01",
+      "question": "File CSV apa saja yang bisa di-query?",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1122.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "csv-01",
+      "question": "File CSV apa saja yang bisa di-query?",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1190.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "csv-02",
+      "question": "Kolom apa saja yang ada di invoices.csv?",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoices"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1848.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "csv-02",
+      "question": "Kolom apa saja yang ada di invoices.csv?",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoices"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1313.9,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "csv-02",
+      "question": "Kolom apa saja yang ada di invoices.csv?",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoices"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1242.0,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "csv-03",
+      "question": "Tampilkan katalog file spreadsheet yang bisa di-query.",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1177.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "csv-03",
+      "question": "Tampilkan katalog file spreadsheet yang bisa di-query.",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1471.2,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "csv-03",
+      "question": "Tampilkan katalog file spreadsheet yang bisa di-query.",
+      "expected": "list_queryable_files",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1353.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "qry-01",
+      "question": "Dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222, hitung total kolom amount.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "describe_document",
+      "calls": [
+        "describe_document",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1820.4,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "qry-01",
+      "question": "Dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222, hitung total kolom amount.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "describe_document",
+      "calls": [
+        "describe_document",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1656.8,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "qry-01",
+      "question": "Dari document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222, hitung total kolom amount.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "describe_document",
+      "calls": [
+        "describe_document",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 2274.0,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "qry-02",
+      "question": "Berapa rata-rata amount per vendor di document_id 11111111-1111-4111-8111-111111111111? Kolom: vendor, amount.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files",
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "",
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1610.2,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "qry-02",
+      "question": "Berapa rata-rata amount per vendor di document_id 11111111-1111-4111-8111-111111111111? Kolom: vendor, amount.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 20
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1907.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "qry-02",
+      "question": "Berapa rata-rata amount per vendor di document_id 11111111-1111-4111-8111-111111111111? Kolom: vendor, amount.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "",
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1694.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "qry-03",
+      "question": "Jalankan SELECT count(*) dari document_rows untuk document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1474.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "qry-03",
+      "question": "Jalankan SELECT count(*) dari document_rows untuk document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "",
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1807.8,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "qry-03",
+      "question": "Jalankan SELECT count(*) dari document_rows untuk document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "list_queryable_files"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 2220.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "qry-04",
+      "question": "Di document_id 11111111-1111-4111-8111-111111111111, tampilkan 10 baris dengan amount terbesar.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1511.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "qry-04",
+      "question": "Di document_id 11111111-1111-4111-8111-111111111111, tampilkan 10 baris dengan amount terbesar.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "describe_document",
+        "query_rows"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1882.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "qry-04",
+      "question": "Di document_id 11111111-1111-4111-8111-111111111111, tampilkan 10 baris dengan amount terbesar.",
+      "expected": "query_rows",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "limit": 50
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "query_rows"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 2021.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "img-01",
+      "question": "Gambar apa saja yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "list_images"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1494.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "img-01",
+      "question": "Gambar apa saja yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "list_images"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1461.4,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "img-01",
+      "question": "Gambar apa saja yang diekstrak dari document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": ""
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "list_images"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1511.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "img-02",
+      "question": "Tampilkan daftar gambar dan caption document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_images",
+      "calls": [
+        "list_images"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1390.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "img-02",
+      "question": "Tampilkan daftar gambar dan caption document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_images",
+      "calls": [
+        "list_images"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1336.8,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "img-02",
+      "question": "Tampilkan daftar gambar dan caption document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_images",
+      "calls": [
+        "list_images"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1363.7,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "img-03",
+      "question": "Ada berapa gambar di document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "list_images"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1345.4,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "img-03",
+      "question": "Ada berapa gambar di document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "list_images"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 2075.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "img-03",
+      "question": "Ada berapa gambar di document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "list_images",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "list_images",
+        "describe_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1460.5,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "getimg-01",
+      "question": "Tampilkan gambar dengan ref image-p3-0 dari document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_image"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1368.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "getimg-01",
+      "question": "Tampilkan gambar dengan ref image-p3-0 dari document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": false,
+      "followup_calls": [
+        "find_documents"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1705.3,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "getimg-01",
+      "question": "Tampilkan gambar dengan ref image-p3-0 dari document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_image"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1372.3,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "getimg-02",
+      "question": "Ambil gambar ref image-p1-1 pada document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_image",
+      "calls": [
+        "get_image"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222",
+        "ref": "image-p1-1"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1534.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "getimg-02",
+      "question": "Ambil gambar ref image-p1-1 pada document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_image",
+      "calls": [
+        "get_image"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222",
+        "ref": "image-p1-1"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1607.3,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "getimg-02",
+      "question": "Ambil gambar ref image-p1-1 pada document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "get_image",
+      "calls": [
+        "get_image"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222",
+        "ref": "image-p1-1"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1617.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "getimg-03",
+      "question": "Tunjukkan grafik dengan ref image-p5-2 dari document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_image"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1358.4,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "getimg-03",
+      "question": "Tunjukkan grafik dengan ref image-p5-2 dari document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "get_image"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 1732.4,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "getimg-03",
+      "question": "Tunjukkan grafik dengan ref image-p5-2 dari document_id 11111111-1111-4111-8111-111111111111.",
+      "expected": "get_image",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": false,
+      "followup_calls": [
+        "list_images"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 2226.3,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "dl-01",
+      "question": "Berikan link download untuk document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "download_document",
+      "calls": [
+        "download_document"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1716.6,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "dl-01",
+      "question": "Berikan link download untuk document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "download_document"
+      ],
+      "required_args_ok": false,
+      "latency_ms": 2344.8,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "dl-01",
+      "question": "Berikan link download untuk document_id 11111111-1111-4111-8111-111111111111 di workspace 22222222-2222-4222-8222-222222222222.",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "download_document",
+      "calls": [
+        "download_document"
+      ],
+      "arguments": {
+        "document_id": "11111111-1111-4111-8111-111111111111",
+        "workspace_id": "22222222-2222-4222-8222-222222222222"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2374.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "dl-02",
+      "question": "Saya butuh file asli document_id 11111111-1111-4111-8111-111111111111; kirim alamatnya.",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "",
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "download_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1627.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "dl-02",
+      "question": "Saya butuh file asli document_id 11111111-1111-4111-8111-111111111111; kirim alamatnya.",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "download_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1655.7,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "dl-02",
+      "question": "Saya butuh file asli document_id 11111111-1111-4111-8111-111111111111; kirim alamatnya.",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "",
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "download_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1270.3,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "dl-03",
+      "question": "Di mana saya bisa mengunduh document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "limit": 100
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "download_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1414.2,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "dl-03",
+      "question": "Di mana saya bisa mengunduh document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "download_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 2120.3,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "dl-03",
+      "question": "Di mana saya bisa mengunduh document_id 11111111-1111-4111-8111-111111111111?",
+      "expected": "download_document",
+      "difficulty": "clear",
+      "two_turn": true,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "11111111"
+      },
+      "correct": false,
+      "covered": true,
+      "followup_calls": [
+        "download_document"
+      ],
+      "required_args_ok": true,
+      "latency_ms": 1595.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "none-01",
+      "question": "Halo, apa kabar?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1516.8,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "none-01",
+      "question": "Halo, apa kabar?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2269.3,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "none-01",
+      "question": "Halo, apa kabar?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2636.4,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "none-02",
+      "question": "Terima kasih!",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1921.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "none-02",
+      "question": "Terima kasih!",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1857.6,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "none-02",
+      "question": "Terima kasih!",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1443.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "none-03",
+      "question": "Apa yang bisa kamu lakukan?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 5790.5,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "none-03",
+      "question": "Apa yang bisa kamu lakukan?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 4272.7,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "none-03",
+      "question": "Apa yang bisa kamu lakukan?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 4892.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "none-04",
+      "question": "Siapa kamu?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2729.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "none-04",
+      "question": "Siapa kamu?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2632.7,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "none-04",
+      "question": "Siapa kamu?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2330.9,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "none-05",
+      "question": "Bisa jelaskan cara kerja Retriv secara singkat?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": false,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1478.1,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "none-05",
+      "question": "Bisa jelaskan cara kerja Retriv secara singkat?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 5262.8,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "none-05",
+      "question": "Bisa jelaskan cara kerja Retriv secara singkat?",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 6661.3,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "none-06",
+      "question": "Tolong tuliskan email singkat untuk meminta rapat.",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 3854.6,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "none-06",
+      "question": "Tolong tuliskan email singkat untuk meminta rapat.",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 3408.0,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "none-06",
+      "question": "Tolong tuliskan email singkat untuk meminta rapat.",
+      "expected": "none",
+      "difficulty": "clear",
+      "two_turn": false,
+      "predicted": "none",
+      "calls": [],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 3354.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "amb-01",
+      "question": "Pasal 7 isinya apa?",
+      "expected": "search_text",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "Pasal 7",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1469.2,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "amb-01",
+      "question": "Pasal 7 isinya apa?",
+      "expected": "search_text",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "Pasal 7",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1627.3,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "amb-01",
+      "question": "Pasal 7 isinya apa?",
+      "expected": "search_text",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "search_text",
+      "calls": [
+        "search_text",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "query": "Pasal 7",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1519.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "amb-02",
+      "question": "Workspace mana yang punya file procurement?",
+      "expected": "list_workspaces",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 2043.7,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "amb-02",
+      "question": "Workspace mana yang punya file procurement?",
+      "expected": "list_workspaces",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "list_workspaces"
+      ],
+      "arguments": {
+        "pattern": "procurement"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1313.2,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "amb-02",
+      "question": "Workspace mana yang punya file procurement?",
+      "expected": "list_workspaces",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1167.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "amb-03",
+      "question": "Berapa total amount di invoices.csv?",
+      "expected": "list_queryable_files",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "invoices"
+      },
+      "correct": false,
+      "covered": false,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1704.6,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "amb-03",
+      "question": "Berapa total amount di invoices.csv?",
+      "expected": "list_queryable_files",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoice"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1436.8,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "amb-03",
+      "question": "Berapa total amount di invoices.csv?",
+      "expected": "list_queryable_files",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "list_queryable_files",
+      "calls": [
+        "list_queryable_files"
+      ],
+      "arguments": {
+        "pattern": "invoice"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1433.2,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "amb-04",
+      "question": "Cari dokumen tentang pengadaan.",
+      "expected": "search_context",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "search_context"
+      ],
+      "arguments": {
+        "pattern": "pengadaan"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1430.0,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "amb-04",
+      "question": "Cari dokumen tentang pengadaan.",
+      "expected": "search_context",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "search_context",
+      "calls": [
+        "search_context",
+        "find_documents"
+      ],
+      "arguments": {
+        "query": "pengadaan barang dan jasa",
+        "limit": 20
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1511.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "amb-04",
+      "question": "Cari dokumen tentang pengadaan.",
+      "expected": "search_context",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "search_context"
+      ],
+      "arguments": {
+        "pattern": "pengadaan"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1574.1,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "amb-05",
+      "question": "Tampilkan grafik revenue.",
+      "expected": "list_images",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "search_context"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": false,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1564.4,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "amb-05",
+      "question": "Tampilkan grafik revenue.",
+      "expected": "list_images",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": false,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1642.5,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "amb-05",
+      "question": "Tampilkan grafik revenue.",
+      "expected": "list_images",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "list_workspaces",
+      "calls": [
+        "list_workspaces",
+        "find_documents"
+      ],
+      "arguments": {},
+      "correct": false,
+      "covered": false,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1861.6,
+      "repeat": 2,
+      "error": null
+    },
+    {
+      "id": "amb-06",
+      "question": "Apa isi dokumen 3M 10-K?",
+      "expected": "find_documents",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "3M"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1318.6,
+      "repeat": 0,
+      "error": null
+    },
+    {
+      "id": "amb-06",
+      "question": "Apa isi dokumen 3M 10-K?",
+      "expected": "find_documents",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "3M"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1459.1,
+      "repeat": 1,
+      "error": null
+    },
+    {
+      "id": "amb-06",
+      "question": "Apa isi dokumen 3M 10-K?",
+      "expected": "find_documents",
+      "difficulty": "ambiguous",
+      "two_turn": false,
+      "predicted": "find_documents",
+      "calls": [
+        "find_documents",
+        "find_documents"
+      ],
+      "arguments": {
+        "pattern": "3M"
+      },
+      "correct": true,
+      "covered": true,
+      "followup_calls": [],
+      "required_args_ok": true,
+      "latency_ms": 1320.4,
+      "repeat": 2,
+      "error": null
+    }
+  ]
+}

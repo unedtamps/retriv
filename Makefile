@@ -29,7 +29,7 @@ help:
 		'  web       Run only the web dev server (API must already be running)' \
 		'  worker    Build and start the processing worker (Docker)' \
 		'  run-worker Start the worker without rebuilding it' \
-		'  infra     Start and wait for PostgreSQL, Qdrant, ClamAV, and Jaeger' \
+		'  infra     Start and wait for PostgreSQL, ClamAV, and Jaeger' \
 		'  sql-role  Create or repair the read-only SQL role and its grants' \
 		'  migrate   Apply database migrations' \
 		'  status    Show infrastructure container status' \
@@ -67,7 +67,7 @@ install:
 # job to finish and hands back its exit code, which is what a build step needs.
 infra: check-env
 	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) \
-		postgres qdrant clamav jaeger
+		postgres clamav jaeger
 	$(MAKE) sql-role
 
 migrate: infra

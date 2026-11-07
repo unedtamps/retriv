@@ -188,7 +188,7 @@ export function UploadForm({
           <div
             className={`relative flex min-h-32 flex-col items-center justify-center rounded-card border border-dashed px-5 py-6 text-center transition-colors ${
               dragging
-                ? 'border-accent-ink bg-accent-soft'
+                ? 'border-accent bg-accent-soft'
                 : 'border-line-strong bg-sunken/40 hover:border-ink-faint'
             }`}
             onDragEnter={() => setDragging(true)}

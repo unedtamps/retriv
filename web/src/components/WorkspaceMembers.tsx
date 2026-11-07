@@ -1,13 +1,22 @@
 import { useState } from 'react'
 import { Pencil, Trash2, UserPlus } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
-import type { Workspace, WorkspaceMember } from '../types'
+import type { Workspace, WorkspaceMember, WorkspaceRole } from '../types'
 import { AddWorkspaceMemberDialog } from './AddMemberToWorkspaceDialog'
 import { ChangeMemberAccessDialog } from './ChangeMemberAccessDialog'
 import { ConfirmDialog } from './Dialog'
 import { Avatar } from './ui/Avatar'
 import { EmptyState } from './ui/Feedback'
 import { useApiResource } from '../hooks/useApiResource'
+import { formatShortDate } from '../lib/visuals'
+
+const ROLE_ORDER: Record<WorkspaceRole, number> = { owner: 0, editor: 1, viewer: 2 }
+
+const ROLE_CHIP: Record<WorkspaceRole, string> = {
+  owner: 'border-ink bg-ink text-surface',
+  editor: 'border-success/50 bg-surface text-success',
+  viewer: 'border-line bg-surface text-ink-muted',
+}
 
 interface WorkspaceMembersProps {
   workspace: Workspace
@@ -71,73 +80,110 @@ export function WorkspaceMembers({
     }
   }
 
+  const register = [...items].sort(
+    (a, b) =>
+      ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.username.localeCompare(b.username),
+  )
+
   return (
     <>
-      <section className="px-5 py-5 sm:px-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="eyebrow">Access policy</p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <h3 className="text-base font-semibold text-ink">Workspace members</h3>
-              <span className="font-mono text-meta text-ink-faint">{items.length}</span>
-            </div>
-          </div>
-          <button type="button" className="btn btn-secondary" onClick={() => setAddOpen(true)}>
-            <UserPlus aria-hidden="true" size={16} />
-            Add member
-          </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">
+          Members
+        </h1>
+        <span className="stamp">{items.length} enrolled</span>
+        <span className="ml-auto" />
+        <button type="button" className="btn btn-primary" onClick={() => setAddOpen(true)}>
+          <UserPlus aria-hidden="true" size={14} />
+          Add member
+        </button>
+      </div>
+
+      {members.error === null ? null : (
+        <p className="error-note mt-4" role="alert">
+          {members.error}
+        </p>
+      )}
+
+      <section className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
+        <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
+          <p className="eyebrow">Register of members</p>
+          <span className="ml-auto font-mono text-[0.65rem] uppercase tracking-[0.08em] text-ink-faint">
+            sorted by role
+          </span>
         </div>
 
-        {members.error === null ? null : (
-          <p className="error-note mb-3" role="alert">
-            {members.error}
-          </p>
-        )}
-
         {members.loading && items.length === 0 ? (
-          <div className="space-y-2" aria-label="Loading workspace members">
+          <div className="space-y-2 p-4" aria-label="Loading workspace members">
             {Array.from({ length: 3 }, (_, index) => (
-              <div key={index} className="h-16 animate-pulse rounded-card bg-sunken" />
+              <div key={index} className="h-14 animate-pulse rounded-card bg-sunken" />
             ))}
           </div>
         ) : items.length === 0 ? (
           <EmptyState title="No workspace members" />
         ) : (
-          <ul className="divide-y divide-line rounded-card border border-line">
-            {items.map((member) => {
-              const ownerLocked = !isAdmin && member.role === 'owner'
-              return (
-                <li key={member.user_id} className="flex items-center gap-4 px-4 py-3.5 sm:px-5">
-                  <Avatar name={member.username} seed={member.user_id} size="xs" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">{member.username}</p>
-                    <p className="mt-0.5 font-mono text-meta text-ink-faint">
-                      {member.user_id.slice(0, 8)}
-                    </p>
-                  </div>
-                  <span className="stamp shrink-0">{member.role}</span>
-                  <button
-                    type="button"
-                    className="btn-icon h-8 w-8 border-transparent bg-transparent hover:border-line disabled:opacity-40"
-                    aria-label={`Change access for ${member.username}`}
-                    disabled={ownerLocked}
-                    onClick={() => setEditTarget(member)}
-                  >
-                    <Pencil aria-hidden="true" size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-icon h-8 w-8 border-transparent bg-transparent text-danger hover:border-line disabled:opacity-40"
-                    aria-label={`Remove ${member.username}`}
-                    disabled={ownerLocked}
-                    onClick={() => setRemoveTarget(member)}
-                  >
-                    <Trash2 aria-hidden="true" size={15} />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">User</th>
+                <th scope="col">Role</th>
+                <th scope="col">Joined</th>
+                <th scope="col">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {register.map((member) => {
+                const ownerLocked = !isAdmin && member.role === 'owner'
+                return (
+                  <tr key={member.user_id}>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={member.username} seed={member.user_id} size="sm" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-ink">
+                            {member.username}
+                          </p>
+                          <p className="font-mono text-[0.65rem] text-ink-faint">
+                            {member.user_id.slice(0, 8)}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`stamp ${ROLE_CHIP[member.role]}`}>{member.role}</span>
+                    </td>
+                    <td className="font-mono text-meta text-ink-muted">
+                      {formatShortDate(member.created_at)}
+                    </td>
+                    <td>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          className="flex h-7 w-7 items-center justify-center rounded-stamp border border-transparent text-ink-faint transition-colors hover:border-line hover:text-ink disabled:opacity-40"
+                          aria-label={`Change access for ${member.username}`}
+                          disabled={ownerLocked}
+                          onClick={() => setEditTarget(member)}
+                        >
+                          <Pencil aria-hidden="true" size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-7 w-7 items-center justify-center rounded-stamp border border-transparent text-ink-faint transition-colors hover:border-danger/50 hover:text-danger disabled:opacity-40"
+                          aria-label={`Remove ${member.username}`}
+                          disabled={ownerLocked}
+                          onClick={() => setRemoveTarget(member)}
+                        >
+                          <Trash2 aria-hidden="true" size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
       </section>
 

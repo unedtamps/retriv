@@ -23,6 +23,7 @@ from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.sql import CatalogueReader, RowQuery, RowQueryError
 from app.routes import (
     admin,
+    agent,
     api_keys,
     auth,
     documents,
@@ -119,6 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(workspaces.router)
     application.include_router(documents.router)
     application.include_router(documents_search.router)
+    application.include_router(agent.router)
     application.include_router(api_keys.router)
     application.include_router(processing_runs.router)
 

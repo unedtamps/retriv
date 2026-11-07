@@ -7,8 +7,8 @@ const STORAGE_KEY = 'retriv.theme'
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 
 const THEME_COLOR: Record<ResolvedTheme, string> = {
-  light: '#EDF1F6',
-  dark: '#0B0F14',
+  light: '#E4EAF1',
+  dark: '#0B1017',
 }
 
 function readPreference(): ThemePreference {

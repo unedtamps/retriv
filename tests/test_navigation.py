@@ -7,6 +7,7 @@ schema under test is the shipping one.
 """
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -31,10 +32,13 @@ from app.db.models import (
     ProcessingRun,
 )
 from app.db.session import Base
+from app.retrieval.format import format_outline
 from app.retrieval.navigation import (
     DocumentNavigator,
     DocumentNotFound,
     DocumentNotNavigable,
+    DocumentOutline,
+    OutlineSection,
 )
 from app.sections import encode_section_key
 
@@ -69,6 +73,7 @@ async def seed(
     indexed: bool = True,
     mismatched_embedding_hash_at: int | None = None,
     corrupt_text_at: int | None = None,
+    section_paths: Sequence[Sequence[str]] | None = None,
 ) -> Seeded:
     """A document with ``count`` chunks in reading order, indexed by default.
 
@@ -119,7 +124,11 @@ async def seed(
             digest = hashlib.sha256(text.encode()).hexdigest()
             if corrupt_text_at == ordinal:
                 text = f"Provision {ordinal}, edited in place."
-            path = [f"Article {ordinal // 3}:"]
+            path = (
+                list(section_paths[ordinal])
+                if section_paths is not None
+                else [f"Article {ordinal // 3}:"]
+            )
             chunk = DocumentChunk(
                 origin_workspace_id=workspace_id,
                 document_id=document_id,
@@ -150,7 +159,6 @@ async def seed(
                         if mismatched_embedding_hash_at != ordinal
                         else hashlib.sha256(b"different").hexdigest()
                     ),
-                    qdrant_point_id=uuid4(),
                 )
             )
         await session.commit()
@@ -260,7 +268,7 @@ async def test_a_csv_is_refused_with_the_tool_that_can_read_it() -> None:
 
 
 async def test_an_unindexed_embedding_is_not_returned_as_text() -> None:
-    """Rows here carry no Qdrant match, so the embedding ledger is the only guard."""
+    """Rows here carry no vector match, so the embedding ledger is the only guard."""
     env = await seeded_navigator(make_settings(), count=4, indexed=False)
 
     window = await env.read()
@@ -345,3 +353,119 @@ async def test_a_document_with_no_active_run_is_not_readable() -> None:
 
     with pytest.raises(DocumentNotFound):
         await env.read()
+
+
+async def test_an_outline_lists_sections_with_their_first_ordinal_and_page() -> None:
+    env = await seeded_navigator(make_settings(), count=9)
+
+    outline = await env.navigator.outline(
+        document_id=env.seeded.document_id,
+        workspace_ids=[env.seeded.workspace_id],
+    )
+
+    assert [section.section_key for section in outline.sections] == [
+        encode_section_key(["Article 0:"]),
+        encode_section_key(["Article 1:"]),
+        encode_section_key(["Article 2:"]),
+    ]
+    assert [section.ordinal for section in outline.sections] == [0, 3, 6]
+    assert [section.page for section in outline.sections] == [1, 4, 7]
+    assert [section.chunks for section in outline.sections] == [3, 3, 3]
+    assert outline.total_chunks == 9
+    assert outline.page_count == 9
+    assert outline.section_count == 3
+    assert outline.truncated is False
+    await env.engine.dispose()
+
+
+async def test_an_outline_says_when_a_document_has_no_headings() -> None:
+    """A headingless document is not an error; it is a document read in order."""
+    env = await seeded_navigator(make_settings(), count=3, section_paths=[[], [], []])
+
+    outline = await env.navigator.outline(
+        document_id=env.seeded.document_id,
+        workspace_ids=[env.seeded.workspace_id],
+    )
+
+    assert outline.has_headings is False
+    assert outline.sections == []
+    assert outline.section_count == 0
+    assert outline.total_chunks == 3
+    await env.engine.dispose()
+
+
+async def test_an_outline_is_capped_by_the_callers_limit() -> None:
+    env = await seeded_navigator(make_settings(), count=12)
+
+    outline = await env.navigator.outline(
+        document_id=env.seeded.document_id,
+        workspace_ids=[env.seeded.workspace_id],
+        limit=2,
+    )
+
+    assert len(outline.sections) == 2
+    assert outline.section_count == 4
+    assert outline.truncated is True
+    await env.engine.dispose()
+
+
+async def test_a_csv_has_no_outline_and_the_error_names_query_rows() -> None:
+    env = await seeded_navigator(make_settings(), media_type="text/csv")
+
+    with pytest.raises(DocumentNotNavigable, match="query_rows"):
+        await env.navigator.outline(
+            document_id=env.seeded.document_id,
+            workspace_ids=[env.seeded.workspace_id],
+        )
+    await env.engine.dispose()
+
+
+async def test_an_outline_outside_the_scope_is_not_readable() -> None:
+    env = await seeded_navigator(make_settings())
+
+    with pytest.raises(DocumentNotFound):
+        await env.navigator.outline(
+            document_id=env.seeded.document_id,
+            workspace_ids=[uuid4()],
+        )
+    await env.engine.dispose()
+
+
+def test_the_outline_formatter_indents_nested_sections_and_says_what_is_hidden() -> None:
+    outline = DocumentOutline(
+        filename="manual.pdf",
+        document_id=uuid4(),
+        sections=[
+            OutlineSection("a", ["1. Introduction"], 0, 1, 4),
+            OutlineSection("b", ["2. Methods"], 12, 5, 6),
+            OutlineSection("c", ["2. Methods", "2.1 Open tendering"], 15, 6, 3),
+        ],
+        section_count=4,
+        total_chunks=40,
+        page_count=9,
+        truncated=True,
+    )
+
+    body = format_outline(outline)
+
+    assert "  1. Introduction  [ordinal 0, page 1, 4 chunk(s)]" in body
+    assert "  2. Methods  [ordinal 12, page 5, 6 chunk(s)]" in body
+    assert "    2.1 Open tendering  [ordinal 15, page 6, 3 chunk(s)]" in body
+    assert "showing 3 of 4 sections" in body
+
+
+def test_the_outline_formatter_points_at_reading_order_when_there_are_no_headings() -> None:
+    outline = DocumentOutline(
+        filename="scan.pdf",
+        document_id=uuid4(),
+        sections=[],
+        section_count=0,
+        total_chunks=7,
+        page_count=0,
+        truncated=False,
+    )
+
+    body = format_outline(outline)
+
+    assert "No section headings" in body
+    assert "read_document" in body

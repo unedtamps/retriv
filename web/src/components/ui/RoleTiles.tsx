@@ -33,9 +33,9 @@ export function RoleTiles({ label, labelId, value, onChange, roles }: RoleTilesP
               type="button"
               role="radio"
               aria-checked={active}
-              className={`flex h-11 items-center justify-between gap-2 rounded-control border px-3.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink ${
+              className={`flex h-11 items-center justify-between gap-2 rounded-control border px-3.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                 active
-                  ? 'border-accent bg-accent-soft text-accent-ink'
+                  ? 'border-ink bg-sunken text-ink shadow-[inset_2px_0_0_var(--color-accent)]'
                   : 'border-line bg-surface text-ink-muted hover:border-line-strong'
               }`}
               onClick={() => onChange(choice)}

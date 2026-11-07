@@ -1,0 +1,24 @@
+# The build context is every file under this directory that is not listed
+# here, and the Dockerfile copies only app/, worker/, alembic/, alembic.ini,
+# pyproject.toml, uv.lock and README.md. Everything else -- the virtualenv,
+# node_modules, caches, data, git history and the local .env -- is ignored so
+# a build sends a few megabytes instead of more than a gigabyte.
+.git
+.github
+.venv
+web
+data
+.cache
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.zcode
+docs
+evals
+tests
+docker
+.env
+.env.*
+__pycache__
+*.pyc
+*.pyo

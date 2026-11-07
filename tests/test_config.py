@@ -23,8 +23,6 @@ PRODUCTION_BASE: dict[str, Any] = {
     "database_url": "postgresql+asyncpg://retriv:secure@postgres:5432/retriv",
     "s3_secret_key": SecretStr("production-storage-secret-xxxxxxxxxxxxxxxxxxxx"),
     "s3_endpoint_url": "https://objects.example.test",
-    "qdrant_read_only_api_key": SecretStr("production-qdrant-ro-key-xxxxxxxxxxxxxx"),
-    "qdrant_url": "https://qdrant.example.test",
     "embedding_base_url": "https://embeddings.example.test/v1",
     "embedding_api_key": SecretStr("production-embedding-key-xxxxxxxxxxxxxxxx"),
     "cors_allowed_origins": ["https://dashboard.example.test"],
@@ -36,8 +34,6 @@ WORKER_BASE: dict[str, Any] = {
     "database_url": "postgresql+asyncpg://retriv:secure@postgres:5432/retriv",
     "s3_endpoint_url": "https://objects.example.test",
     "s3_secret_key": SecretStr("production-storage-secret-xxxxxxxxxxxxxxxxxxxx"),
-    "qdrant_url": "https://qdrant.example.test",
-    "qdrant_api_key": SecretStr("production-qdrant-rw-key-xxxxxxxxxxxxxxxx"),
     "embedding_base_url": "https://embeddings.example.test/v1",
     "embedding_api_key": SecretStr("production-embedding-key-xxxxxxxxxxxxxxxx"),
     "vlm_base_url": "https://vision.example.test/v1/chat/completions",
@@ -119,10 +115,10 @@ def test_production_requires_https_everywhere() -> None:
         Settings(**{**PRODUCTION_BASE, "s3_endpoint_url": "http://objects.example.test"})
 
     with pytest.raises(ValidationError, match="HTTPS"):
-        Settings(**{**PRODUCTION_BASE, "qdrant_url": "http://qdrant.example.test"})
+        Settings(**{**PRODUCTION_BASE, "embedding_base_url": "http://embeddings.example.test"})
 
     with pytest.raises(ValidationError, match="HTTPS"):
-        Settings(**{**PRODUCTION_BASE, "embedding_base_url": "http://embeddings.example.test"})
+        Settings(**{**PRODUCTION_BASE, "vlm_base_url": "http://vision.example.test"})
 
 
 def test_s3_endpoint_may_be_unset_for_the_provider_default() -> None:
@@ -203,7 +199,7 @@ def test_secrets_shorter_than_the_floor_are_rejected() -> None:
 
 def test_service_urls_reject_embedded_credentials() -> None:
     with pytest.raises(ValidationError, match="absolute HTTP"):
-        Settings(qdrant_url="qdrant:6333")
+        Settings(embedding_base_url="embedding:1234")
 
     with pytest.raises(ValidationError, match="credentials or query"):
         Settings(embedding_base_url="https://user:pass@embeddings.example.test/v1")
@@ -212,9 +208,6 @@ def test_service_urls_reject_embedded_credentials() -> None:
 def test_identifiers_reject_whitespace_and_stray_characters() -> None:
     with pytest.raises(ValidationError):
         Settings(embedding_profile="has space")
-
-    with pytest.raises(ValidationError):
-        Settings(qdrant_collection="bad/name")
 
 
 def test_json_settings_survive_both_dotenv_parsers(

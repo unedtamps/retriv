@@ -19,7 +19,7 @@ export interface ProcessingRuns {
  */
 export function useProcessingRuns(onUnauthorized: () => void): ProcessingRuns {
   const resource = useApiResource(
-    (signal) => api.listProcessingActivity(signal),
+    (signal) => api.listProcessingActivity({ signal }),
     [],
     { onUnauthorized },
   )

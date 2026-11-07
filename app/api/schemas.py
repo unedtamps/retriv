@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 WorkspaceRole = Literal["owner", "editor", "viewer"]
 
@@ -271,3 +271,74 @@ class ApiKeyListResponse(BaseModel):
 class ApiKeyCreatedResponse(ApiKeySummary):
     key: str
     warning: str
+
+
+class AgentModelSettingsUpdate(BaseModel):
+    """The chat model an admin gives the harness.
+
+    A built-in provider owns its base URL and default model, so the admin
+    names the provider and supplies a key; ``custom`` is the one choice
+    that reads a typed base URL and requires an explicit model. ``api_key``
+    is optional so an edit can change the endpoint or the model without
+    re-typing the key; the stored key is kept when it is omitted, and is
+    mandatory on the first configuration.
+    """
+
+    provider: Literal["custom", "opencode-go", "deepseek"] | None = None
+    base_url: str | None = Field(default=None, max_length=500)
+    model: str | None = Field(default=None, max_length=200)
+    api_key: str | None = Field(default=None, min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def resolve_provider(self) -> "AgentModelSettingsUpdate":
+        from app.agents.providers import BUILTIN_PROVIDERS, resolve_base_url
+
+        self.provider = self.provider or "custom"
+        self.base_url = resolve_base_url(self.provider, self.base_url)
+        preset = BUILTIN_PROVIDERS.get(self.provider)
+        model = (self.model or "").strip() or (preset.default_model if preset else "")
+        if not model:
+            raise ValueError("A custom provider needs a model.")
+        self.model = model
+        return self
+
+
+class AgentProviderInfo(BaseModel):
+    key: str
+    label: str
+    default_model: str
+    key_hint: str
+
+
+class AgentModelSettingsResponse(BaseModel):
+    configured: bool
+    provider: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    api_key_preview: str | None = None
+    last_test_ok: bool | None = None
+    last_test_model: str | None = None
+    last_tested_at: datetime | None = None
+    test_error: str | None = None
+    updated_at: datetime | None = None
+    key_hint: str | None = None
+    available_providers: list[AgentProviderInfo] = Field(default_factory=list)
+
+
+class AgentModelTestResult(BaseModel):
+    ok: bool
+    model: str | None = None
+    error: str | None = None
+
+
+class AgentChatMessage(BaseModel):
+    """One prior exchange the client replays into an ephemeral conversation."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=16_000)
+
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8_000)
+    history: list[AgentChatMessage] = Field(default_factory=list, max_length=30)
+    session_id: str | None = Field(default=None, min_length=8, max_length=128)

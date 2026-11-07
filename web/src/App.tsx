@@ -13,6 +13,7 @@ import { Dashboard } from './components/Dashboard'
 import { LoginScreen } from './components/LoginScreen'
 import { BrandMark } from './components/ui/Brand'
 import { useTheme } from './hooks/useTheme'
+import { clearChatHistory } from './lib/chatHistoryStore'
 import { clearDocumentCache } from './lib/documentCache'
 import type { AppRoute, CurrentUser, Workspace } from './types'
 
@@ -57,6 +58,7 @@ function App() {
   }, [])
 
   const handleLogout = useCallback(() => {
+    clearChatHistory()
     clearDocumentCache()
     clearTokens()
     setSignedIn(false)

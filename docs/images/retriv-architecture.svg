@@ -75,10 +75,10 @@
   <text class="body" x="864" y="156">Documents, workspace links, runs,</text>
   <text class="body" x="864" y="173">chunks, CSV rows, refresh tokens.</text>
   <rect class="card" x="840" y="206" width="340" height="106" rx="4"/>
-  <text class="title" x="864" y="240">Qdrant</text>
-  <text class="tag" x="864" y="258">candidates</text>
-  <text class="body" x="864" y="282">One collection, filtered by the</text>
-  <text class="body" x="864" y="299">workspace_ids payload field.</text>
+  <text class="title" x="864" y="240">pgvector</text>
+  <text class="tag" x="864" y="258">inside PostgreSQL</text>
+  <text class="body" x="864" y="282">vector(2000) column on the ledger,</text>
+  <text class="body" x="864" y="299">HNSW cosine, scope joined live.</text>
   <rect class="card" x="840" y="332" width="340" height="256" rx="4"/>
   <text class="title" x="864" y="366">S3 / R2</text>
   <text class="tag" x="864" y="384">two buckets . one scoped identity</text>
@@ -105,13 +105,12 @@
   <text class="body" x="1264" y="340">Each curated picture is sent to</text>
   <text class="body" x="1264" y="357">the VLM once, then stored.</text>
   <text class="micro" x="1264" y="390">CHUNK + EMBED</text>
-  <text class="body" x="1264" y="410">Section-aware chunks, 4096-dim</text>
-  <text class="body" x="1264" y="427">vectors, batched upserts.</text>
-  <text class="micro" x="1264" y="460">SYNC</text>
-  <text class="body" x="1264" y="480">Relabels Qdrant payload when a</text>
-  <text class="body" x="1264" y="497">workspace link is added or removed.</text>
+  <text class="body" x="1264" y="410">Section-aware chunks, 2000-dim</text>
+  <text class="body" x="1264" y="427">vectors, batched UPDATEs.</text>
+  <text class="micro" x="1264" y="460">RECONCILE</text>
+  <text class="body" x="1264" y="480">Re-embeds on profile drift; scope</text>
+  <text class="body" x="1264" y="497">is read from the links at query time.</text>
   <path class="link" d="M1180 133 H1240" marker-end="url(#arrow)"/>
-  <path class="link" d="M1180 259 H1240" marker-end="url(#arrow)"/>
   <path class="link" d="M1180 460 H1240" marker-end="url(#arrow)"/>
   <rect class="card" x="420" y="648" width="250" height="96" rx="4"/>
   <text class="title" x="444" y="682" font-size="15">ClamAV</text>

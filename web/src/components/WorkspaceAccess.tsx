@@ -47,10 +47,10 @@ export function WorkspaceAccess({
               }`}
               title={enabled ? `${label}: allowed` : `${label}: not allowed`}
             >
-              <Icon aria-hidden="true" size={13} className={enabled ? 'text-accent-ink' : ''} />
+              <Icon aria-hidden="true" size={13} className={enabled ? 'text-success' : ''} />
               {label}
               {enabled ? (
-                <CheckCircle2 aria-hidden="true" size={11} className="text-accent-ink" />
+                <CheckCircle2 aria-hidden="true" size={11} className="text-success" />
               ) : (
                 <CircleSlash2 aria-hidden="true" size={11} />
               )}

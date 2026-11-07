@@ -73,7 +73,7 @@ export function ThemeMenu({ preference, resolved, onSelect }: ThemeMenuProps) {
                 role="menuitemradio"
                 aria-checked={active}
                 className={`flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-sunken ${
-                  active ? 'text-accent-ink' : 'text-ink-muted'
+                  active ? 'font-semibold text-ink' : 'text-ink-muted'
                 }`}
                 onClick={() => {
                   setOpen(false)

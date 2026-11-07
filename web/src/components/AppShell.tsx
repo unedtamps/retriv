@@ -1,19 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import {
-  ArrowLeftRight,
-  Check,
-  ChevronsDown,
-  FileText,
-  FileUp,
-  KeyRound,
-  LayoutGrid,
-  LockKeyhole,
-  LogOut,
-  Menu,
-  Plus,
-  Users,
-  X,
-} from 'lucide-react'
+import { ArrowLeftRight, Check, FileText, FileUp, HelpCircle, KeyRound, LayoutGrid, LogOut, Menu, MessageSquare, Plus, Sparkles, Users, X } from 'lucide-react'
 import type { AppRoute, CurrentUser, DashboardView, DocumentSearchHit, Workspace } from '../types'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import { ConfirmDialog } from './Dialog'
@@ -37,6 +23,7 @@ interface AppShellProps {
   user: CurrentUser
   workspaces: Workspace[]
   runs: ProcessingRuns
+  documentCount: number | null
   selectedWorkspace: Workspace | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
@@ -49,6 +36,7 @@ interface AppShellProps {
 }
 
 const WORKSPACE_NAV: Array<{ view: DashboardView; label: string; icon: typeof LayoutGrid }> = [
+  { view: 'chat', label: 'Chat', icon: MessageSquare },
   { view: 'overview', label: 'Overview', icon: LayoutGrid },
   { view: 'documents', label: 'Documents', icon: FileText },
   { view: 'members', label: 'Members', icon: Users },
@@ -69,6 +57,7 @@ export function AppShell({
   user,
   workspaces,
   runs,
+  documentCount,
   selectedWorkspace,
   searchQuery,
   onSearchQueryChange,
@@ -91,6 +80,9 @@ export function AppShell({
     && !adminMode
     && activeView !== 'api-keys'
     && activeView !== 'users'
+    && activeView !== 'agent-model'
+    && activeView !== 'help'
+    && activeView !== 'chat'
 
   useEffect(() => {
     if (!navigationOpen || isDesktop) return
@@ -141,7 +133,7 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-svh bg-paper text-ink">
+    <div className="min-h-svh text-ink">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
@@ -164,7 +156,7 @@ export function AppShell({
         inert={isDesktop ? undefined : !navigationOpen}
         className={
           isDesktop
-            ? 'fixed inset-y-0 left-0 z-30 flex w-[15.5rem] flex-col border-r border-line bg-surface'
+            ? 'fixed inset-y-3 left-3 z-30 flex w-[15.5rem] flex-col'
             : `fixed inset-y-0 left-0 z-50 flex w-80 max-w-[88vw] flex-col border-r border-line bg-surface shadow-raised transition-transform duration-200 ${navigationOpen ? 'translate-x-0' : '-translate-x-full'}`
         }
       >
@@ -174,6 +166,7 @@ export function AppShell({
           user={user}
           isAdmin={isAdmin}
           workspaces={workspaces}
+          documentCount={documentCount}
           selectedWorkspace={selectedWorkspace}
           onSelectWorkspace={selectWorkspace}
           onSelectView={selectView}
@@ -183,6 +176,7 @@ export function AppShell({
             onCreateWorkspace()
           }}
           adminMode={adminMode}
+          floating={isDesktop}
           onClose={() => setNavigationOpen(false)}
           closeButtonRef={isDesktop ? undefined : drawerCloseButtonRef}
           onLogout={onLogout}
@@ -191,9 +185,13 @@ export function AppShell({
         />
       </div>
 
-      <div className="lg:pl-[15.5rem]">
+      <div className="lg:pl-[17rem]">
         <header
-          className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-paper/95 px-4 backdrop-blur sm:px-6"
+          className={`sticky z-30 flex h-14 items-center gap-3 border-line bg-surface px-4 sm:px-6 ${
+            isDesktop
+              ? 'top-3 mx-3 mt-3 rounded-card border shadow-[0_0_0_12px_var(--color-paper-glow)]'
+              : 'top-0 border-b'
+          }`}
         >
           <button
             ref={menuButtonRef}
@@ -212,7 +210,7 @@ export function AppShell({
           </span>
 
           <div className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
-            <span className="text-ink-faint">Workspaces</span>
+            <span className="eyebrow">Workspaces</span>
             <span className="text-line-strong">/</span>
             {adminMode ? (
               <span className="truncate font-medium text-ink">All workspaces</span>
@@ -267,7 +265,9 @@ interface NavigationProps {
   user: CurrentUser
   isAdmin: boolean
   adminMode: boolean
+  floating: boolean
   workspaces: Workspace[]
+  documentCount: number | null
   selectedWorkspace: Workspace | null
   onSelectWorkspace: (workspaceId: string) => void
   onSelectView: (view: DashboardView) => void
@@ -286,7 +286,9 @@ function Navigation({
   user,
   isAdmin,
   adminMode,
+  floating,
   workspaces,
+  documentCount,
   selectedWorkspace,
   onSelectWorkspace,
   onSelectView,
@@ -298,7 +300,7 @@ function Navigation({
   themePreference,
   onThemeChange,
 }: NavigationProps) {
-  const [directoryOpen, setDirectoryOpen] = useState(false)
+  const hasMembership = workspaces.some((workspace) => workspace.membership_role !== null)
   const [signOutOpen, setSignOutOpen] = useState(false)
   const [systemDark, setSystemDark] = useState(
     () => typeof window !== 'undefined'
@@ -318,41 +320,64 @@ function Navigation({
   const themeResolved =
     themePreference === 'system' ? (systemDark ? 'dark' : 'light') : themePreference
   const memberWorkspaces = workspaces.filter((workspace) => workspace.membership_role !== null)
-  const catalogWorkspaces = workspaces.filter((workspace) => workspace.membership_role === null)
   return (
     <>
-      <div className="flex items-center gap-3 border-b border-line px-4 py-4">
-        <BrandLockup />
-        {closeButtonRef === undefined ? null : (
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="btn-icon ml-auto"
-            aria-label="Close navigation drawer"
-            onClick={onClose}
-          >
-            <X aria-hidden="true" size={18} />
-          </button>
+      <div
+        className={
+          floating
+            ? 'rounded-card border border-line bg-surface shadow-card'
+            : 'border-b border-line'
+        }
+      >
+        <div className={`flex items-center gap-3 ${floating ? 'px-4 pt-4' : 'px-4 py-4'}`}>
+          <BrandLockup />
+          {closeButtonRef === undefined ? null : (
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="btn-icon ml-auto"
+              aria-label="Close navigation drawer"
+              onClick={onClose}
+            >
+              <X aria-hidden="true" size={18} />
+            </button>
+          )}
+        </div>
+
+        {adminMode ? null : (
+          <div className={`px-3 ${floating ? 'pb-3' : 'border-b border-line py-3'}`}>
+            <p className="px-2 eyebrow">Current workspace</p>
+            <WorkspaceSwitcher
+              workspaces={memberWorkspaces}
+              selectedWorkspace={selectedWorkspace}
+              onSelect={onSelectWorkspace}
+            />
+          </div>
         )}
       </div>
 
-      {adminMode ? null : (
-        <div className="border-b border-line px-3 py-3">
-          <p className="px-2 eyebrow">Current workspace</p>
-          <WorkspaceSwitcher
-            workspaces={memberWorkspaces}
-            selectedWorkspace={selectedWorkspace}
-            onSelect={onSelectWorkspace}
-          />
-        </div>
-      )}
-
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="Main navigation">
+      <nav
+        className={
+          floating
+            ? 'relative mt-3 min-h-0 flex-1 overflow-hidden rounded-card border border-line bg-surface'
+            : 'min-h-0 flex-1 overflow-y-auto px-3 py-3'
+        }
+        aria-label="Main navigation"
+      >
+        {floating ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 z-10 w-[5px] border-r border-line bg-sunken"
+          >
+            <span className="absolute left-0 top-[18%] h-[34px] w-[6px] bg-accent" />
+          </span>
+        ) : null}
+        <div className={floating ? 'h-full overflow-y-auto px-3 py-3' : undefined}>
         {adminMode ? null : (
           <>
             <p className="px-2 eyebrow">Workspace</p>
             <ul className="mt-1.5 space-y-0.5">
-              {WORKSPACE_NAV.map((item) => {
+              {WORKSPACE_NAV.filter((item) => item.view !== 'chat' || hasMembership).map((item) => {
                 const active = route === '/dashboard' && item.view === activeView
                 const Icon = item.icon
                 return (
@@ -365,6 +390,11 @@ function Navigation({
                     >
                       <Icon aria-hidden="true" size={16} />
                       {item.label}
+                      {item.view === 'documents' && documentCount !== null ? (
+                        <span aria-hidden="true" className="ml-auto font-mono text-[0.65rem] text-ink-faint">
+                          {documentCount}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 )
@@ -411,139 +441,83 @@ function Navigation({
               </button>
             </li>
           ) : null}
+          {isAdmin ? (
+            <li>
+              <button
+                type="button"
+                className={`nav-link w-full justify-start ${activeView === 'agent-model' && route === '/dashboard' ? 'nav-link-active' : ''}`}
+                onClick={() => onSelectView('agent-model')}
+              >
+                <Sparkles aria-hidden="true" size={16} />
+                Agent model
+              </button>
+            </li>
+          ) : null}
+          <li>
+            <button
+              type="button"
+              className={`nav-link w-full justify-start ${activeView === 'help' && route === '/dashboard' ? 'nav-link-active' : ''}`}
+              aria-current={activeView === 'help' && route === '/dashboard' ? 'page' : undefined}
+              onClick={() => onSelectView('help')}
+            >
+              <HelpCircle aria-hidden="true" size={16} />
+              Help
+            </button>
+          </li>
         </ul>
 
-        <div className="mt-5 flex items-center justify-between px-2">
-          <p className="eyebrow">Workspaces</p>
-          <span className="font-mono text-[0.65rem] text-ink-faint">
-            {adminMode ? workspaces.length : memberWorkspaces.length}
-          </span>
-        </div>
         {adminMode ? (
-          <button
-            type="button"
-            className={`nav-link mt-1.5 w-full justify-start ${
-              route === '/dashboard' && activeView === 'admin-overview' ? 'nav-link-active' : ''
-            }`}
-            aria-current={
-              route === '/dashboard' && activeView === 'admin-overview' ? 'page' : undefined
-            }
-            onClick={() => onSelectView('admin-overview')}
-          >
-            <LayoutGrid aria-hidden="true" size={16} />
-            All workspaces
-          </button>
+          <>
+            <div className="mt-5 flex items-center justify-between px-2">
+              <p className="eyebrow">Workspaces</p>
+              <span className="font-mono text-[0.65rem] text-ink-faint">{workspaces.length}</span>
+            </div>
+            <button
+              type="button"
+              className={`nav-link mt-1.5 w-full justify-start ${
+                route === '/dashboard' && activeView === 'admin-overview' ? 'nav-link-active' : ''
+              }`}
+              aria-current={
+                route === '/dashboard' && activeView === 'admin-overview' ? 'page' : undefined
+              }
+              onClick={() => onSelectView('admin-overview')}
+            >
+              <LayoutGrid aria-hidden="true" size={16} />
+              All workspaces
+            </button>
+            <button
+              type="button"
+              className="mt-1.5 flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              onClick={onCreateWorkspace}
+            >
+              <Plus aria-hidden="true" size={15} />
+              New workspace
+            </button>
+          </>
         ) : null}
-        {isAdmin ? (
+        {isAdmin && !adminMode ? (
           <button
             type="button"
-            className="mt-1.5 flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+            className="mt-5 flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             onClick={onCreateWorkspace}
           >
             <Plus aria-hidden="true" size={15} />
             New workspace
           </button>
         ) : null}
-        {adminMode ? (
-          <ul className="mt-1.5 space-y-0.5">
-            {workspaces.map((workspace) => (
-              <li
-                key={workspace.id}
-                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-ink-faint"
-              >
-                <Avatar name={workspace.name} seed={workspace.id} size="xs" />
-                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                <LockKeyhole aria-hidden="true" className="shrink-0" size={12} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <>
-            <ul className="mt-1.5 space-y-0.5">
-              {memberWorkspaces.map((workspace) => {
-                const selected = selectedWorkspace?.id === workspace.id
-                return (
-                  <li key={workspace.id}>
-                    <button
-                      type="button"
-                      className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors ${
-                        selected
-                          ? 'bg-accent-soft text-accent-ink'
-                          : 'text-ink-muted hover:bg-sunken hover:text-ink'
-                      }`}
-                      aria-label={`Open ${workspace.name} workspace`}
-                      aria-current={selected ? 'true' : undefined}
-                      onClick={() => onSelectWorkspace(workspace.id)}
-                    >
-                      <Avatar name={workspace.name} seed={workspace.id} size="xs" />
-                      <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-            {catalogWorkspaces.length > 0 ? (
-              <>
-                <button
-                  type="button"
-                  className="mt-1 flex h-[22px] w-full items-center justify-center rounded-control text-ink-faint transition-colors hover:bg-sunken hover:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
-                  aria-label={
-                    directoryOpen ? 'Collapse catalogued workspaces' : 'Show catalogued workspaces'
-                  }
-                  aria-expanded={directoryOpen}
-                  onClick={() => setDirectoryOpen((open) => !open)}
-                >
-                  <ChevronsDown
-                    aria-hidden="true"
-                    size={13}
-                    className={`transition-transform duration-300 ${directoryOpen ? 'rotate-180' : ''}`}
-                  />
-                </button>
-                <div
-                  aria-hidden={!directoryOpen}
-                  className={`grid transition-[grid-template-rows] duration-300 ease-out ${
-                    directoryOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-                  }`}
-                >
-                  <div className="overflow-hidden">
-                    <ul className="space-y-0.5 pt-1">
-                      {catalogWorkspaces.map((workspace) => {
-                        const selected = selectedWorkspace?.id === workspace.id
-                        return (
-                          <li key={workspace.id}>
-                            <button
-                              type="button"
-                              className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors ${
-                                selected
-                                  ? 'bg-sunken text-ink-muted'
-                                  : 'text-ink-faint hover:bg-sunken hover:text-ink-muted'
-                              }`}
-                              aria-label={`Open ${workspace.name} workspace`}
-                              aria-current={selected ? 'true' : undefined}
-                              onClick={() => onSelectWorkspace(workspace.id)}
-                            >
-                              <Avatar name={workspace.name} seed={workspace.id} size="xs" />
-                              <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                              <LockKeyhole aria-hidden="true" className="shrink-0" size={12} />
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </>
-        )}
+        </div>
       </nav>
 
-      <div className="border-t border-line p-3">
+      <div
+        className={
+          floating ? 'mt-3 rounded-card border border-line bg-surface p-3' : 'border-t border-line p-3'
+        }
+      >
         <div className="flex items-center gap-2.5 px-1">
           <Avatar name={user.username} seed={user.id} size="md" />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-ink">{user.username}</p>
-            <p className="text-[0.7rem] capitalize text-ink-muted">{user.role}</p>
+            <p className="font-mono text-[0.65rem] capitalize text-ink-muted">{user.role}</p>
           </div>
           <div className="ml-auto flex items-center gap-0.5">
             <ThemeMenu preference={themePreference} resolved={themeResolved} onSelect={onThemeChange} />
@@ -613,21 +587,17 @@ function WorkspaceSwitcher({
     }
   }, [open])
 
-  const hasChoices = workspaces.length > 1
+  const canOpen = workspaces.length > 0
 
   return (
     <div ref={containerRef} className="relative mt-2">
       <button
         type="button"
-        className="flex w-full items-center gap-2.5 rounded-control bg-sunken/70 px-2.5 py-2 text-left transition-colors hover:bg-sunken focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
-        aria-haspopup={hasChoices ? 'menu' : undefined}
-        aria-expanded={hasChoices ? open : undefined}
-        aria-label={
-          hasChoices
-            ? `Current workspace ${selectedWorkspace?.name ?? 'none'}, switch workspace`
-            : `Current workspace ${selectedWorkspace?.name ?? 'none'}`
-        }
-        disabled={!hasChoices}
+        className="flex w-full items-center gap-2.5 rounded-control border border-line bg-sunken px-2.5 py-2 text-left transition-colors hover:border-line-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        aria-haspopup={canOpen ? 'menu' : undefined}
+        aria-expanded={canOpen ? open : undefined}
+        aria-label={`Current workspace ${selectedWorkspace?.name ?? 'none'}, switch workspace`}
+        disabled={!canOpen}
         onClick={() => setOpen((current) => !current)}
       >
         <Avatar
@@ -643,16 +613,16 @@ function WorkspaceSwitcher({
             {selectedWorkspace?.membership_role ?? 'Not assigned'}
           </span>
         </span>
-        {hasChoices ? (
+        {canOpen ? (
           <ArrowLeftRight
             aria-hidden="true"
-            className={`shrink-0 text-ink-faint transition-transform duration-200 ${open ? 'text-accent-ink' : ''}`}
+            className={`shrink-0 transition-all duration-200 ${open ? 'rotate-90 text-accent' : 'text-ink-faint'}`}
             size={14}
           />
         ) : null}
       </button>
 
-      {open && hasChoices ? (
+      {open && canOpen ? (
         <div
           role="menu"
           aria-label="Switch workspace"
@@ -667,7 +637,7 @@ function WorkspaceSwitcher({
                 role="menuitemradio"
                 aria-checked={active}
                 className={`flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-sunken ${
-                  active ? 'text-accent-ink' : 'text-ink-muted'
+                  active ? 'font-semibold text-ink' : 'text-ink-muted'
                 }`}
                 aria-label={`Switch to ${workspace.name}`}
                 onClick={() => {

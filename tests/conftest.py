@@ -170,11 +170,11 @@ def settings(tmp_path: Path) -> Settings:
         s3_secret_key=SecretStr("test-s3-secret-xxxxxxxxxxxxxxxxxx"),
         s3_raw_bucket="raw-documents",
         s3_artifact_bucket="context-documents",
-        qdrant_read_only_api_key=SecretStr("test-qdrant-read-only-key-xxxxxxxxxx"),
         antivirus_enabled=False,
         upload_temp_dir=tmp_path,
         max_upload_bytes=1024 * 1024,
         max_pdf_pages=10,
+        embedding_dimensions=2,
         tracing_enabled=False,
     )
 

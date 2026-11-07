@@ -1,4 +1,4 @@
-"""The MCP endpoint: authentication, scope, and the four read tools.
+"""The MCP endpoint: authentication, scope, and the read tools.
 
 The tests drive the real streamable-HTTP transport over ASGI rather than a
 mocked server, because the two properties worth protecting here are
@@ -29,6 +29,7 @@ from app.db.models import (
     JOB_EXTRACT,
     ApiKey,
     Document,
+    DocumentChunk,
     DocumentImage,
     DocumentWorkspace,
     ProcessingRun,
@@ -51,6 +52,7 @@ from app.retrieval.sql import (
     RowQueryResult,
     RowResult,
 )
+from app.sections import encode_section_key
 from app.security.api_keys import hash_api_key, mint_api_key
 from tests.conftest import InMemoryObjectStorage, SeededEntities
 
@@ -74,7 +76,11 @@ class FakeRetriever(ContextRetriever):
     def __init__(self) -> None:
         self.calls: list[list[UUID]] = []
         self.budgets: list[int | None] = []
+        self.min_scores: list[float | None] = []
+        self.document_ids: list[UUID | None] = []
         self.results: list[list[ContextSource]] = []
+        self.text_calls: list[tuple[str, list[UUID], int, UUID | None]] = []
+        self.text_results: list[list[ContextSource]] = []
 
     async def retrieve(
         self,
@@ -83,11 +89,26 @@ class FakeRetriever(ContextRetriever):
         limit: int,
         *,
         budget: int | None = None,
+        min_score: float | None = None,
+        document_id: UUID | None = None,
     ) -> list[ContextSource]:
         del query, limit
         self.calls.append(list(workspace_ids))
         self.budgets.append(budget)
+        self.min_scores.append(min_score)
+        self.document_ids.append(document_id)
         return self.results.pop(0) if self.results else []
+
+    async def search_text(
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        document_id: UUID | None = None,
+    ) -> list[ContextSource]:
+        self.text_calls.append((query, list(workspace_ids), limit, document_id))
+        return self.text_results.pop(0) if self.text_results else []
 
 
 class FakeRowQuery(RowQuery):
@@ -400,6 +421,29 @@ async def test_search_context_grants_room_for_section_completion(mcp: McpEnv) ->
     assert mcp.settings.max_context_sources > mcp.settings.max_context_chunks
 
 
+async def test_search_context_passes_a_per_call_score_floor(mcp: McpEnv) -> None:
+    """A caller can raise or lower the floor; omitting it keeps the server's."""
+    await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+    await mcp.session.call(mcp.alice_key, "search_context", query="revenue", min_score=0.8)
+
+    assert mcp.retriever.min_scores == [None, 0.8]
+
+
+async def test_search_context_can_stay_inside_one_document(mcp: McpEnv) -> None:
+    """document_id narrows the search; omitting it keeps the whole scope."""
+    document_id = uuid4()
+
+    await mcp.session.call(
+        mcp.alice_key,
+        "search_context",
+        query="revenue",
+        document_id=str(document_id),
+    )
+    await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+
+    assert mcp.retriever.document_ids == [document_id, None]
+
+
 async def test_search_context_labels_each_source_with_its_section(mcp: McpEnv) -> None:
     """The model is told which section a passage came from, not just which page."""
     source = make_source(mcp.entities.finance.id, text="net revenue")
@@ -488,11 +532,15 @@ async def test_tools_are_the_documented_set(mcp: McpEnv) -> None:
     names = {tool["name"] for tool in listed["result"]["tools"]}
     assert names == {
         "search_context",
+        "search_text",
         "read_document",
+        "get_document_outline",
+        "describe_document",
         "query_rows",
         "list_queryable_files",
         "download_document",
         "find_documents",
+        "list_workspaces",
         "list_images",
         "get_image",
     }
@@ -912,10 +960,14 @@ async def test_the_row_tool_is_absent_when_no_reader_is_configured(
     assert "query_rows" not in names
     assert names == {
         "search_context",
+        "search_text",
         "read_document",
+        "get_document_outline",
+        "describe_document",
         "list_queryable_files",
         "download_document",
         "find_documents",
+        "list_workspaces",
         "list_images",
         "get_image",
     }
@@ -991,15 +1043,12 @@ async def _seed_picture(mcp: "McpEnv", *, described: bool = True) -> tuple[UUID,
         await session.flush()
         session.add(
             DocumentImage(
-                origin_workspace_id=workspace_id,
                 document_id=seeded.document_id,
-                processing_run_id=run.id,
                 ref="image-p1-0",
                 bucket=mcp.settings.s3_artifact_bucket,
                 object_key=object_key,
                 media_type="image/png",
                 size_bytes=len(png),
-                sha256=hashlib.sha256(png).hexdigest(),
                 page_number=1,
                 describe_hint="picture",
                 caption="Figure 1: Revenue.",
@@ -1113,3 +1162,174 @@ async def test_list_images_refuses_a_key_without_the_workspace(mcp: McpEnv) -> N
     )
     assert result["isError"] is True
     assert "does not exist or is not accessible" in text_of(result)
+
+
+async def test_search_text_returns_literal_matches(mcp: McpEnv) -> None:
+    workspace_id = mcp.entities.legal.id
+    mcp.retriever.text_results.append(
+        [make_source(workspace_id, text="Invoice INV-2024-001 was settled.")]
+    )
+
+    result = await mcp.session.call(mcp.alice_key, "search_text", query="INV-2024-001")
+
+    assert result["isError"] is False
+    assert "INV-2024-001" in text_of(result)
+    query, scope, limit, document_id = mcp.retriever.text_calls[0]
+    assert query == "INV-2024-001"
+    assert set(scope) == {mcp.entities.finance.id, mcp.entities.legal.id}
+    assert limit == mcp.settings.max_context_chunks
+    assert document_id is None
+
+
+async def test_search_text_can_be_narrowed_to_one_document(mcp: McpEnv) -> None:
+    document_id = uuid4()
+    mcp.retriever.text_results.append([])
+
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "search_text",
+        query="Pasal 7",
+        document_id=str(document_id),
+    )
+
+    assert result["isError"] is False
+    assert mcp.retriever.text_calls[-1][3] == document_id
+
+
+async def test_list_workspaces_names_the_callers_workspaces(mcp: McpEnv) -> None:
+    await _seed_document(mcp, filename="contract.pdf")
+
+    result = await mcp.session.call(mcp.alice_key, "list_workspaces")
+
+    assert result["isError"] is False
+    body = text_of(result)
+    assert "legal" in body
+    assert "Legal" in body
+    assert "(owner)" in body
+    assert "finance" in body
+    assert "1 document(s)" in body
+
+    bob = await mcp.session.call(mcp.bob_key, "list_workspaces")
+    assert "finance" not in text_of(bob)
+
+
+async def test_describe_document_reports_what_was_extracted(mcp: McpEnv) -> None:
+    document_id = await _seed_processed_document(
+        mcp,
+        entries=[
+            ("1. Introduction", ["1. Introduction"], 1),
+            ("The policy covers procurement.", ["1. Introduction"], 2),
+            ("2. Methods", ["2. Methods"], 4),
+        ],
+    )
+
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "describe_document",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(document_id),
+    )
+
+    assert result["isError"] is False
+    body = text_of(result)
+    assert "status: ready" in body
+    assert "chunks: 3 (3 embedded)" in body
+    assert "pages: 4" in body
+    assert "sections: 2" in body
+
+
+async def test_describe_document_flags_an_extraction_that_produced_no_text(
+    mcp: McpEnv,
+) -> None:
+    document_id = await _seed_processed_document(mcp, entries=[])
+
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "describe_document",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(document_id),
+    )
+
+    assert result["isError"] is False
+    body = text_of(result)
+    assert "chunks: 0 (0 embedded)" in body
+    assert "warning: no text chunks" in body
+
+
+async def test_get_document_outline_lists_sections(mcp: McpEnv) -> None:
+    document_id = await _seed_processed_document(
+        mcp,
+        entries=[
+            ("1. Introduction", ["1. Introduction"], 1),
+            ("2. Methods", ["2. Methods"], 4),
+            ("2.1 Open tendering", ["2. Methods", "2.1 Open tendering"], 5),
+        ],
+    )
+
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "get_document_outline",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(document_id),
+    )
+
+    assert result["isError"] is False
+    body = text_of(result)
+    assert "1. Introduction  [ordinal 0, page 1, 1 chunk(s)]" in body
+    assert "2. Methods  [ordinal 1, page 4, 1 chunk(s)]" in body
+    assert "2.1 Open tendering  [ordinal 2, page 5, 1 chunk(s)]" in body
+
+
+async def test_get_document_outline_refuses_an_unknown_document(mcp: McpEnv) -> None:
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "get_document_outline",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(uuid4()),
+    )
+
+    assert result["isError"] is True
+    assert "No readable document" in text_of(result)
+
+
+async def _seed_processed_document(
+    mcp: McpEnv,
+    *,
+    filename: str = "manual.pdf",
+    entries: list[tuple[str, list[str], int]] | None = None,
+) -> UUID:
+    """A document with an active run and the chunks the worker would write."""
+    seeded = await _seed_document(mcp, filename=filename)
+    workspace_id = mcp.entities.legal.id
+    chunks = entries or []
+    async with mcp.session_factory() as session, session.begin():
+        run = ProcessingRun(
+            document_id=seeded.document_id,
+            origin_workspace_id=workspace_id,
+            job_kind=JOB_EXTRACT,
+            pipeline_version="2026.1",
+            status="ready",
+            chunk_count=len(chunks),
+            embedded_chunk_count=len(chunks),
+        )
+        session.add(run)
+        await session.flush()
+        document = await session.get(Document, seeded.document_id)
+        assert document is not None
+        document.active_processing_run_id = run.id
+        for ordinal, (text, path, page) in enumerate(chunks):
+            session.add(
+                DocumentChunk(
+                    origin_workspace_id=workspace_id,
+                    document_id=seeded.document_id,
+                    processing_run_id=run.id,
+                    ordinal=ordinal,
+                    text=text,
+                    token_count=len(text.split()),
+                    section_path=path,
+                    section_key=encode_section_key(path),
+                    page_numbers=[page],
+                    content_hash=hashlib.sha256(text.encode()).hexdigest(),
+                )
+            )
+    return seeded.document_id

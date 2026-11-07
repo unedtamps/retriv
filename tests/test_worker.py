@@ -1,10 +1,10 @@
 """The processing worker.
 
 Driven directly against the models rather than through the intake
-webhook, which no longer exists. The important case here is the delete
-path: the document row must outlive the request so the worker can read
-the Qdrant point IDs out of the embedding ledger, and must be removed
-only after the vectors are gone.
+webhook, which no longer exists. The delete path's ordering still
+matters: the document row must outlive the request so the worker can
+remove the artifacts and raw object it names, and the embedding vectors
+go with the row's own cascade.
 """
 
 import asyncio
@@ -55,9 +55,6 @@ from app.db.models import (
 from app.embeddings.base import (
     EmbeddingProvider,
     EmbeddingProviderError,
-    VectorMatch,
-    VectorPoint,
-    VectorStore,
 )
 from app.extraction.base import (
     DocumentExtractor,
@@ -203,79 +200,61 @@ class FakeVisionProvider:
 
 
 class FakeEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        error: Exception | None = None,
+        *,
+        dimensions: int | None = None,
+    ) -> None:
         self._error = error
+        self._dimensions = dimensions
         self.embedded: list[str] = []
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if self._error is not None:
             raise self._error
         self.embedded.extend(texts)
-        return [[0.1, 0.2] for _ in texts]
+        width = self._dimensions if self._dimensions is not None else 2
+        unit = [0.1 / (width - 1) if width > 1 else 1.0 for _ in range(width)]
+        return [list(unit) for _ in texts]
 
     async def aclose(self) -> None:
         return
 
 
-class FakeVectorStore(VectorStore):
+class FakeVectorSink:
+    """Stands in for the worker's pgvector batch write.
+
+    The real write is raw SQL against the vector column, which only exists
+    in Postgres; SQLite's schema has no such column, so the main suite
+    records the batches instead of executing them.
+    """
+
     def __init__(self, error: Exception | None = None) -> None:
         self._error = error
-        self.points: dict[str, VectorPoint] = {}
-        self.deleted_documents: list[UUID] = []
-        self.deleted_points: list[UUID] = []
-        self.workspace_payloads: dict[UUID, list[UUID]] = {}
+        self.batches: list[list[tuple[UUID, list[float]]]] = []
 
-    async def ensure_collection(self) -> None:
-        return
+    @property
+    def vectors(self) -> dict[str, list[float]]:
+        return {
+            str(chunk_id): vector
+            for batch in self.batches
+            for chunk_id, vector in batch
+        }
 
-    async def upsert(self, points: list[VectorPoint]) -> None:
+    async def __call__(
+        self,
+        batch: list[tuple[DocumentChunk, ChunkEmbedding]],
+        vectors: list[list[float]],
+    ) -> None:
         if self._error is not None:
             raise self._error
-        for point in points:
-            self.points[str(point.id)] = point
-
-    async def delete_points(self, point_ids: list[UUID]) -> None:
-        self.deleted_points.extend(point_ids)
-        for point_id in point_ids:
-            self.points.pop(str(point_id), None)
-
-    async def delete_document(self, document_id: UUID) -> None:
-        self.deleted_documents.append(document_id)
-        for key, point in list(self.points.items()):
-            if point.payload.get("document_id") == str(document_id):
-                del self.points[key]
-
-    async def set_document_workspaces(
-        self,
-        document_id: UUID,
-        workspace_ids: list[UUID],
-        *,
-        processing_run_id: UUID | None = None,
-    ) -> None:
-        self.workspace_payloads[document_id] = list(workspace_ids)
-        for point in self.points.values():
-            if point.payload.get("document_id") != str(document_id):
-                continue
-            if processing_run_id is not None and point.payload.get(
-                "processing_run_id"
-            ) != str(processing_run_id):
-                continue
-            point.payload["workspace_ids"] = [
-                str(workspace_id) for workspace_id in workspace_ids
+        self.batches.append(
+            [
+                (chunk.id, vector)
+                for (chunk, _), vector in zip(batch, vectors, strict=True)
             ]
-
-    async def search(
-        self,
-        vector: list[float],
-        *,
-        workspace_ids: list[UUID],
-        embedding_profile: str,
-        limit: int,
-    ) -> list[VectorMatch]:
-        raise NotImplementedError
-
-    async def aclose(self) -> None:
-        return
+        )
 
 
 def build_worker(
@@ -285,18 +264,19 @@ def build_worker(
     storage: FakeStorage | None = None,
     extractor: DocumentExtractor | None = None,
     embeddings: FakeEmbeddingProvider | None = None,
-    vectors: FakeVectorStore | None = None,
+    vectors: FakeVectorSink | None = None,
     vision: FakeVisionProvider | None = None,
 ) -> ProcessingWorker:
-    return ProcessingWorker(
+    worker = ProcessingWorker(
         session_factory,
         storage or FakeStorage(),
         extractor or FakeExtractor(),
         settings,
         embeddings or FakeEmbeddingProvider(),
-        vectors or FakeVectorStore(),
         vision,
     )
+    worker._store_vectors = (vectors if vectors is not None else FakeVectorSink())  # type: ignore[method-assign]
+    return worker
 
 
 async def seed_document(
@@ -350,7 +330,7 @@ async def test_worker_indexes_a_document_end_to_end(
 ) -> None:
     storage = FakeStorage()
     document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
     worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
 
     assert await worker.run_once() is True
@@ -378,10 +358,9 @@ async def test_worker_indexes_a_document_end_to_end(
         key.startswith(f"workspaces/{entities.finance.id}/documents/{document.id}/")
         for _bucket, key in storage.objects
     )
-    assert len(vectors.points) == 1
-    point = next(iter(vectors.points.values()))
-    assert point.payload["origin_workspace_id"] == str(entities.finance.id)
-    assert point.payload["workspace_ids"] == [str(entities.finance.id)]
+    assert len(vectors.vectors) == 1
+    vector = next(iter(vectors.vectors.values()))
+    assert len(vector) == settings.embedding_dimensions
 
 
 async def test_a_completed_run_records_its_progress_and_its_attempt(
@@ -578,7 +557,7 @@ async def test_a_lossy_extraction_fails_instead_of_indexing_a_partial_document(
         source_text_chars=100_000,
         page_count=182,
     )
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
 
     worker = build_worker(
         db_session_factory, settings, storage=storage, extractor=extractor, vectors=vectors
@@ -591,7 +570,7 @@ async def test_a_lossy_extraction_fails_instead_of_indexing_a_partial_document(
     assert failed is not None
     assert failed.status == RUN_FAILED
     assert "of the text in this document" in (failed.last_error or "")
-    assert vectors.points == {}, "no vectors may be written for a lossy extraction"
+    assert vectors.vectors == {}, "no vectors may be written for a lossy extraction"
     assert "Extraction coverage below minimum" in caplog.text
     assert "pages_covered=1 pages_total=182" in caplog.text
     assert "1 of 182 pages" in (failed.last_error or "")
@@ -620,7 +599,7 @@ async def test_extraction_running_out_of_memory_names_the_limit_to_raise(
             "DefaultCPUAllocator: can't allocate memory"
         )
     )
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
 
     worker = build_worker(
         db_session_factory, settings, storage=storage, extractor=extractor, vectors=vectors
@@ -637,7 +616,7 @@ async def test_extraction_running_out_of_memory_names_the_limit_to_raise(
     assert "ran out of memory" in message
     assert "RETRIV_PARSER_MEMORY_LIMIT_BYTES" in message
     assert "requeue" in message
-    assert vectors.points == {}, "nothing may be indexed from a truncated parse"
+    assert vectors.vectors == {}, "nothing may be indexed from a truncated parse"
     assert "of the text in this document" not in message, "this is not a quality failure"
     assert extractor.calls == 1
     assert "Processing run failed permanently" in caplog.text
@@ -695,26 +674,27 @@ async def test_an_embedding_error_schedules_a_backoff(
     assert embeddings[0].status == EMBEDDING_RETRY_WAIT
 
 
-async def test_delete_removes_vectors_before_the_document_row(
+async def test_delete_removes_the_document_and_everything_that_cascades(
     db_session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
     entities: SeededEntities,
 ) -> None:
-    """The ordering is the whole point.
+    """The artifacts order around the row, and the vectors go with it.
 
-    The Qdrant point IDs live in chunk_embeddings, which cascades away
-    with the document. If the row were deleted first, the vectors would
-    be orphaned with no record of where to find them.
+    The document row must survive until the worker has removed the
+    artifact folder and the raw object it names; the embedding vectors
+    need no step of their own, because they live on chunk_embeddings and
+    cascade with the row delete.
     """
     storage = FakeStorage()
     document, extract_run = await seed_document(
         db_session_factory, entities.finance.id, storage=storage
     )
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
     indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await indexer.run_once() is True
 
-    assert len(vectors.points) == 1
+    assert len(vectors.vectors) == 1
 
     from app.processing.service import enqueue_delete
 
@@ -726,16 +706,12 @@ async def test_delete_removes_vectors_before_the_document_row(
 
     async with db_session_factory() as session:
         assert await session.get(Document, document.id) is not None, (
-            "the row must survive the request so the worker can read the point IDs"
+            "the row must survive the request so the worker can name what to remove"
         )
 
     deleter = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await deleter.run_once() is True
 
-    assert document.id in vectors.deleted_documents, (
-        "the vector store was never told to drop the document's points"
-    )
-    assert not vectors.points, "no vector survives the delete"
     assert any(
         prefix == f"workspaces/{entities.finance.id}/documents/{document.id}/"
         for _bucket, prefix in storage.prefixes
@@ -757,7 +733,7 @@ async def test_delete_removes_vectors_before_the_document_row(
             )
         ).all()
     assert chunks == []
-    assert embeddings == [], "the ledger went with the document, after the points did"
+    assert embeddings == [], "the ledger, vectors included, went with the document"
 
     del extract_run
 
@@ -866,7 +842,7 @@ async def test_embedding_backfill_requeues_a_run_left_half_indexed(
     un-indexed chunks. The sweep finds it and finishes the job."""
     storage = FakeStorage()
     document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
     indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     await indexer.run_once()
 
@@ -881,11 +857,11 @@ async def test_embedding_backfill_requeues_a_run_left_half_indexed(
         assert stored_run is not None
         stored_run.embedded_chunk_count = 0
 
-    vectors.points.clear()
+    vectors.batches.clear()
     backfill = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await backfill.run_once() is True
 
-    assert len(vectors.points) == 1
+    assert len(vectors.vectors) == 1
     async with db_session_factory() as session:
         embeddings = (
             await session.scalars(
@@ -909,7 +885,7 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
     """
     storage = FakeStorage()
     document, run = await seed_document(db_session_factory, entities.finance.id, storage=storage)
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
     indexer = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     await indexer.run_once()
 
@@ -959,11 +935,11 @@ async def test_embedding_backfill_finds_a_run_behind_finished_ones(
                 )
             )
 
-    vectors.points.clear()
+    vectors.batches.clear()
     backfill = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await backfill.run_once() is True
 
-    assert len(vectors.points) == 1
+    assert len(vectors.vectors) == 1
     async with db_session_factory() as session:
         embeddings = (
             await session.scalars(
@@ -988,7 +964,7 @@ async def test_worker_stores_csv_rows_and_never_embeds_them(
         filename="sales.csv",
     )
     embeddings = FakeEmbeddingProvider()
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
     worker = build_worker(
         db_session_factory,
         settings,
@@ -1020,7 +996,7 @@ async def test_worker_stores_csv_rows_and_never_embeds_them(
         {"sheet": "", "columns": ["id", "status", "amount", "currency"], "rows": 3}
     ]
     assert embeddings.embedded == []
-    assert vectors.points == {}
+    assert vectors.vectors == {}
 
     assert sorted(row.row_number for row in rows) == [1, 2, 3]
     first = next(row for row in rows if row.row_number == 1)
@@ -1563,9 +1539,10 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
 ) -> None:
     storage = FakeStorage()
     document, _ = await seed_document(db_session_factory, entities.finance.id, storage=storage)
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
     worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await worker.run_once() is True
+    batches_after_extract = len(vectors.batches)
 
     async with db_session_factory() as session, session.begin():
         stored = await session.get(Document, document.id)
@@ -1577,18 +1554,28 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
                 filename="laporan.pdf",
             )
         )
-        await enqueue_access_sync(session, stored, settings)
+        run_row = await enqueue_access_sync(session, stored, settings)
 
     assert await worker.run_once() is True
 
-    expected = {str(entities.finance.id), str(entities.legal.id)}
-    assert set(vectors.workspace_payloads[document.id]) == {
-        entities.finance.id,
-        entities.legal.id,
-    }
-    assert len(vectors.points) == 1
-    point = next(iter(vectors.points.values()))
-    assert set(point.payload["workspace_ids"]) == expected
+    async with db_session_factory() as session:
+        finished = await session.get(ProcessingRun, run_row.id)
+        links = (
+            await session.scalars(
+                select(DocumentWorkspace).where(
+                    DocumentWorkspace.document_id == document.id
+                )
+            )
+        ).all()
+    assert finished is not None
+    assert finished.status == RUN_READY
+    assert {str(link.workspace_id) for link in links} == {
+        str(entities.finance.id),
+        str(entities.legal.id),
+    }, "the new link is in the table retrieval reads live"
+    assert len(vectors.batches) == batches_after_extract, (
+        "a link change re-embeds nothing"
+    )
 
 
 class GatedExtractor:
@@ -2133,9 +2120,9 @@ async def test_describing_runs_share_one_vlm_budget(
             }
         ),
         FakeEmbeddingProvider(),
-        FakeVectorStore(),
         vision,
     )
+    worker._store_vectors = FakeVectorSink()  # type: ignore[method-assign]
 
     stop_event = asyncio.Event()
     runner = asyncio.create_task(worker.run(stop_event))
@@ -2250,7 +2237,6 @@ async def test_extracted_pictures_are_persisted_and_mapped(
     stored = storage.objects[(row.bucket, row.object_key)]
     assert stored != png, "a 2000px render must come back bounded to the model edge"
     assert row.size_bytes == len(stored)
-    assert row.sha256 == hashlib.sha256(stored).hexdigest()
     import pymupdf
 
     preview_document = pymupdf.open(stream=stored, filetype="png")
@@ -2305,7 +2291,9 @@ async def test_a_reingest_replaces_the_picture_rows(
             .all()
         )
 
-    assert [row.processing_run_id for row in rows] == [second.id]
+    assert rows and all(
+        f"runs/{second.id}/" in row.object_key for row in rows
+    ), "the surviving rows are the second run's attempt-scoped objects"
 
 
 async def test_a_csv_run_stores_no_picture_rows(
@@ -2390,28 +2378,28 @@ async def test_activation_sweeps_superseded_run_artifacts(
     assert history is not None, "the superseded run's row stays as history"
 
 
-async def test_activation_sweeps_superseded_run_vectors(
+async def test_superseded_run_rows_stay_as_history_but_lose_the_active_slot(
     db_session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
     entities: SeededEntities,
 ) -> None:
-    """A superseded run's points must leave the vector store, not just the bucket.
+    """A reindexed document keeps its old embedding rows, and the active run moves.
 
-    Retrieval validates every match against the active run, so those points
-    can never be served -- but the vector search still returns them, and a
-    search that hits one loses the slot it filled. Enough of them and the
-    document's whole workspace answers with nothing.
+    The rows stay as history exactly as the artifacts' do. Serving is a
+    retrieval concern: the vector search joins only the document's active
+    processing run, so superseded rows are excluded by construction -- that
+    guarantee is proven against real Postgres in the integration suite.
     """
     storage = FakeStorage()
-    vectors = FakeVectorStore()
+    vectors = FakeVectorSink()
     document, first_run = await seed_document(
         db_session_factory, entities.finance.id, storage=storage
     )
     worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
     assert await worker.run_once() is True
 
-    first_points = set(vectors.points)
-    assert first_points, "the first run must have written points"
+    first_batches = [list(batch) for batch in vectors.batches]
+    assert first_batches, "the first run must have written vectors"
 
     second = ProcessingRun(
         id=uuid4(),
@@ -2426,57 +2414,26 @@ async def test_activation_sweeps_superseded_run_vectors(
 
     assert await worker.run_once() is True
 
-    remaining = set(vectors.points)
-    assert not (first_points & remaining), "the superseded run's points must be swept"
-    assert remaining, "the winning run's own points must stay"
-    assert first_points <= {str(point_id) for point_id in vectors.deleted_points}
-
-
-async def test_activation_relabels_only_the_winning_runs_points(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    settings: Settings,
-    entities: SeededEntities,
-) -> None:
-    """Relabelling a document's workspaces must not reach the points it replaced.
-
-    A superseded point that keeps a current workspace label stays inside every
-    search for that workspace. Narrowing the relabel to the winning run's
-    processing_run_id is what stops a stale point from being handed a fresh
-    scope.
-    """
-    storage = FakeStorage()
-    vectors = FakeVectorStore()
-    document, _ = await seed_document(db_session_factory, entities.finance.id, storage=storage)
-    worker = build_worker(db_session_factory, settings, storage=storage, vectors=vectors)
-    assert await worker.run_once() is True
-
-    stale_run_id = uuid4()
-    stale_point_id = uuid4()
-    vectors.points[str(stale_point_id)] = VectorPoint(
-        id=stale_point_id,
-        vector=[],
-        payload={
-            "document_id": str(document.id),
-            "processing_run_id": str(stale_run_id),
-            "workspace_ids": [],
-        },
-    )
-
-    second = ProcessingRun(
-        id=uuid4(),
-        document_id=document.id,
-        origin_workspace_id=document.origin_workspace_id,
-        job_kind=JOB_EXTRACT,
-        pipeline_version="2026.1",
-        status=RUN_QUEUED,
-    )
-    async with db_session_factory() as session, session.begin():
-        session.add(second)
-
-    assert await worker.run_once() is True
-
-    fresh = [point for point in vectors.points.values() if point.payload.get("workspace_ids")]
-    assert fresh, "the winning run's points must carry the workspace label"
+    async with db_session_factory() as session:
+        stored = await session.get(Document, document.id)
+        assert stored is not None
+        old_rows = (
+            await session.scalars(
+                select(ChunkEmbedding).where(
+                    ChunkEmbedding.processing_run_id == first_run.id
+                )
+            )
+        ).all()
+        new_rows = (
+            await session.scalars(
+                select(ChunkEmbedding).where(
+                    ChunkEmbedding.processing_run_id == second.id
+                )
+            )
+        ).all()
+    assert stored.active_processing_run_id == second.id
+    assert old_rows, "the superseded run's rows stay as history"
+    assert new_rows, "the winning run has its own rows"
 
 
 async def test_shutdown_hands_back_a_lease_it_cannot_finish(

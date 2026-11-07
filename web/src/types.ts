@@ -2,12 +2,15 @@ export type PlatformRole = 'admin' | 'user' | string
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 export type AppRoute = '/dashboard' | '/upload-context'
 export type DashboardView =
+  | 'chat'
   | 'overview'
   | 'documents'
   | 'members'
   | 'admin-overview'
   | 'api-keys'
   | 'users'
+  | 'agent-model'
+  | 'help'
 
 export interface SessionToken {
   access_token: string
@@ -217,4 +220,57 @@ export interface CreatedApiKey extends ApiKeySummary {
   /** Plaintext credential, present only in the creation response. */
   key: string
   warning: string
+}
+
+export interface AgentProviderInfo {
+  key: string
+  label: string
+  default_model: string
+  key_hint: string
+}
+
+export interface AgentModelSettings {
+  configured: boolean
+  provider: string | null
+  base_url: string | null
+  model: string | null
+  api_key_preview: string | null
+  last_test_ok: boolean | null
+  last_test_model: string | null
+  last_tested_at: string | null
+  test_error: string | null
+  updated_at: string | null
+  key_hint: string | null
+  available_providers: AgentProviderInfo[]
+}
+
+export interface AgentModelUpdate {
+  provider: string
+  base_url?: string
+  model?: string
+  api_key?: string
+}
+
+export interface AgentModelTestResult {
+  ok: boolean
+  model: string | null
+  error: string | null
+}
+
+export interface AgentChatHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AgentChatEvent {
+  type: 'turn_start' | 'message_delta' | 'tool_call' | 'tool_result' | 'message' | 'final' | 'error'
+  name?: string
+  arguments?: Record<string, unknown>
+  length?: number
+  truncated?: boolean
+  preview?: string
+  content?: string
+  message?: string
+  retryable?: boolean
+  turns_allowed?: number
 }

@@ -69,7 +69,7 @@ export function ProcessingNotifications({
       <button
         ref={bellButtonRef}
         type="button"
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         aria-label={
           count === 0
             ? 'Open processing notifications'
@@ -166,7 +166,7 @@ function ProcessingRunCard({
   return (
     <article className="rounded-card border border-line bg-surface p-3.5">
       <div className="flex items-start gap-3">
-        <FileText className="mt-0.5 shrink-0 text-accent-ink" aria-hidden="true" size={17} />
+        <FileText className="mt-0.5 shrink-0 text-ink-muted" aria-hidden="true" size={17} />
         <div className="min-w-0 flex-1">
           <p className="break-words text-sm font-medium text-ink">{filename}</p>
           <p className="mt-1 text-xs text-ink-muted">

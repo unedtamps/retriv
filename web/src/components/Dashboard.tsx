@@ -18,8 +18,11 @@ import {
 import type { ThemePreference } from '../hooks/useTheme'
 import { useProcessingRuns } from '../hooks/useProcessingRuns'
 import { useWorkspaceDocuments } from '../hooks/useWorkspaceDocuments'
+import { AdminAgentModel } from './AdminAgentModel'
 import { AdminUserPanel } from './AdminUserPanel'
 import { AdminWorkspacesPage } from './AdminWorkspaces'
+import { AgentChatPage } from './AgentChatPage'
+import { useAgentConversation } from '../hooks/useAgentConversation'
 import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
 import { ConfirmDialog, Dialog } from './Dialog'
@@ -27,6 +30,7 @@ import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { DocumentViewerDrawer } from './DocumentViewerDrawer'
 import { CredentialDialog } from './CredentialDialog'
 import { EmptyWorkspace, WorkspaceOverview } from './WorkspaceOverview'
+import { HelpView } from './HelpView'
 import { UploadContext } from './UploadContext'
 import { UploadForm } from './UploadForm'
 import { WorkspaceDocumentsPage } from './WorkspaceDocumentsPage'
@@ -62,10 +66,11 @@ export function Dashboard({
 }: DashboardProps) {
   const isAdmin = user.role === 'admin'
   const adminMode = isAdmin && workspaces.every((workspace) => workspace.membership_role === null)
+  const hasMembership = workspaces.some((workspace) => workspace.membership_role !== null)
   const [activeView, setActiveView] = useState<DashboardView>(
     () =>
       readDashboardView(window.location.search, isAdmin, adminMode) ??
-      (adminMode ? 'admin-overview' : 'overview'),
+      (adminMode ? 'admin-overview' : 'chat'),
   )
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(() =>
     readDashboardWorkspaceId(window.location.search, workspaces),
@@ -89,6 +94,7 @@ export function Dashboard({
     preferredWorkspace
   const documents = useWorkspaceDocuments(selectedWorkspace, onUnauthorized)
   const runs = useProcessingRuns(onUnauthorized)
+  const conversation = useAgentConversation(onUnauthorized)
 
   useEffect(() => {
     if (route !== '/dashboard') return
@@ -213,6 +219,7 @@ export function Dashboard({
       user={user}
       workspaces={workspaces}
       runs={runs}
+      documentCount={adminMode || selectedWorkspace === null ? null : documents.data?.total ?? null}
       selectedWorkspace={selectedWorkspace}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
@@ -249,6 +256,22 @@ export function Dashboard({
             onNotice={showNotice}
           />
         </PlatformPage>
+      ) : activeView === 'agent-model' && isAdmin ? (
+        <PlatformPage
+          eyebrow="Platform administration"
+          title="Agent harness"
+          description="The one chat model every workspace agent answers with. Pick a provider, paste its API key, and the connection test proves the endpoint before anyone uses it."
+        >
+          <AdminAgentModel onUnauthorized={onUnauthorized} onNotice={showNotice} />
+        </PlatformPage>
+      ) : activeView === 'help' ? (
+        <PlatformPage
+          eyebrow="Workspace reference"
+          title="Help"
+          description="The roles, the document states, and every code the interface will show you."
+        >
+          <HelpView />
+        </PlatformPage>
       ) : adminMode ? (
         <AdminWorkspacesPage
           onUnauthorized={onUnauthorized}
@@ -256,11 +279,13 @@ export function Dashboard({
         />
       ) : selectedWorkspace === null ? (
         <EmptyWorkspace onCreate={isAdmin ? () => setCreateWorkspaceOpen(true) : undefined} />
+      ) : activeView === 'chat' && !adminMode && hasMembership ? (
+        <AgentChatPage conversation={conversation} />
       ) : activeView === 'documents' ? (
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}
           documents={documents}
-          searchQuery={searchQuery}
+          runs={runs}
           focusDocumentId={focusDocumentId}
           canReindex={selectedWorkspace.membership_role === 'owner'}
           reindexingId={reindexingId}
@@ -281,19 +306,11 @@ export function Dashboard({
       ) : (
         <WorkspaceOverview
           workspace={selectedWorkspace}
-          isAdmin={isAdmin}
           documents={documents}
-          searchQuery={searchQuery}
           onUpload={openUpload}
-          canReindex={selectedWorkspace.membership_role === 'owner'}
-          reindexingId={reindexingId}
-          onReindex={setReindexTarget}
-          canView={selectedWorkspace.can_download}
-          onView={setViewTarget}
-          onViewDocuments={() => setActiveView('documents')}
-          onManageMembers={() => setActiveView('members')}
+          onOpenMembers={() => setActiveView('members')}
+          onOpenChat={() => setActiveView('chat')}
           onUnauthorized={onUnauthorized}
-          onDeleteDocument={setDeleteTarget}
         />
       )}
 
@@ -410,7 +427,7 @@ function PlatformPage({
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <header className="border-b border-line pb-5">
         <p className="eyebrow">{eyebrow}</p>
-        <h1 className="mt-1.5 font-display text-2xl font-medium text-ink">{title}</h1>
+        <h1 className="mt-1.5 font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">{title}</h1>
         <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-muted">{description}</p>
       </header>
       <div className="mt-5">{children}</div>

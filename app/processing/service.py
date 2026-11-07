@@ -107,12 +107,12 @@ async def enqueue_reextract(
 async def enqueue_access_sync(
     session: AsyncSession, document: Document, settings: Settings
 ) -> ProcessingRun:
-    """Queue the small job that refreshes Qdrant's workspace membership.
+    """Queue the small job that acknowledges a workspace-link change.
 
-    The payload carries ``workspace_ids`` so a search filters one indexed
-    keyword field. That payload is derived from ``document_workspaces`` and
-    refreshed after a link is added, removed, or reactivated. It is not an
-    extract run: nothing is downloaded, chunked, or embedded.
+    Retrieval reads the caller's scope from ``document_workspaces`` at
+    query time, so the run needs no work of its own -- it exists because
+    the link flows enqueue one. It is not an extract run: nothing is
+    downloaded, chunked, or embedded.
     """
     existing_run = await session.scalar(
         select(ProcessingRun).where(
@@ -141,10 +141,9 @@ async def enqueue_delete(
 ) -> ProcessingRun | None:
     """Mark a document deleted and queue its cleanup.
 
-    The row is kept until the worker finishes, because the worker needs
-    the chunk embeddings' Qdrant point IDs to remove the vectors. It
-    hard-deletes the document last, which cascades to the chunks and the
-    embeddings. A hard delete before that would orphan the vectors.
+    The row is kept until the worker finishes because the artifact and
+    raw-object deletes order around it. It hard-deletes the document
+    last, which cascades to the chunks and their embedding vectors.
     """
     if document.deleted_at is None:
         document.deleted_at = datetime.now(UTC)
