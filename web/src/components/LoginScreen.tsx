@@ -50,19 +50,13 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="relative flex w-full flex-col justify-between p-8 xl:p-10">
             <div className="flex items-center gap-3">
               <BrandMark />
-              <div>
-                <p className="font-condensed text-sm font-bold uppercase tracking-[0.04em]">
-                  Retriv
-                </p>
-                <p className="font-mono text-[0.65rem] text-on-dark-faint">Control plane</p>
-              </div>
+              <p className="font-condensed text-sm font-bold uppercase tracking-[0.04em]">
+                Retriv
+              </p>
             </div>
 
             <div>
-              <p className="font-condensed text-xs font-semibold uppercase tracking-[0.09em] text-on-dark-muted">
-                Workspace control plane
-              </p>
-              <h1 className="mt-4 font-condensed text-3xl font-bold uppercase leading-[1.12] tracking-[0.03em] xl:text-4xl">
+              <h1 className="font-condensed text-3xl font-bold uppercase leading-[1.12] tracking-[0.03em] xl:text-4xl">
                 Access is explicit
                 <br />
                 Context stays scoped
