@@ -2157,6 +2157,23 @@ wheels = [
 ]
 
 [[package]]
+name = "rapid-layout"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorlog" },
+    { name = "numpy" },
+    { name = "omegaconf" },
+    { name = "opencv-python" },
+    { name = "pillow" },
+    { name = "requests" },
+    { name = "tqdm" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/0f/81d8f160f2b44b3fe42edfd4565d330e1119d4f6f8481435be504999c447/rapid_layout-1.2.1-py3-none-any.whl", hash = "sha256:7d424dcaa92c7cfd9c1c45bc6b323293a6461cf95cad605958fd0961f2397acf", size = 6875844, upload-time = "2026-03-24T01:53:27.043Z" },
+]
+
+[[package]]
 name = "rapidocr"
 version = "3.9.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2311,6 +2328,7 @@ extraction = [
     { name = "openpyxl" },
     { name = "pymupdf4llm" },
     { name = "python-docx" },
+    { name = "rapid-layout" },
     { name = "rapidocr" },
     { name = "tiktoken" },
 ]
@@ -2349,6 +2367,7 @@ requires-dist = [
     { name = "pymupdf4llm", marker = "extra == 'extraction'", specifier = ">=1.28.2,<2" },
     { name = "python-docx", marker = "extra == 'extraction'", specifier = ">=1.2,<2" },
     { name = "python-multipart", specifier = ">=0.0.20,<1" },
+    { name = "rapid-layout", marker = "extra == 'extraction'", specifier = ">=1.2,<2" },
     { name = "rapidocr", marker = "extra == 'extraction'", specifier = ">=3.9,<4" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
     { name = "tiktoken", marker = "extra == 'extraction'", specifier = ">=0.8,<1" },

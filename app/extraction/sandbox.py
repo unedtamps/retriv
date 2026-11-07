@@ -55,6 +55,8 @@ class SandboxedExtractor:
         max_images: int = 0,
         max_image_bytes: int = 5 * 1024 * 1024,
         max_total_image_bytes: int = 50 * 1024 * 1024,
+        layout_model_path: str | None = None,
+        layout_min_score: float = 0.5,
     ) -> None:
         self._chunk_max_tokens = chunk_max_tokens
         self._tokenizer_name = tokenizer_name
@@ -73,6 +75,8 @@ class SandboxedExtractor:
         self._max_images = max_images
         self._max_image_bytes = max_image_bytes
         self._max_total_image_bytes = max_total_image_bytes
+        self._layout_model_path = layout_model_path
+        self._layout_min_score = layout_min_score
 
     def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
         with tempfile.TemporaryDirectory(
@@ -128,6 +132,9 @@ class SandboxedExtractor:
             )
             if not self._scan_page_describe:
                 command.append("--no-scan-page-describe")
+            if self._layout_model_path:
+                command.extend(("--layout-model-path", self._layout_model_path))
+            command.extend(("--layout-min-score", str(self._layout_min_score)))
 
             environment = {
                 key: os.environ[key] for key in SAFE_ENVIRONMENT_KEYS if key in os.environ

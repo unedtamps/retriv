@@ -70,8 +70,12 @@ RUN apt-get update \
 
 # The extraction dependencies and the OCR models, before the source copy: a
 # code change rebuilds the last two layers, not this one.
+# The OCR models and the layout model are downloaded here, not at run time:
+# a worker that reaches the network on its first scanned page fails on a
+# host that has none.
 RUN uv sync --frozen --no-dev --extra extraction --no-install-project \
     && python -c "from rapidocr import RapidOCR; RapidOCR()" \
+    && python -c "from rapid_layout import ModelType, RapidLayout; RapidLayout(model_type=ModelType.PP_DOC_LAYOUTV3)" \
     && chown -R app:app /app/.venv
 
 COPY app ./app

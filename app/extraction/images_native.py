@@ -37,12 +37,18 @@ import re
 import pymupdf
 
 from app.extraction.base import ExtractedImage
-from app.extraction.markdown_ir import PageIR
+from app.extraction.markdown_ir import OCR_DPI, PageIR
 
 logger = logging.getLogger(__name__)
 
 _FULL_PAGE_AREA_RATIO = 0.8
-_SCAN_PAGE_DPI = 120
+_SCAN_FIGURE_SCALE = OCR_DPI / 72.0
+"""The scale a scanned page's figure is cropped at.
+
+It is the resolution OCR read the page at, so the crop carries the same
+pixels the reader saw: a chart's axis labels were legible enough to
+recognise, and they stay legible enough to describe.
+"""
 
 _CHART_MIN_WIDTH = 100.0
 _CHART_MIN_HEIGHT = 70.0
@@ -89,27 +95,35 @@ def collect_pdf_images(
         if page.is_scan:
             if not scan_page_describe:
                 continue
-            rendered = _render_page_bounded(
-                pdf, page.page_no, _SCAN_PAGE_DPI, max_image_bytes
-            )
-            if rendered is None:
-                continue
-            data, width, height = rendered
-            if total_bytes + len(data) > max_total_image_bytes:
-                break
-            total_bytes += len(data)
-            images.append(
-                ExtractedImage(
-                    ref=f"scan-page-{page.page_no}",
-                    page_number=page.page_no,
-                    media_type="image/jpeg",
-                    data=data,
-                    caption=_page_caption(page.markdown),
-                    width=width,
-                    height=height,
-                    describe_hint="scan_page",
+            for index, figure in enumerate(page.figures):
+                if max_images and len(images) >= max_images:
+                    break
+                rendered = _render_region(
+                    pdf,
+                    page.page_no,
+                    (figure.x0, figure.y0, figure.x1, figure.y1),
+                    scale=_SCAN_FIGURE_SCALE,
+                    min_pixels=0,
+                    max_image_bytes=max_image_bytes,
+                    allow_full_page=True,
                 )
-            )
+                if rendered is None:
+                    continue
+                data, width, height = rendered
+                if total_bytes + len(data) > max_total_image_bytes:
+                    break
+                total_bytes += len(data)
+                images.append(
+                    ExtractedImage(
+                        ref=f"figure-p{page.page_no}-{index}",
+                        page_number=page.page_no,
+                        media_type="image/png",
+                        data=data,
+                        caption=_page_caption(page.markdown),
+                        width=width,
+                        height=height,
+                    )
+                )
             continue
         refs: list[str] = []
         for info in pdf[page.page_no - 1].get_image_info(xrefs=True):
@@ -351,13 +365,6 @@ def image_refs_by_page(images: list[ExtractedImage]) -> dict[int, list[str]]:
     return grouped
 
 
-def scan_page_numbers(images: list[ExtractedImage]) -> set[int]:
-    """The pages that were offered to the vision stage as whole pages."""
-    return {
-        image.page_number for image in images if image.describe_hint == "scan_page"
-    }
-
-
 def _render_region(
     pdf: pymupdf.Document,
     page_no: int,
@@ -366,12 +373,19 @@ def _render_region(
     scale: float,
     min_pixels: int,
     max_image_bytes: int,
+    allow_full_page: bool = False,
 ) -> tuple[bytes, int, int] | None:
-    """One embedded image cropped from its page, or ``None`` when skipped."""
+    """One picture cropped from its page, or ``None`` when skipped.
+
+    ``allow_full_page`` is for a figure the layout model found on a scanned
+    page: a photograph that fills the page is still a figure, whereas an
+    embedded bitmap covering the whole page of a text document is the scan
+    itself and is handled by the OCR path instead.
+    """
     page = pdf[page_no - 1]
     region = pymupdf.Rect(bbox)
     page_area = page.rect.width * page.rect.height
-    if page_area and region.get_area() > _FULL_PAGE_AREA_RATIO * page_area:
+    if not allow_full_page and page_area and region.get_area() > _FULL_PAGE_AREA_RATIO * page_area:
         return None
     estimated_pixels = region.get_area() * scale * scale
     if estimated_pixels < min_pixels:
@@ -398,28 +412,6 @@ def _render_region(
         if effective <= 0.25:
             return None
         effective = max(0.25, effective * 0.75)
-
-
-def _render_page_bounded(
-    pdf: pymupdf.Document, page_no: int, dpi: int, max_bytes: int
-) -> tuple[bytes, int, int] | None:
-    """The page rendered at the highest DPI that fits the byte cap."""
-    effective = dpi
-    while True:
-        rendered = _render_page(pdf, page_no, effective)
-        if rendered is None:
-            return None
-        data, width, height = rendered
-        if len(data) <= max_bytes:
-            return data, width, height
-        if effective <= 72:
-            return None
-        effective = max(72, int(effective * 0.75))
-
-
-def _render_page(pdf: pymupdf.Document, page_no: int, dpi: int) -> tuple[bytes, int, int] | None:
-    pixmap = pdf[page_no - 1].get_pixmap(dpi=dpi)
-    return pixmap.tobytes("jpeg"), pixmap.width, pixmap.height
 
 
 def _page_caption(markdown: str) -> str:

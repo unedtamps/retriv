@@ -37,6 +37,7 @@ dependencies = [
 [project.optional-dependencies]
 extraction = [
     "pymupdf4llm>=1.28.2,<2",
+    "rapid-layout>=1.2,<2",
     "rapidocr>=3.9,<4",
     "python-docx>=1.2,<2",
     "openpyxl>=3.1,<4",
