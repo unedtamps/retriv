@@ -132,12 +132,7 @@ class NativeMarkdownExtractor:
         blocks: list[DocumentBlock] = []
         for page in pages:
             blocks.extend(parse_markdown_blocks(page.markdown, page.page_no))
-        blocks = insert_image_blocks(
-            pages,
-            blocks,
-            image_refs_by_page(images),
-            {page.page_no for page in pages if page.is_scan},
-        )
+        blocks = insert_image_blocks(pages, blocks, image_refs_by_page(images))
         return self._result(
             blocks,
             images,

@@ -115,8 +115,11 @@ def test_a_scanned_page_is_cropped_to_its_figure(tmp_path: Path, fake_engine: An
     expected_width = (1200 - 150) * 72 / _LAYOUT_DPI * 200 / 72
     assert image.width == pytest.approx(expected_width, rel=0.05)
 
-    first = next(chunk for chunk in result.chunks if picture_refs(chunk.text))
-    assert first.text.startswith(picture_marker(image.ref))
+    marked = next(chunk for chunk in result.chunks if picture_refs(chunk.text))
+    assert marked.text.rstrip().endswith(picture_marker(image.ref)), (
+        "the marker follows the page's words, so the description lands in the "
+        "chunk that talks about the figure"
+    )
 
 
 @pytest.mark.integration

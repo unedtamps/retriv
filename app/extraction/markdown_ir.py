@@ -436,31 +436,25 @@ def insert_image_blocks(
     pages: list[PageIR],
     blocks: list[DocumentBlock],
     image_refs_by_page: dict[int, list[str]],
-    marker_first_pages: set[int],
 ) -> list[DocumentBlock]:
     """Place picture markers into the block stream.
 
-    A scanned page's markers come first, so the description of what the page
-    depicts lands in the page's own first chunk -- the words around a figure
-    were read by OCR into that same chunk, and the figure belongs with them
-    rather than after them. A text page's lifted figures come after its text:
-    the page is the finest place the converter can name for them, and the
-    caption -- not the exact line -- is what carries their context.
+    A page's markers come after its text, scanned or not. On a text page that
+    is simply where the converter can name them. On a scanned page it is the
+    point of the exercise: the figure's caption and its axis labels are lines
+    of that page's OCR text, so a description placed before them lands in the
+    chunk that comes *before* the page -- the one talking about something
+    else -- while a description placed after them lands in the chunk that
+    already mentions the chart.
     """
     result: list[DocumentBlock] = []
     by_page: dict[int, list[DocumentBlock]] = {}
     for block in blocks:
         by_page.setdefault(block.page_no, []).append(block)
     for page in pages:
-        if page.page_no in marker_first_pages:
-            for ref in image_refs_by_page.get(page.page_no, []):
-                result.append(
-                    DocumentBlock(kind="image", text=picture_marker(ref), page_no=page.page_no)
-                )
         result.extend(by_page.get(page.page_no, []))
-        if page.page_no not in marker_first_pages:
-            for ref in image_refs_by_page.get(page.page_no, []):
-                result.append(
-                    DocumentBlock(kind="image", text=picture_marker(ref), page_no=page.page_no)
-                )
+        for ref in image_refs_by_page.get(page.page_no, []):
+            result.append(
+                DocumentBlock(kind="image", text=picture_marker(ref), page_no=page.page_no)
+            )
     return result
