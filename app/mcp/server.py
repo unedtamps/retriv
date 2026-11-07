@@ -56,7 +56,14 @@ def _instructions(*, row_queries: bool) -> str:
         "This server answers questions about the documents in a workspace. "
         "It authenticates with an API key in the Authorization header; the "
         "key also decides which workspaces are visible, so a workspace_id "
-        "argument can only narrow that set.\n\n"
+        "argument can only narrow that set -- every read tool accepts one and "
+        "omits it to search the whole scope.\n\n"
+        "Route by the shape of the question. An exact string -- an identifier, "
+        "an invoice or article number, a name -- goes to search_text, because "
+        "an embedding returns near matches instead. A topic or a concept goes "
+        "to search_context. Either way each source carries the ordinal to read "
+        "on from, and get_document_outline names the ordinal a section starts "
+        "at.\n\n"
         "Call find_documents when a question names a file and you need its "
         "document_id and whether it is ready to search; omit the name to see "
         "everything you may read. Then use search_context for narrative "
@@ -72,9 +79,7 @@ def _instructions(*, row_queries: bool) -> str:
     )
     extra = (
         "\n\nlist_workspaces names the workspaces this key can read. "
-        "search_text finds literal words -- identifiers, article numbers, "
-        "exact names -- where search_context finds meaning, and the two are "
-        "complements rather than substitutes. get_document_outline lists a "
+        "get_document_outline lists a "
         "document's sections with the ordinal each starts at, so a long "
         "document is entered at the right place instead of read from the top. "
         "describe_document reports what was actually extracted -- pages, "
@@ -97,7 +102,7 @@ def _instructions(*, row_queries: bool) -> str:
     return (
         lead + " Pass that document_id to query_rows, run one query per file:"
         " the cells are text inside the JSONB column `data`, so cast before"
-        " comparing."
+        " comparing and guard the empty cell, `nullif(data->>'Amount','')::numeric`."
     ) + extra + tail
 
 
@@ -226,8 +231,8 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
     async def read_document(
         ctx: Context,
         document_id: UUID,
-        workspace_id: UUID,
         start_ordinal: Annotated[int, Field(ge=0)] = 0,
+        workspace_id: UUID | None = None,
         limit: Annotated[int, Field(ge=1, le=50)] = 20,
     ) -> str:
         """Read a document in order, from a point onward.
@@ -244,6 +249,9 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
 
         CSV files are stored as rows, not text, and are not readable here; use
         list_queryable_files and query_rows for those.
+
+        Omit `workspace_id` to read the document from whichever workspace in
+        scope holds it.
         """
         return (await (await _kit(box.runtime, ctx.headers)).read_document(
             document_id=document_id,
@@ -257,8 +265,8 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
     async def get_document_outline(
         ctx: Context,
         document_id: UUID,
-        workspace_id: UUID,
         limit: Annotated[int, Field(ge=1, le=500)] = 200,
+        workspace_id: UUID | None = None,
     ) -> str:
         """List a document's sections, with where each one starts.
 
@@ -283,7 +291,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
     async def describe_document(
         ctx: Context,
         document_id: UUID,
-        workspace_id: UUID,
+        workspace_id: UUID | None = None,
     ) -> str:
         """Report what was extracted from a document, and whether it worked.
 
@@ -308,15 +316,17 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         offset: Annotated[int, Field(ge=0, le=10_000)] = 0,
         limit: Annotated[int, Field(ge=1, le=100)] = 100,
         pattern: Annotated[str, Field(max_length=200)] | None = None,
+        workspace_id: UUID | None = None,
     ) -> str:
         """List the CSV files you may query, with their column names.
 
         Use this when the catalogue was truncated, or to find one file among
         many. `pattern` matches part of the filename and is usually faster
-        than paging through offsets.
+        than paging through offsets. Omit `workspace_id` to list every CSV in
+        scope.
         """
         return await (await _kit(box.runtime, ctx.headers)).list_queryable_files(
-            offset=offset, limit=limit, pattern=pattern
+            workspace_id=workspace_id, offset=offset, limit=limit, pattern=pattern
         )
 
     @mcp.tool()
@@ -384,8 +394,8 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             Two tables may be read: `document_rows` and `documents`. A CSV has
             no columns of its own -- every cell is text inside the JSONB column
             `data`, keyed by the header exactly as list_queryable_files spells
-            it. Cast to compare, `(data->>'Amount')::numeric`, and an empty cell
-            is `''` rather than NULL.
+            it. Cast to compare, and guard the empty cell, which is `''` rather
+            than NULL: `nullif(data->>'Amount','')::numeric`.
 
             The statement must filter on document_id, and every row it returns
             must come from that one file; a workbook's rows also carry a
@@ -401,8 +411,8 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
     @_guarded
     async def download_document(
         ctx: Context,
-        workspace_id: UUID,
         document_id: UUID,
+        workspace_id: UUID | None = None,
     ) -> str:
         """Return two ways to get a document's original file, and its metadata.
 
@@ -427,7 +437,9 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
 
     @mcp.tool()
     @_guarded
-    async def list_images(ctx: Context, workspace_id: UUID, document_id: UUID) -> str:
+    async def list_images(
+        ctx: Context, document_id: UUID, workspace_id: UUID | None = None
+    ) -> str:
         """List the pictures extracted from a document, by ref.
 
         The document text names a picture by ref wherever the prose sat next
@@ -444,9 +456,9 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
     @_guarded
     async def get_image(
         ctx: Context,
-        workspace_id: UUID,
         document_id: UUID,
         ref: Annotated[str, Field(max_length=100)],
+        workspace_id: UUID | None = None,
     ) -> list[TextContent | ImageContent]:
         """Show one extracted picture: the graph, chart or figure itself.
 

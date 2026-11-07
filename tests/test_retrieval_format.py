@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.retrieval.format import navigation_hint, source_indices
+from app.retrieval.format import format_context, navigation_hint, source_indices
 from app.retrieval.schemas import ContextSource
 
 
@@ -75,3 +75,21 @@ def test_the_hint_names_the_first_heading_only() -> None:
     assert "start_ordinal=42" in text
     assert f"document_id={first.document_id}" in text
     assert "source [1]" in text
+
+
+def test_the_source_label_names_what_a_reader_can_act_on() -> None:
+    """A label carries the handles a tool takes, and nothing else.
+
+    `chunk_id` was printed on every source and no tool accepted it: the chunk
+    is reachable through the ordinal on the same line. Dropping it also takes
+    a UUID off every label in every search.
+    """
+    first = source(heading=False, ordinal=3)
+    body = format_context([first], source_indices({first.chunk_id: first}))
+    label = body.splitlines()[0]
+
+    assert f"ordinal={first.ordinal}" in label
+    assert f"document_id={first.document_id}" in label
+    assert f"workspace_id={first.workspace_id}" in label
+    assert "pages=1" in label
+    assert "chunk_id" not in label

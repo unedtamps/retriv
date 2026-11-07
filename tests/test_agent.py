@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.agents.chat import ChatTurn
 from app.agents.harness import MAX_SEARCH_LIMIT, _execute_tool
 from app.agents.toolkit import ToolRejection
-from app.db.models import AgentModelSetting
+from app.db.models import AgentModelSetting, Document, DocumentWorkspace
 from app.mcp.runtime import McpRuntime
 from app.retrieval.context import ContextRetriever, RetrievalUnavailable
 from app.retrieval.navigation import DocumentNavigator
@@ -366,6 +366,37 @@ async def test_a_document_tool_outside_the_scope_is_rejected(
     assert events[-1]["type"] == "final"
 
 
+async def seed_document(
+    session_factory: async_sessionmaker[AsyncSession],
+    workspace_id: Any,
+    user_id: Any,
+) -> Any:
+    """A document linked into one workspace, as the upload path leaves it."""
+    async with session_factory() as session:
+        document = Document(
+            origin_workspace_id=workspace_id,
+            original_filename="legal-deck.pdf",
+            detected_media_type="application/pdf",
+            size_bytes=1024,
+            sha256=uuid4().hex * 2,
+            bucket="raw-documents",
+            object_key=f"raw-documents/{workspace_id}/{uuid4()}",
+            created_by_user_id=user_id,
+        )
+        session.add(document)
+        await session.flush()
+        session.add(
+            DocumentWorkspace(
+                workspace_id=workspace_id,
+                document_id=document.id,
+                filename="legal-deck.pdf",
+                created_by_user_id=user_id,
+            )
+        )
+        await session.commit()
+        return document.id
+
+
 async def test_download_refuses_a_role_without_the_permission(
     client: httpx.AsyncClient,
     entities: Any,
@@ -382,6 +413,7 @@ async def test_download_refuses_a_role_without_the_permission(
     from app.agents.chat import ToolCall
 
     await seed_model_config(db_session_factory)
+    document_id = await seed_document(db_session_factory, entities.legal.id, entities.user.id)
     scripted_model.turns = [
         ChatTurn(
             content=None,
@@ -390,7 +422,7 @@ async def test_download_refuses_a_role_without_the_permission(
                     id="call-1",
                     name="download_document",
                     arguments={
-                        "document_id": str(uuid4()),
+                        "document_id": str(document_id),
                         "workspace_id": str(entities.legal.id),
                     },
                 )
