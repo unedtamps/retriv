@@ -6,6 +6,7 @@ model is a 125 MB download and is exercised by the integration test at the
 bottom, which skips when it is not on disk.
 """
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -150,14 +151,15 @@ def test_the_orientation_classifier_is_off() -> None:
 
 @pytest.mark.integration
 def test_the_real_model_finds_the_figure_when_it_is_installed(tmp_path: Path) -> None:
-    """One page through the real model, skipped where it is not installed."""
-    from app.core.config import Settings
+    """One page through the real model, skipped unless it is on disk.
 
-    model_path = Settings().layout_model_path
-    try:
-        import rapid_layout  # noqa: F401
-    except ImportError:
-        pytest.skip("rapid-layout is not installed")
+    The model is a 125 MB download, so the test asks for it by path rather
+    than reaching for the network: set ``RETRIV_LAYOUT_MODEL_PATH`` to run it.
+    """
+    model_path = os.environ.get("RETRIV_LAYOUT_MODEL_PATH")
+    if not model_path:
+        pytest.skip("set RETRIV_LAYOUT_MODEL_PATH to run the real layout model")
+    pytest.importorskip("rapid_layout")
 
     finder = LayoutFigureFinder(model_path=model_path)
     path = write_sample(tmp_path, scanned_pdf_bytes(), "scan.pdf")
