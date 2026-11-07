@@ -179,11 +179,23 @@ export function AppShell({
           themePreference={themePreference}
           onThemeChange={onThemeChange}
         />
+        {isDesktop ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 w-[5px] border-r border-line bg-sunken"
+          >
+            <span className="absolute left-0 top-[18%] h-[34px] w-[6px] bg-accent" />
+          </span>
+        ) : null}
       </div>
 
       <div className="lg:pl-[17rem]">
         <header
-          className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 sm:px-6"
+          className={`sticky z-30 flex h-14 items-center gap-3 border-line bg-surface px-4 sm:px-6 ${
+            isDesktop
+              ? 'top-3 mx-3 mt-3 rounded-card border shadow-[0_0_0_12px_var(--color-paper-glow)]'
+              : 'top-0 border-b'
+          }`}
         >
           <button
             ref={menuButtonRef}

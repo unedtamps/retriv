@@ -171,7 +171,7 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
   )
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 gap-3 p-3">
+    <div className="flex h-[calc(100dvh-5rem)] min-h-0 gap-3 p-3">
       <aside className="hidden w-60 shrink-0 flex-col overflow-hidden rounded-card border border-line bg-surface md:flex">
         <div className="px-3 pt-4">
           <button type="button" className="btn btn-sm w-full justify-center" onClick={newConversation}>
