@@ -138,6 +138,15 @@ class Settings(BaseSettings):
     embedding_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
 
     image_processing_enabled: bool = True
+    layout_model_path: str | None = None
+    """The PP-DocLayout ONNX file that finds the figures on a scanned page.
+
+    Empty means the package resolves and downloads its own copy on first use,
+    the way the OCR models already arrive. The worker image bakes one in, so
+    a deployed worker never reaches the network for it.
+    """
+    layout_min_score: float = Field(default=0.5, ge=0, le=1)
+    """The layout model's confidence floor for calling a region a figure."""
     image_render_scale: float = Field(default=2.0, gt=0, le=8)
     image_min_pixels: int = Field(default=10_000, ge=0)
     max_image_bytes: int = Field(default=5 * 1024 * 1024, gt=0)

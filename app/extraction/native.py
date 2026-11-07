@@ -30,8 +30,8 @@ from app.extraction.images_native import (
     collect_pdf_images,
     collect_vector_charts,
     image_refs_by_page,
-    scan_page_numbers,
 )
+from app.extraction.layout import DEFAULT_MIN_SCORE, LayoutFigureFinder
 from app.extraction.markdown_ir import (
     DocumentBlock,
     assemble_markdown,
@@ -57,6 +57,8 @@ class NativeMarkdownExtractor:
         max_images: int = 0,
         max_image_bytes: int = 5 * 1024 * 1024,
         max_total_image_bytes: int = 50 * 1024 * 1024,
+        layout_model_path: str | None = None,
+        layout_min_score: float = DEFAULT_MIN_SCORE,
     ) -> None:
         self._chunker = MarkdownChunker(
             chunk_max_tokens=chunk_max_tokens, tokenizer_name=tokenizer_name
@@ -69,6 +71,8 @@ class NativeMarkdownExtractor:
         self._max_images = max_images
         self._max_image_bytes = max_image_bytes
         self._max_total_image_bytes = max_total_image_bytes
+        self._layout_model_path = layout_model_path
+        self._layout_min_score = layout_min_score
 
     def extract(self, path: Path, *, media_type: str) -> ExtractionResult:
         try:
@@ -86,10 +90,20 @@ class NativeMarkdownExtractor:
                 ) from exc
             raise ExtractionError(f"The document could not be parsed: {exc}") from exc
 
+    def _figure_finder(self) -> LayoutFigureFinder | None:
+        """The layout model, when a scanned page's figures would be used."""
+        if not (self._picture_images_enabled and self._scan_page_describe):
+            return None
+        return LayoutFigureFinder(
+            model_path=self._layout_model_path, min_score=self._layout_min_score
+        )
+
     def _extract_pdf(self, path: Path) -> ExtractionResult:
         with pymupdf.open(path) as pdf:
             pages, page_count = build_pdf_pages(
-                path, scan_text_threshold=self._scan_text_threshold
+                path,
+                scan_text_threshold=self._scan_text_threshold,
+                figures=self._figure_finder(),
             )
             images = collect_pdf_images(
                 pdf,
@@ -118,12 +132,7 @@ class NativeMarkdownExtractor:
         blocks: list[DocumentBlock] = []
         for page in pages:
             blocks.extend(parse_markdown_blocks(page.markdown, page.page_no))
-        blocks = insert_image_blocks(
-            pages,
-            blocks,
-            image_refs_by_page(images),
-            scan_page_numbers(images),
-        )
+        blocks = insert_image_blocks(pages, blocks, image_refs_by_page(images))
         return self._result(
             blocks,
             images,

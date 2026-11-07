@@ -21,6 +21,10 @@ from typing import Any
 import pymupdf
 
 from app.extraction.images import picture_marker
+from app.extraction.layout import LAYOUT_DPI, FigureFinder, LayoutRegion
+
+OCR_DPI = 200
+"""The resolution a scanned page's words are read at."""
 
 _HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
 _MARKUP_PATTERN = re.compile(r"<mark>|</mark>|\*\*|__|`")
@@ -101,6 +105,14 @@ class PageIR:
     markdown: str
     is_scan: bool
     text_layer_chars: int
+    figures: tuple[LayoutRegion, ...] = ()
+    """The regions a layout model called a figure, in reading order.
+
+    Empty for a text page: its pictures are lifted by bbox from the file
+    itself, which needs no model. For a scan these are what the vision stage
+    is shown -- without them the whole page would go to the model, and most
+    of those calls would be answered with "nothing here".
+    """
 
 
 @dataclass(frozen=True)
@@ -130,7 +142,10 @@ def measure_pdf_text_layer(path: Path) -> tuple[int, int]:
 
 
 def build_pdf_pages(
-    path: Path, *, scan_text_threshold: int
+    path: Path,
+    *,
+    scan_text_threshold: int,
+    figures: FigureFinder | None = None,
 ) -> tuple[list[PageIR], int]:
     """Read every page as markdown, OCR-ing the pages that have no text layer.
 
@@ -141,7 +156,11 @@ def build_pdf_pages(
     document rather than page by page. The converter's own OCR is switched
     off: left on, it spins up an engine sized to every core the host
     reports -- a thread bomb inside the sandbox -- and this pipeline already
-    owns the OCR decision through :func:`ocr_page_text`.
+    owns the OCR decision through :func:`ocr_page`.
+
+    ``figures`` is the layout model, asked once per scanned page where its
+    figures are. It is left out when nothing downstream would use the answer,
+    because loading the model is the expensive part of asking.
     """
     with pymupdf.open(path) as pdf:
         page_texts = [page.get_text().strip() for page in pdf]
@@ -164,6 +183,7 @@ def build_pdf_pages(
                         ),
                         is_scan=True,
                         text_layer_chars=len(text),
+                        figures=_page_figures(pdf, index, figures),
                     )
                 )
             else:
@@ -177,6 +197,16 @@ def build_pdf_pages(
                     )
                 )
         return pages, pdf.page_count
+
+
+def _page_figures(
+    pdf: pymupdf.Document, index: int, figures: FigureFinder | None
+) -> tuple[LayoutRegion, ...]:
+    """The figures on one scanned page, or nothing when no finder was given."""
+    if figures is None:
+        return ()
+    pixmap = pdf[index].get_pixmap(dpi=LAYOUT_DPI)
+    return tuple(figures.find(pixmap, dpi=LAYOUT_DPI))
 
 
 def _markdown_for_text_pages(
@@ -217,7 +247,7 @@ def ocr_page_text(pdf: pymupdf.Document, page_index: int) -> str:
     rebuilt top to bottom and left to right: a two-column statement keeps its
     rows intact instead of interleaving its halves.
     """
-    pixmap = pdf[page_index].get_pixmap(dpi=200)
+    pixmap = pdf[page_index].get_pixmap(dpi=OCR_DPI)
     fragments = _ocr_engine().read(pixmap)
     if not fragments:
         return ""
@@ -252,11 +282,20 @@ class _RapidOcr:
     size themselves to every core the host reports -- dozens of threads, each
     an 8 MB stack of virtual memory -- which inside a sandbox with an address
     space cap is how a reader of ten pages ends up frozen at the ceiling.
+
+    The orientation classifier is switched off. It is meant to flip a text
+    line that was scanned upside down, and on the all-caps monospace of a
+    typed archival record it flipped upright lines instead: it reported 180
+    degrees with 0.997 confidence on body lines whose words it then destroyed,
+    while the same crop read perfectly with the classifier skipped. Three to
+    four lines per page came out as noise, and raising the resolution made it
+    worse rather than better. Pages are upright by the time they reach here.
     """
 
     _PARAMS = {
         "EngineConfig.onnxruntime.intra_op_num_threads": 2,
         "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+        "Global.use_cls": False,
     }
 
     def __init__(self) -> None:
@@ -397,30 +436,25 @@ def insert_image_blocks(
     pages: list[PageIR],
     blocks: list[DocumentBlock],
     image_refs_by_page: dict[int, list[str]],
-    scan_page_refs: set[int],
 ) -> list[DocumentBlock]:
     """Place picture markers into the block stream.
 
-    A scanned page's marker comes first, so the description of whatever the
-    page depicts lands in the page's own first chunk. A text page's lifted
-    figures come after its text: the page is the finest place the converter
-    can name for them, and the caption -- not the exact line -- is what
-    carries their context.
+    A page's markers come after its text, scanned or not. On a text page that
+    is simply where the converter can name them. On a scanned page it is the
+    point of the exercise: the figure's caption and its axis labels are lines
+    of that page's OCR text, so a description placed before them lands in the
+    chunk that comes *before* the page -- the one talking about something
+    else -- while a description placed after them lands in the chunk that
+    already mentions the chart.
     """
     result: list[DocumentBlock] = []
     by_page: dict[int, list[DocumentBlock]] = {}
     for block in blocks:
         by_page.setdefault(block.page_no, []).append(block)
     for page in pages:
-        if page.page_no in scan_page_refs:
-            for ref in image_refs_by_page.get(page.page_no, []):
-                result.append(
-                    DocumentBlock(kind="image", text=picture_marker(ref), page_no=page.page_no)
-                )
         result.extend(by_page.get(page.page_no, []))
-        if page.page_no not in scan_page_refs:
-            for ref in image_refs_by_page.get(page.page_no, []):
-                result.append(
-                    DocumentBlock(kind="image", text=picture_marker(ref), page_no=page.page_no)
-                )
+        for ref in image_refs_by_page.get(page.page_no, []):
+            result.append(
+                DocumentBlock(kind="image", text=picture_marker(ref), page_no=page.page_no)
+            )
     return result

@@ -34,6 +34,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-images", type=int, default=0)
     parser.add_argument("--max-image-bytes", type=int, required=True)
     parser.add_argument("--max-total-image-bytes", type=int, required=True)
+    parser.add_argument("--layout-model-path", default=None)
+    parser.add_argument("--layout-min-score", type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -109,6 +111,8 @@ def run(args: argparse.Namespace) -> None:
         max_images=args.max_images,
         max_image_bytes=args.max_image_bytes,
         max_total_image_bytes=args.max_total_image_bytes,
+        layout_model_path=args.layout_model_path,
+        layout_min_score=args.layout_min_score,
     )
     result = extractor.extract(args.input, media_type=args.media_type)
     if len(result.document_json) > args.max_artifact_bytes:

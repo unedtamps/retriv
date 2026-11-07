@@ -64,6 +64,8 @@ async def run_worker() -> None:
             max_images=settings.vlm_max_images_per_document,
             max_image_bytes=settings.max_image_bytes,
             max_total_image_bytes=settings.max_total_image_bytes,
+            layout_model_path=settings.layout_model_path,
+            layout_min_score=settings.layout_min_score,
         ),
         settings,
         embedding_provider,

@@ -676,7 +676,15 @@ So the pictures are described, and the description is put where the picture was.
 The extractor lifts every raster figure the PDF embeds, crops it from the page, and
 skips what cannot be a figure: a region covering the whole page is a scan, not a
 picture, and becomes an OCR page instead. Each picture is written into its chunk as a
-marker naming it. The marker is what lets the description land on the line the picture
+marker naming it.
+
+A scanned page is the opposite problem: everything on it is pixels, so there is no
+bbox to lift. A layout model (PP-DocLayout, ONNX, baked into the worker image) reads
+the render and says what each region is — figure, chart, table, header, caption — so
+the figures are cropped at the resolution OCR read the page at and described like any
+other picture, and a page of text alone costs no vision call at all. On 32 pages of
+three annual reports it found 12 of 13 figures and fired on no text page; the one it
+missed was a two-inch diagram inside a text column. The marker is what lets the description land on the line the picture
 was on, in the section the picture was in, between the sentences that talk about it:
 
 ```

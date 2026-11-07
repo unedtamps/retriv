@@ -893,22 +893,6 @@ def test_the_sandbox_runs_the_native_runner(tmp_path: Path) -> None:
     assert body and "Microsoft develops and licenses software." in body[0].text
 
 
-@pytest.mark.integration
-def test_a_scanned_page_is_offered_to_the_vision_stage(tmp_path: Path) -> None:
-    path = write_sample(tmp_path, scanned_pdf_bytes(), "scan.pdf")
-    result = an_extractor(
-        picture_images_enabled=True,
-        scan_page_describe=True,
-        image_min_pixels=0,
-    ).extract(path, media_type=PDF_MEDIA_TYPE)
-
-    scan_images = [i for i in result.images if i.describe_hint == "scan_page"]
-    assert len(scan_images) == 1
-    assert scan_images[0].page_number == 1
-    assert scan_images[0].media_type == "image/jpeg"
-    assert any(picture_refs(c.text) == [scan_images[0].ref] for c in result.chunks)
-
-
 def a_large_jpeg_photo(width: int = 3000, height: int = 2000) -> bytes:
     import numpy as np
     import pymupdf
