@@ -382,56 +382,13 @@ describe('dashboard application', () => {
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     expect(screen.queryByRole('button', { name: 'New workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Users' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Shared reference workspace' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Show catalogued workspaces' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Current workspace Launch notes, switch workspace' }),
+    ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Close navigation drawer' }))
     await user.click(screen.getByRole('button', { name: 'Manage access' }))
     expect(await screen.findByRole('heading', { name: 'Members', level: 1 })).toBeInTheDocument()
     expect(screen.getByText('Register of members')).toBeInTheDocument()
-  })
-
-  it('expands catalogued workspaces inline without granting access', async () => {
-    window.history.replaceState(null, '', '/dashboard')
-    writeSessionToken('member-token')
-    installApi(owner, [
-      workspace,
-      {
-        ...workspace,
-        id: 'workspace-3',
-        slug: 'company-catalog',
-        name: 'Company catalog',
-        membership_role: null,
-        member_count: 7,
-        can_upload: false,
-        can_search_context: false,
-        can_manage_members: false,
-        can_delete: false,
-      },
-    ])
-
-    const user = userEvent.setup()
-    render(<App />)
-
-    expect(await gotoOverview(user)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
-
-    const expander = screen.getByRole('button', { name: 'Show catalogued workspaces' })
-    expect(expander).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
-
-    await user.click(expander)
-    expect(screen.getByRole('button', { name: 'Collapse catalogued workspaces' })).toHaveAttribute('aria-expanded', 'true')
-    const catalogRow = screen.getByRole('button', { name: 'Open Company catalog workspace' })
-    expect(within(catalogRow).getByText('Company catalog')).toBeInTheDocument()
-
-    await user.click(catalogRow)
-    expect(await screen.findByRole('heading', { name: 'Company catalog', level: 1 })).toBeInTheDocument()
-    expect(screen.getByText('Documents are members-only')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
-    await user.click(screen.getByRole('button', { name: 'Collapse catalogued workspaces' }))
-    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
   })
 
   it('gives an admin without memberships a platform overview instead of workspace navigation', async () => {
@@ -506,7 +463,7 @@ describe('dashboard application', () => {
 
     expect(screen.queryByRole('button', { name: 'Show catalogued workspaces' })).not.toBeInTheDocument()
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
-    expect(within(navigation).getByText('Launch notes')).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: 'All workspaces' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Users' }))
     expect(await screen.findByRole('heading', { name: 'Users', level: 1 })).toBeInTheDocument()
@@ -772,10 +729,9 @@ describe('dashboard application', () => {
     expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(
-      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
-        name: 'Open Read only workspace',
-      }),
+      screen.getByRole('button', { name: 'Current workspace Launch notes, switch workspace' }),
     )
+    await user.click(screen.getByRole('menuitemradio', { name: 'Switch to Read only' }))
     expect(await screen.findByRole('heading', { name: 'Read only', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
@@ -801,10 +757,9 @@ describe('dashboard application', () => {
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(
-      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
-        name: 'Open Second space workspace',
-      }),
+      screen.getByRole('button', { name: 'Current workspace Launch notes, switch workspace' }),
     )
+    await user.click(screen.getByRole('menuitemradio', { name: 'Switch to Second space' }))
     expect(screen.getByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Workspace' })).toHaveValue('workspace-2')
     expect(window.location.pathname).toBe('/upload-context')
