@@ -54,12 +54,9 @@ export function workspaceAccent(seed: string): Accent {
 
 export function initials(name: string): string {
   const normalized = name.trim()
-  if (normalized === '') return '··'
+  if (normalized === '') return '·'
   const words = normalized.split(/[\s._-]+/).filter(Boolean)
-  if (words.length > 1) {
-    return `${words[0][0]}${words[1][0]}`.toUpperCase()
-  }
-  return normalized.slice(0, 2).toUpperCase()
+  return (words[0]?.[0] ?? normalized[0]).toUpperCase()
 }
 
 const DOCUMENT_STATUS_LABELS: Record<string, string> = {
