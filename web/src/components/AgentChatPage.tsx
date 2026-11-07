@@ -153,18 +153,26 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
           }}
         />
         {busy ? (
-          <button type="button" className="btn btn-sm btn-danger" onClick={stop}>
-            <Square aria-hidden="true" size={13} />
+          <button
+            type="button"
+            className="mb-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-control border border-danger/50 bg-transparent px-2.5 text-[0.8125rem] font-semibold text-danger transition-colors hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            onClick={stop}
+          >
+            <Square aria-hidden="true" size={12} />
             Stop
           </button>
         ) : (
           <button
             type="submit"
-            className="btn btn-sm btn-primary"
+            className={`mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+              draft.trim() === ''
+                ? 'border-line bg-transparent text-ink-faint'
+                : 'border-transparent bg-accent text-white hover:brightness-110'
+            }`}
             disabled={draft.trim() === ''}
             aria-label="Send the question"
           >
-            <CornerDownLeft aria-hidden="true" size={14} />
+            <CornerDownLeft aria-hidden="true" size={15} />
           </button>
         )}
     </form>
