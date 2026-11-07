@@ -19,7 +19,7 @@ export function Avatar({ name, seed, size = 'sm', className = '' }: AvatarProps)
   return (
     <span
       aria-hidden="true"
-      className={`flex shrink-0 items-center justify-center rounded-md border font-mono font-semibold tracking-wide ${accent.chip} ${SIZE_CLASSES[size]} ${className}`}
+      className={`flex shrink-0 items-center justify-center rounded-stamp font-mono font-semibold ${accent.dot} text-surface ${SIZE_CLASSES[size]} ${className}`}
     >
       {initials(name)}
     </span>

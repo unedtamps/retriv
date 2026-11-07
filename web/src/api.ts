@@ -410,8 +410,11 @@ export const api = {
     return response.blob()
   },
 
-  listProcessingActivity(signal?: AbortSignal): Promise<ProcessingActivity> {
-    return request<ProcessingActivity>('/v1/processing-runs', { signal })
+  listProcessingActivity(
+    options?: { today?: boolean; signal?: AbortSignal },
+  ): Promise<ProcessingActivity> {
+    const path = options?.today === true ? '/v1/processing-runs?today=true' : '/v1/processing-runs'
+    return request<ProcessingActivity>(path, { signal: options?.signal })
   },
 
   searchDocuments(options: {

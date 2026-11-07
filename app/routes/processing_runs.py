@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -24,14 +25,17 @@ router = APIRouter(prefix="/v1/processing-runs", tags=["processing-runs"])
 async def list_processing_activity(
     current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    today: bool = False,
 ) -> ProcessingActivityResponse:
-    """The caller's in-flight runs, across every readable workspace.
+    """The caller's runs, across every readable workspace.
 
-    One endpoint for the bell and the pipeline view: a run belongs to the
-    activity feed while it is non-terminal, which is exactly when its
-    document is not yet ready. The scope is derived from the caller's own
-    memberships, so there is no upstream service to trust and no
-    revalidation of its answer: the filter and the returned rows are
+    The default feed is the in-flight set: a run belongs to it while it is
+    non-terminal, which is exactly when its document is not yet ready -- the
+    bell and the pipeline view live on this. The `today` scope widens to
+    every run started since midnight UTC, terminal ones included, which is
+    what a day's activity register needs. The scope is derived from the
+    caller's own memberships, so there is no upstream service to trust and
+    no revalidation of its answer: the filter and the returned rows are
     built from the same set.
     """
     workspace_ids = await readable_workspace_ids(session, current_user.id)
@@ -39,15 +43,22 @@ async def list_processing_activity(
         return ProcessingActivityResponse(items=[], total=0)
 
     link_workspace, link_filename = _link_columns(workspace_ids)
+    filters: list[Any] = [
+        link_workspace.is_not(None),
+        ProcessingRun.job_kind != JOB_ACCESS,
+    ]
+    if today:
+        day_start = datetime.now(UTC).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        filters.append(ProcessingRun.created_at >= day_start)
+    else:
+        filters.append(ProcessingRun.status.in_(NON_TERMINAL_RUN_STATUSES))
     result = await session.execute(
         select(ProcessingRun, link_workspace, link_filename)
-        .where(
-            link_workspace.is_not(None),
-            ProcessingRun.job_kind != JOB_ACCESS,
-            ProcessingRun.status.in_(NON_TERMINAL_RUN_STATUSES),
-        )
+        .where(*filters)
         .order_by(ProcessingRun.created_at.desc(), ProcessingRun.id.desc())
-        .limit(100)
+        .limit(200)
     )
     items = [
         processing_run_summary(run, workspace_id, filename)

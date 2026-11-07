@@ -10,6 +10,7 @@ export type DashboardView =
   | 'api-keys'
   | 'users'
   | 'agent-model'
+  | 'help'
 
 export interface SessionToken {
   access_token: string

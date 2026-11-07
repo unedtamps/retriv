@@ -30,7 +30,7 @@ function ToolActivity({ calls, busy }: { calls: ToolStep[]; busy: boolean }) {
   const latest = calls[calls.length - 1]
   const running = busy && latest.preview === ''
   return (
-    <div className="rounded-md border border-line bg-muted/30 text-xs">
+    <div className="rounded-control border border-line bg-sunken text-xs">
       <button
         type="button"
         aria-expanded={open}
@@ -38,10 +38,10 @@ function ToolActivity({ calls, busy }: { calls: ToolStep[]; busy: boolean }) {
         className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
       >
         <Wrench aria-hidden="true" size={11} className="shrink-0 text-ink-faint" />
-        <span key={`${calls.length}-${latest.name}`} className="tool-swap font-medium text-ink">
+        <span key={`${calls.length}-${latest.name}`} className="tool-swap font-mono text-[0.7rem] font-medium text-ink">
           {latest.name}
         </span>
-        <span className="text-ink-faint">
+        <span className="font-mono text-ink-faint">
           {calls.length} tool call{calls.length === 1 ? '' : 's'}
         </span>
         {running ? (
@@ -130,14 +130,14 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
 
   const composer = (
     <form
-        className="flex shrink-0 items-end gap-2 rounded-xl border border-line bg-surface px-2 py-1.5 shadow-sm"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void send()
-        }}
-      >
+      className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-control border border-line bg-sunken px-2 py-1.5 transition-colors focus-within:border-accent focus-within:bg-surface"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void send()
+      }}
+    >
         <textarea
-          className="max-h-48 min-h-[2.75rem] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-ink outline-none placeholder:text-ink-faint"
+          className="max-h-48 min-h-[2.5rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
           rows={1}
           autoFocus
           placeholder="Ask across your workspaces…"
@@ -153,26 +153,34 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
           }}
         />
         {busy ? (
-          <button type="button" className="btn btn-sm" onClick={stop}>
-            <Square aria-hidden="true" size={13} />
+          <button
+            type="button"
+            className="mb-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-control border border-danger/50 bg-transparent px-2.5 text-[0.8125rem] font-semibold text-danger transition-colors hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            onClick={stop}
+          >
+            <Square aria-hidden="true" size={12} />
             Stop
           </button>
         ) : (
           <button
             type="submit"
-            className="btn btn-sm btn-primary"
+            className={`mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+              draft.trim() === ''
+                ? 'border-line bg-transparent text-ink-faint'
+                : 'border-transparent bg-accent text-white hover:brightness-110'
+            }`}
             disabled={draft.trim() === ''}
             aria-label="Send the question"
           >
-            <CornerDownLeft aria-hidden="true" size={14} />
+            <CornerDownLeft aria-hidden="true" size={15} />
           </button>
         )}
-      </form>
-    )
+    </form>
+  )
 
   return (
-    <div className="flex h-[calc(100dvh-4rem)] min-h-0">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-surface/60 md:flex">
+    <div className="flex h-[calc(100dvh-5rem)] min-h-0 gap-3 p-3">
+      <aside className="hidden w-60 shrink-0 flex-col overflow-hidden rounded-card border border-line bg-surface md:flex">
         <div className="px-3 pt-4">
           <button type="button" className="btn btn-sm w-full justify-center" onClick={newConversation}>
             <CirclePlus aria-hidden="true" size={14} />
@@ -191,10 +199,10 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
                 <li key={session.id} className="group relative">
                   <button
                     type="button"
-                    className={`w-full rounded-control px-2.5 py-2 pr-7 text-left ${
+                    className={`w-full rounded-control px-2.5 py-2 pr-7 text-left transition-colors ${
                       active
-                        ? 'border border-line bg-hover'
-                        : 'border border-transparent hover:bg-hover'
+                        ? 'bg-sunken text-ink shadow-[inset_2px_0_0_var(--color-accent)]'
+                        : 'hover:bg-sunken'
                     }`}
                     aria-current={active ? 'page' : undefined}
                     onClick={() => selectSession(session.id)}
@@ -202,14 +210,14 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
                     <span className="block truncate text-xs font-medium text-ink">
                       {session.title}
                     </span>
-                    <span className="block text-[0.65rem] text-ink-faint">
+                    <span className="block font-mono text-[0.65rem] text-ink-faint">
                       {new Date(session.updatedAt).toLocaleDateString()}
                     </span>
                   </button>
                   <button
                     type="button"
                     aria-label={`Delete conversation: ${session.title}`}
-                    className="absolute right-1.5 top-2 hidden rounded p-1 text-ink-faint hover:bg-hover group-hover:block"
+                    className="absolute right-1.5 top-2 hidden rounded p-1 text-ink-faint hover:bg-surface hover:text-ink group-hover:block"
                     onClick={() => deleteSession(session.id)}
                   >
                     <Trash2 aria-hidden="true" size={12} />
@@ -221,167 +229,110 @@ export function AgentChatPage({ conversation }: { conversation: AgentConversatio
         )}
       </aside>
 
-      <div className="mx-auto flex min-w-0 flex-1 max-w-4xl flex-col px-4 pb-3 sm:px-6">
-      <style>{MD_STYLES}</style>
-      <header className="flex items-baseline justify-between gap-3 border-b border-line py-4">
-        <div>
-          <p className="eyebrow">Across your workspaces</p>
-          <h1 className="font-display text-xl font-medium tracking-[-0.02em] text-ink">Chat</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <p className="hidden text-xs text-ink-faint sm:block">
-            Saved in this browser — sign out clears it
-          </p>
-          <button
-            type="button"
-            className="btn btn-sm"
-            aria-label="Start a new conversation"
-            onClick={newConversation}
-          >
-            <CirclePlus aria-hidden="true" size={14} />
-            New chat
-          </button>
-        </div>
-      </header>
-
-      <div ref={scrollRef} data-testid="chat-transcript" className="scrollbar-none min-h-0 flex-1 overflow-y-auto">
-        {empty ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <Sparkles aria-hidden="true" size={22} className="text-ink-faint" strokeWidth={1.6} />
-            <div>
-              <p className="text-sm font-medium text-ink">Ask across your workspaces</p>
-              <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-ink-muted">
-                The agent searches, reads and queries the documents in every workspace you can
-                read, and answers with citations.
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-ink-muted hover:bg-hover"
-                  onClick={() => setDraft(suggestion)}
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-            <div className="w-full max-w-2xl text-left">{composer}</div>
+      <div className="mx-auto flex min-w-0 flex-1 max-w-4xl flex-col overflow-hidden rounded-card border border-line bg-surface">
+        <header className="flex shrink-0 items-baseline justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
+          <div>
+            <p className="eyebrow">Across your workspaces</p>
+            <h1 className="font-condensed text-base font-bold uppercase tracking-[0.08em] text-ink">
+              Chat
+            </h1>
           </div>
-        ) : (
-          <div className="space-y-3 pb-6 pt-4">
-            {items.map((item, index) => {
-              if (item.kind === 'user') {
-                return (
-                  <div key={index} className="flex justify-end">
-                    <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm text-white">
-                      {item.text}
-                    </p>
-                  </div>
-                )
-              }
-              if (item.kind === 'assistant') {
-                // While tokens are still arriving the text renders plainly:
-                // re-parsing markdown on every delta flickers half-built
-                // tables and code fences. `final` marks the item complete,
-                // and only then is the markdown pipeline paid for.
-                if (item.streaming === true) {
+          <div className="flex items-center gap-3">
+            <p className="hidden font-mono text-[0.65rem] text-ink-faint sm:block">
+              Saved in this browser — sign out clears it
+            </p>
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-label="Start a new conversation"
+              onClick={newConversation}
+            >
+              <CirclePlus aria-hidden="true" size={14} />
+              New chat
+            </button>
+          </div>
+        </header>
+
+        <div ref={scrollRef} data-testid="chat-transcript" className="scrollbar-none min-h-0 flex-1 overflow-y-auto px-4 sm:px-6">
+          {empty ? (
+            <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+              <Sparkles aria-hidden="true" size={22} className="text-ink-faint" strokeWidth={1.6} />
+              <div>
+                <p className="text-sm font-medium text-ink">Ask across your workspaces</p>
+                <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-ink-muted">
+                  The agent searches, reads and queries the documents in every workspace you can
+                  read, and answers with citations.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    className="rounded-stamp border border-line bg-sunken px-3 py-1.5 text-xs text-ink-muted transition-colors hover:border-line-strong hover:bg-surface hover:text-ink"
+                    onClick={() => setDraft(suggestion)}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+              <div className="w-full max-w-2xl text-left">{composer}</div>
+            </div>
+          ) : (
+            <div className="mx-auto max-w-3xl space-y-3 pb-6 pt-4">
+              {items.map((item, index) => {
+                if (item.kind === 'user') {
                   return (
-                    <p key={index} className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                    <div key={index} className="flex justify-end">
+                      <p className="max-w-[85%] whitespace-pre-wrap rounded-control bg-ink px-3.5 py-2 text-sm font-medium text-surface">
+                        {item.text}
+                      </p>
+                    </div>
+                  )
+                }
+                if (item.kind === 'assistant') {
+                  // While tokens are still arriving the text renders plainly:
+                  // re-parsing markdown on every delta flickers half-built
+                  // tables and code fences. `final` marks the item complete,
+                  // and only then is the markdown pipeline paid for.
+                  if (item.streaming === true) {
+                    return (
+                      <p key={index} className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                        {item.text}
+                        <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-ink-muted align-middle" />
+                      </p>
+                    )
+                  }
+                  return (
+                    <div key={index} className="text-sm leading-relaxed text-ink">
+                      <Suspense
+                        fallback={<p className="whitespace-pre-wrap">{item.text}</p>}
+                      >
+                        <MarkdownText text={item.text} />
+                      </Suspense>
+                    </div>
+                  )
+                }
+                if (item.kind === 'error') {
+                  return (
+                    <p
+                      key={index}
+                      className="rounded-control border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger"
+                    >
                       {item.text}
-                      <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-ink-muted align-middle" />
                     </p>
                   )
                 }
-                return (
-                  <div key={index} className="text-sm leading-relaxed text-ink">
-                    <Suspense
-                      fallback={<p className="whitespace-pre-wrap">{item.text}</p>}
-                    >
-                      <MarkdownText text={item.text} />
-                    </Suspense>
-                  </div>
-                )
-              }
-              if (item.kind === 'error') {
-                return (
-                  <p
-                    key={index}
-                    className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger"
-                  >
-                    {item.text}
-                  </p>
-                )
-              }
-              return <ToolActivity key={index} calls={item.calls} busy={busy} />
-            })}
-          </div>
-        )}
-      </div>
+                return <ToolActivity key={index} calls={item.calls} busy={busy} />
+              })}
+            </div>
+          )}
+        </div>
 
-      {empty ? null : composer}
+        {empty ? null : (
+          <div className="shrink-0 border-t border-line px-4 py-3 sm:px-6">{composer}</div>
+        )}
       </div>
     </div>
   )
 }
-
-const MD_STYLES = String.raw`
-.scrollbar-none { scrollbar-width: none; }
-.scrollbar-none::-webkit-scrollbar { display: none; }
-.retriv-md > :first-child { margin-top: 0; }
-.retriv-md > :last-child { margin-bottom: 0; }
-.retriv-md p { margin: 0.5rem 0; }
-.retriv-md h1, .retriv-md h2, .retriv-md h3, .retriv-md h4 {
-  font-family: var(--font-display, inherit);
-  font-weight: 500;
-  color: var(--color-ink, #16202c);
-  margin: 1rem 0 0.35rem;
-  line-height: 1.3;
-}
-.retriv-md h1 { font-size: 1.05rem; }
-.retriv-md h2 { font-size: 1rem; }
-.retriv-md h3, .retriv-md h4 { font-size: 0.9rem; }
-.retriv-md ul, .retriv-md ol { margin: 0.5rem 0; padding-left: 1.25rem; }
-.retriv-md li { margin: 0.2rem 0; }
-.retriv-md ul li { list-style: disc; }
-.retriv-md ol li { list-style: decimal; }
-.retriv-md code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.8em;
-  background: var(--color-muted, #eef2f7);
-  border-radius: 4px;
-  padding: 0.1rem 0.35rem;
-}
-.retriv-md pre {
-  background: var(--color-sunken, #f4f7fa);
-  border: 1px solid var(--color-line, #d8dee7);
-  border-radius: 8px;
-  padding: 0.7rem 0.9rem;
-  overflow-x: auto;
-  margin: 0.6rem 0;
-}
-.retriv-md pre code { background: transparent; padding: 0; }
-.retriv-md table {
-  border-collapse: collapse;
-  margin: 0.6rem 0;
-  font-variant-numeric: tabular-nums;
-  display: block;
-  overflow-x: auto;
-  max-width: 100%;
-}
-.retriv-md th, .retriv-md td {
-  border: 1px solid var(--color-line, #d8dee7);
-  padding: 0.3rem 0.6rem;
-  text-align: left;
-}
-.retriv-md th { background: var(--color-paper, #f4f7fa); font-weight: 600; }
-.retriv-md blockquote {
-  border-left: 3px solid var(--color-line, #d8dee7);
-  margin: 0.6rem 0;
-  padding: 0.1rem 0 0.1rem 0.8rem;
-  color: var(--color-ink-muted, #5a6675);
-}
-.retriv-md hr { border: 0; border-top: 1px solid var(--color-line, #d8dee7); margin: 0.8rem 0; }
-.retriv-md a { color: var(--color-accent-ink, #1f5fa8); text-decoration: underline; }
-`

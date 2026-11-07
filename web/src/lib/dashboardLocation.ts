@@ -1,8 +1,8 @@
 import type { DashboardView, Workspace } from '../types'
 
-const MEMBER_VIEWS: DashboardView[] = ['chat', 'overview', 'documents', 'members', 'api-keys']
+const MEMBER_VIEWS: DashboardView[] = ['chat', 'overview', 'documents', 'members', 'api-keys', 'help']
 const ADMIN_ONLY_VIEWS: DashboardView[] = ['users', 'agent-model']
-const ADMIN_MODE_VIEWS: DashboardView[] = ['admin-overview', 'users', 'agent-model']
+const ADMIN_MODE_VIEWS: DashboardView[] = ['admin-overview', 'users', 'agent-model', 'help']
 
 /** Views that describe one selected workspace and survive a workspace switch. */
 export const WORKSPACE_VIEWS: DashboardView[] = ['overview', 'documents', 'members']

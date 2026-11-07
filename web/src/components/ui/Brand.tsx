@@ -20,14 +20,13 @@ export function BrandMark({ size = 17 }: { size?: number }) {
 }
 
 /** The mark with the product name beside it. */
-export function BrandLockup({ subtitle = 'Control plane' }: { subtitle?: string }) {
+export function BrandLockup() {
   return (
     <div className="flex items-center gap-3">
       <BrandMark />
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-ink">Retriv</p>
-        <p className="eyebrow">{subtitle}</p>
-      </div>
+      <p className="font-condensed text-base font-bold uppercase tracking-[0.04em] text-ink">
+        Retriv
+      </p>
     </div>
   )
 }

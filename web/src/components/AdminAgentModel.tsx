@@ -91,7 +91,7 @@ export function AdminAgentModel({
 
   if (loadError !== null) {
     return (
-      <section className="card p-5">
+      <section className="panel p-5">
         <p className="eyebrow">Agent harness</p>
         <p className="mt-2 text-sm text-ink-faint">{loadError}</p>
       </section>
@@ -99,7 +99,7 @@ export function AdminAgentModel({
   }
   if (settings === null) {
     return (
-      <section className="card flex items-center gap-2 p-5 text-sm text-ink-faint">
+      <section className="panel flex items-center gap-2 p-5 text-sm text-ink-faint">
         <LoaderCircle aria-hidden="true" size={15} className="animate-spin" />
         Loading the agent model configuration…
       </section>
@@ -107,10 +107,10 @@ export function AdminAgentModel({
   }
 
   return (
-    <section className="card p-5">
+    <section className="panel p-5">
       <p className="eyebrow">Agent harness</p>
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold">Chat model</h2>
+        <h2 className="font-condensed text-sm font-bold uppercase tracking-[0.06em] text-ink">Chat model</h2>
         <span className="stamp">
           {settings.configured ? `configured · ${settings.model}` : 'not configured'}
         </span>

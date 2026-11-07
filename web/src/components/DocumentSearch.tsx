@@ -213,7 +213,7 @@ export function DocumentSearch({
                             role="option"
                             aria-selected={active}
                             className={`roster-enter flex w-full items-start gap-2.5 border-b border-line px-3 py-2.5 text-left last:border-b-0 ${
-                              active ? 'bg-accent-soft' : 'hover:bg-sunken'
+                              active ? 'bg-sunken' : 'hover:bg-sunken'
                             }`}
                             style={{ animationDelay: `${Math.min(index, 8) * 24}ms` }}
                             onClick={() => choose(hit)}

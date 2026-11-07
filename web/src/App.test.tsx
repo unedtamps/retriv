@@ -76,6 +76,7 @@ function installApi(
   auth: { refresh?: 'ok' | 'rejected'; meFirst?: 'ok' | 'expired' } = {},
   chat: {
     holdBeforeFinalMs?: number
+    preToolDeltas?: string[]
     toolCalls?: { name: string; arguments: Record<string, unknown>; preview: string }[]
   } = {},
 ) {
@@ -137,6 +138,10 @@ function installApi(
           ]
           const early = [
             { type: 'turn_start', turns_allowed: 12 },
+            ...(chat.preToolDeltas ?? []).map((content) => ({
+              type: 'message_delta' as const,
+              content,
+            })),
             ...toolCalls.flatMap((call) => [
               { type: 'tool_call', name: call.name, arguments: call.arguments },
               {
@@ -237,7 +242,7 @@ function installApi(
     if (url.startsWith('/v1/documents/search')) {
       return json(documents.search ?? { items: [], total: 0 })
     }
-    if (url === '/v1/processing-runs') {
+    if (url === '/v1/processing-runs' || url.startsWith('/v1/processing-runs?')) {
       return json(processingResponses.runs ?? { items: [], total: 0 })
     }
     if (url === '/v1/workspaces/workspace-1/documents' && init?.method === 'POST') {
@@ -382,55 +387,13 @@ describe('dashboard application', () => {
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     expect(screen.queryByRole('button', { name: 'New workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Users' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Shared reference workspace' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Show catalogued workspaces' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Current workspace Launch notes, switch workspace' }),
+    ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Close navigation drawer' }))
     await user.click(screen.getByRole('button', { name: 'Manage access' }))
-    expect(await screen.findByRole('heading', { name: 'Workspace members' })).toBeInTheDocument()
-  })
-
-  it('expands catalogued workspaces inline without granting access', async () => {
-    window.history.replaceState(null, '', '/dashboard')
-    writeSessionToken('member-token')
-    installApi(owner, [
-      workspace,
-      {
-        ...workspace,
-        id: 'workspace-3',
-        slug: 'company-catalog',
-        name: 'Company catalog',
-        membership_role: null,
-        member_count: 7,
-        can_upload: false,
-        can_search_context: false,
-        can_manage_members: false,
-        can_delete: false,
-      },
-    ])
-
-    const user = userEvent.setup()
-    render(<App />)
-
-    expect(await gotoOverview(user)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
-
-    const expander = screen.getByRole('button', { name: 'Show catalogued workspaces' })
-    expect(expander).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
-
-    await user.click(expander)
-    expect(screen.getByRole('button', { name: 'Collapse catalogued workspaces' })).toHaveAttribute('aria-expanded', 'true')
-    const catalogRow = screen.getByRole('button', { name: 'Open Company catalog workspace' })
-    expect(within(catalogRow).getByText('Company catalog')).toBeInTheDocument()
-
-    await user.click(catalogRow)
-    expect(await screen.findByRole('heading', { name: 'Company catalog', level: 1 })).toBeInTheDocument()
-    expect(screen.getByText('Documents are members-only')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
-    await user.click(screen.getByRole('button', { name: 'Collapse catalogued workspaces' }))
-    expect(screen.queryByRole('button', { name: 'Open Company catalog workspace' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Members', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Register of members')).toBeInTheDocument()
   })
 
   it('gives an admin without memberships a platform overview instead of workspace navigation', async () => {
@@ -505,7 +468,7 @@ describe('dashboard application', () => {
 
     expect(screen.queryByRole('button', { name: 'Show catalogued workspaces' })).not.toBeInTheDocument()
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
-    expect(within(navigation).getByText('Launch notes')).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: 'All workspaces' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Users' }))
     expect(await screen.findByRole('heading', { name: 'Users', level: 1 })).toBeInTheDocument()
@@ -523,6 +486,28 @@ describe('dashboard application', () => {
     expect(await screen.findByRole('heading', { name: 'Workspaces', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     expect(screen.getByRole('button', { name: 'All workspaces' })).toHaveClass('nav-link-active')
+  })
+
+  it('opens the help reference from the rail and moves the active mark to it', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    await user.click(within(navigation).getByRole('button', { name: 'Help' }))
+
+    expect(await screen.findByRole('heading', { name: 'Help', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'The codes' })).toBeInTheDocument()
+    expect(screen.getByText("A document's permanent identifier inside this workspace. Cited in answers.")).toBeInTheDocument()
+    expect(window.location.search).toContain('view=help')
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const reopened = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(reopened).getByRole('button', { name: 'Help' })).toHaveClass('nav-link-active')
+    expect(within(reopened).getByRole('button', { name: 'Documents' })).not.toHaveClass('nav-link-active')
   })
 
   it('restores the users view for an admin refreshing the dashboard', async () => {
@@ -550,7 +535,7 @@ describe('dashboard application', () => {
   })
 
   it('offers reindex to an owner and swaps the row into its new state', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const document = {
       id: 'document-1',
@@ -570,7 +555,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
     const row = screen.getByRole('row', { name: /launch-review.pdf/ })
@@ -602,7 +586,7 @@ describe('dashboard application', () => {
   })
 
   it('hides reindex from an editor who may delete', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const editorWorkspace = { ...workspace, membership_role: 'editor' as const }
     installApi(owner, [editorWorkspace], undefined, {}, {
@@ -626,18 +610,9 @@ describe('dashboard application', () => {
         limit: 50,
       },
     })
-    const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
-    expect(await screen.findByText('editable.pdf')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
-    await user.click(
-      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
-        name: 'Documents',
-      }),
-    )
     expect(await screen.findByText('editable.pdf')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reindex editable.pdf' })).not.toBeInTheDocument()
   })
@@ -710,7 +685,7 @@ describe('dashboard application', () => {
 
     await user.click(within(panel).getByRole('option', { name: /shared-notes\.pdf/ }))
 
-    expect(await screen.findByRole('heading', { name: 'Read only', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     expect(window.location.search).toContain('ws=workspace-2')
     expect(window.location.search).toContain('view=documents')
   })
@@ -722,7 +697,7 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).getByRole('button', { name: 'Documents' })).toHaveClass('nav-link-active')
@@ -746,14 +721,13 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(
-      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
-        name: 'Open Read only workspace',
-      }),
+      screen.getByRole('button', { name: 'Current workspace Launch notes, switch workspace' }),
     )
-    expect(await screen.findByRole('heading', { name: 'Read only', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('menuitemradio', { name: 'Switch to Read only' }))
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).getByRole('button', { name: 'Documents' })).toHaveClass('nav-link-active')
@@ -778,10 +752,9 @@ describe('dashboard application', () => {
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(
-      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
-        name: 'Open Second space workspace',
-      }),
+      screen.getByRole('button', { name: 'Current workspace Launch notes, switch workspace' }),
     )
+    await user.click(screen.getByRole('menuitemradio', { name: 'Switch to Second space' }))
     expect(screen.getByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Workspace' })).toHaveValue('workspace-2')
     expect(window.location.pathname).toBe('/upload-context')
@@ -829,7 +802,7 @@ describe('dashboard application', () => {
     ).toBe(true)
     expect(await screen.findByText('nada is now editor.')).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'Change access' })).not.toBeInTheDocument()
-    const memberRow = screen.getByText('nada').closest('li')
+    const memberRow = screen.getByText('nada').closest('tr')
     if (memberRow === null) throw new Error('member row missing')
     expect(within(memberRow as HTMLElement).getByText('editor')).toBeInTheDocument()
   })
@@ -906,6 +879,33 @@ describe('dashboard application', () => {
 
     await user.click(screen.getByRole('button', { name: /2 tool calls/ }))
     expect(await screen.findByText('find_documents')).toBeInTheDocument()
+  })
+
+  it('settles streamed prose when the turn hands over to tools', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi(admin, [workspace], undefined, {}, {}, {}, {}, {
+      preToolDeltas: ["I'll locate the prospectus and dig into its risk factors."],
+      toolCalls: [
+        { name: 'find_documents', arguments: { pattern: 'risk' }, preview: 'found the 10-K' },
+      ],
+    })
+    const user = userEvent.setup()
+    writeSessionToken('member-token')
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'What are the risk factors?')
+    await user.keyboard('{Enter}')
+
+    expect(
+      await screen.findByText("I'll locate the prospectus and dig into its risk factors."),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument(),
+    )
+    const transcript = screen.getByTestId('chat-transcript')
+    expect(within(transcript).getByText(/The workspace holds one report\./)).toBeInTheDocument()
+    expect(transcript.querySelector('.animate-pulse')).toBeNull()
   })
 
   it('does not abort the first message of a new chat while the draft promotes', async () => {
@@ -1345,7 +1345,7 @@ describe('dashboard application', () => {
   })
 
   it('shows how many rows a CSV holds, and says plainly how a CSV is used', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const base = {
       workspace_id: workspace.id,
@@ -1369,8 +1369,6 @@ describe('dashboard application', () => {
     })
 
     render(<App />)
-    const user = userEvent.setup()
-    await gotoOverview(user)
 
     expect(await screen.findByText('sales.csv')).toBeInTheDocument()
     expect(screen.getByText(/900 rows/)).toBeInTheDocument()
@@ -1581,7 +1579,7 @@ describe('dashboard application', () => {
   })
 
   it('opens a document in the viewer and reuses the cached bytes', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const document = {
       id: 'document-1',
@@ -1601,7 +1599,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
 
@@ -1621,7 +1618,7 @@ describe('dashboard application', () => {
   })
 
   it('shows the error instead of a blank viewer when the download is refused', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     installApi(owner, [workspace], undefined, {}, {
       list: {
@@ -1648,7 +1645,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'View launch-review.pdf' }))
@@ -1659,7 +1655,7 @@ describe('dashboard application', () => {
   })
 
   it('lays out a Word document instead of refusing to preview it', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const docx = await buildDocx('Business Case Answer Sheet')
     installApi(owner, [workspace], undefined, {}, {
@@ -1687,7 +1683,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('business-case.docx')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'View business-case.docx' }))
@@ -1702,7 +1697,7 @@ describe('dashboard application', () => {
   })
 
   it('fetches a Word document once across repeated previews', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const docx = await buildDocx('Repeat preview')
     const fetchMock = installApi(owner, [workspace], undefined, {}, {
@@ -1733,7 +1728,6 @@ describe('dashboard application', () => {
       fetchMock.mock.calls.filter(([input]) => String(input).includes('/download')).length
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('repeat.docx')).toBeInTheDocument()
 
@@ -1894,7 +1888,7 @@ describe('dashboard application', () => {
   })
 
   it('lists workspace documents and deletes one after confirmation', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const deleted: string[] = []
     const document = {
@@ -1916,7 +1910,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
     const documentRow = screen.getByRole('row', { name: /launch-review.pdf/ })

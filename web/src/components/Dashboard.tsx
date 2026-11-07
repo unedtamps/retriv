@@ -30,6 +30,7 @@ import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { DocumentViewerDrawer } from './DocumentViewerDrawer'
 import { CredentialDialog } from './CredentialDialog'
 import { EmptyWorkspace, WorkspaceOverview } from './WorkspaceOverview'
+import { HelpView } from './HelpView'
 import { UploadContext } from './UploadContext'
 import { UploadForm } from './UploadForm'
 import { WorkspaceDocumentsPage } from './WorkspaceDocumentsPage'
@@ -218,6 +219,7 @@ export function Dashboard({
       user={user}
       workspaces={workspaces}
       runs={runs}
+      documentCount={adminMode || selectedWorkspace === null ? null : documents.data?.total ?? null}
       selectedWorkspace={selectedWorkspace}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
@@ -262,6 +264,14 @@ export function Dashboard({
         >
           <AdminAgentModel onUnauthorized={onUnauthorized} onNotice={showNotice} />
         </PlatformPage>
+      ) : activeView === 'help' ? (
+        <PlatformPage
+          eyebrow="Workspace reference"
+          title="Help"
+          description="The roles, the document states, and every code the interface will show you."
+        >
+          <HelpView />
+        </PlatformPage>
       ) : adminMode ? (
         <AdminWorkspacesPage
           onUnauthorized={onUnauthorized}
@@ -275,7 +285,7 @@ export function Dashboard({
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}
           documents={documents}
-          searchQuery={searchQuery}
+          runs={runs}
           focusDocumentId={focusDocumentId}
           canReindex={selectedWorkspace.membership_role === 'owner'}
           reindexingId={reindexingId}
@@ -296,19 +306,11 @@ export function Dashboard({
       ) : (
         <WorkspaceOverview
           workspace={selectedWorkspace}
-          isAdmin={isAdmin}
           documents={documents}
-          searchQuery={searchQuery}
           onUpload={openUpload}
-          canReindex={selectedWorkspace.membership_role === 'owner'}
-          reindexingId={reindexingId}
-          onReindex={setReindexTarget}
-          canView={selectedWorkspace.can_download}
-          onView={setViewTarget}
-          onViewDocuments={() => setActiveView('documents')}
-          onManageMembers={() => setActiveView('members')}
+          onOpenMembers={() => setActiveView('members')}
+          onOpenChat={() => setActiveView('chat')}
           onUnauthorized={onUnauthorized}
-          onDeleteDocument={setDeleteTarget}
         />
       )}
 
@@ -425,7 +427,7 @@ function PlatformPage({
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <header className="border-b border-line pb-5">
         <p className="eyebrow">{eyebrow}</p>
-        <h1 className="mt-1.5 font-display text-2xl font-medium text-ink">{title}</h1>
+        <h1 className="mt-1.5 font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">{title}</h1>
         <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-muted">{description}</p>
       </header>
       <div className="mt-5">{children}</div>

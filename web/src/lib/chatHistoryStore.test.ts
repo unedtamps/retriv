@@ -52,7 +52,7 @@ describe('chat history store', () => {
       'session-2',
       'session-1',
     ])
-    expect(restored.conversations[0].items[0].text).toBe('second transcript')
+    expect(restored.conversations[0].items[0]).toMatchObject({ text: 'second transcript' })
   })
 
   it('migrates a v1 single-conversation payload on first load', () => {
@@ -68,7 +68,7 @@ describe('chat history store', () => {
     expect(restored.activeId).toBe('legacy-1')
     expect(restored.conversations).toHaveLength(1)
     expect(restored.conversations[0].id).toBe('legacy-1')
-    expect(restored.conversations[0].items[0].text).toBe('carried over')
+    expect(restored.conversations[0].items[0]).toMatchObject({ text: 'carried over' })
     expect(localStorage.getItem('retriv.chat.conversation.v1')).toBeNull()
   })
 
@@ -125,7 +125,9 @@ describe('chat history store', () => {
     )
     const restored = loadChatHistory()
     expect(restored.conversations[0].items.length).toBeLessThanOrEqual(60)
-    expect(restored.conversations[0].items.at(-1)!.text).toContain('item 79')
+    expect(restored.conversations[0].items.at(-1)).toMatchObject({
+      text: expect.stringContaining('item 79'),
+    })
   })
 
   it('clear removes every stored session and any legacy payload', () => {

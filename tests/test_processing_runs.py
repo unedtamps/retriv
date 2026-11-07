@@ -117,6 +117,35 @@ async def test_processing_activity_aggregates_only_the_callers_workspaces(
     assert {item["filename"] for item in body["items"]} == {"finance.pdf", "legal.pdf"}
 
 
+async def test_today_scope_carries_finished_runs_from_the_day(
+    client: httpx.AsyncClient,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+) -> None:
+    await seed_run(
+        db_session_factory,
+        workspace_id=entities.finance.id,
+        filename="working.pdf",
+        status=RUN_EMBEDDING,
+    )
+    await seed_run(
+        db_session_factory,
+        workspace_id=entities.finance.id,
+        filename="finished.pdf",
+        status=RUN_READY,
+    )
+
+    today = await client.get("/v1/processing-runs?today=true", headers=auth_headers)
+
+    assert today.status_code == 200
+    body = today.json()
+    assert {item["filename"] for item in body["items"]} == {"working.pdf", "finished.pdf"}
+
+    live = await client.get("/v1/processing-runs", headers=auth_headers)
+    assert {item["filename"] for item in live.json()["items"]} == {"working.pdf"}
+
+
 async def test_a_viewer_sees_only_their_own_workspace(
     client: httpx.AsyncClient,
     db_session_factory: async_sessionmaker[AsyncSession],
