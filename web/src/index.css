@@ -1,69 +1,73 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Fira Code", ui-monospace, monospace;
-  --font-display: "Newsreader", ui-serif, Georgia, serif;
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-condensed: "Barlow Semi Condensed", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Overpass Mono", ui-monospace, monospace;
+  --font-display: "Barlow Semi Condensed", ui-sans-serif, system-ui, sans-serif;
 
 
-  --color-paper: #edf1f6;
+  --color-paper: #e4eaf1;
+  --color-paper-glow: #f2f6fa;
   --color-surface: #ffffff;
-  --color-sunken: #e3e8ef;
+  --color-sunken: #f7fafc;
 
 
-  --color-line: #dde3eb;
-  --color-line-strong: #bfc8d4;
+  --color-line: #c6d0da;
+  --color-line-strong: #a9b8c6;
+  --color-rail: #22303f;
 
 
-  --color-ink: #15222e;
-  --color-ink-muted: #4a5561;
-  --color-ink-faint: #78859a;
+  --color-ink: #1b2733;
+  --color-ink-muted: #51616f;
+  --color-ink-faint: #7c8b99;
 
 
-  --color-accent: #1f3a5c;
-  --color-accent-soft: #e9edf2;
-  --color-accent-ink: #16304d;
-  --color-panel-dark: #101c27;
+  --color-accent: #b3402a;
+  --color-accent-soft: #f6e9e5;
+  --color-accent-ink: #9c3823;
+  --color-code-ink: #3a4c5e;
+  --color-panel-dark: #0b1017;
 
-  --color-scrim: rgb(21 34 46 / 0.5);
-  --color-on-dark: #ffffff;
-  --color-on-dark-muted: rgb(255 255 255 / 0.66);
-  --color-on-dark-faint: rgb(255 255 255 / 0.5);
-  --color-on-dark-accent: #a9c0dc;
-  --color-on-dark-line: rgb(255 255 255 / 0.1);
+  --color-scrim: rgb(27 39 51 / 0.45);
+  --color-on-dark: #dee6ee;
+  --color-on-dark-muted: #97a7b5;
+  --color-on-dark-faint: #6b7c8a;
+  --color-on-dark-accent: #d06a50;
+  --color-on-dark-line: #253544;
 
-  
-  --color-blue: #2f6aae;
-  --color-blue-soft: #ecf2f9;
-  --color-teal: #22756c;
-  --color-teal-soft: #e9f3f1;
-  --color-violet: #5c4a92;
-  --color-violet-soft: #f0edf8;
-  --color-coral: #a64438;
-  --color-coral-soft: #faeeec;
-  --color-amber: #986a1b;
-  --color-amber-soft: #faf3e2;
 
-  
-  --color-danger: #9c2b2b;
-  --color-danger-soft: #fbf0f0;
-  --color-success: #2a6335;
-  --color-success-soft: #edf4ee;
-  --color-warn: #82540f;
-  --color-warn-soft: #f9f2e3;
+  --color-blue: #446e96;
+  --color-blue-soft: #e9eff5;
+  --color-teal: #2f7d6d;
+  --color-teal-soft: #e7f0eb;
+  --color-violet: #5d5a8c;
+  --color-violet-soft: #ecebf3;
+  --color-coral: #b3402a;
+  --color-coral-soft: #f6e9e5;
+  --color-amber: #6b5e4e;
+  --color-amber-soft: #efebe4;
 
-  
+
+  --color-danger: #b3402a;
+  --color-danger-soft: #f6e9e5;
+  --color-success: #2e6b4f;
+  --color-success-soft: #e7f0eb;
+  --color-warn: #8a6e3b;
+  --color-warn-soft: #efebe4;
+
+
   --text-eyebrow: 0.6875rem;
   --text-eyebrow--line-height: 1rem;
-  --tracking-eyebrow: 0.14em;
+  --tracking-eyebrow: 0.09em;
   --text-meta: 0.75rem;
   --text-meta--line-height: 1.1rem;
 
-  --radius-stamp: 0.25rem;
-  --radius-control: 0.5rem;
-  --radius-card: 0.75rem;
-  --shadow-card: 0 1px 2px rgb(21 34 46 / 0.06);
-  --shadow-raised: 0 16px 40px rgb(21 34 46 / 0.16);
+  --radius-stamp: 0.125rem;
+  --radius-control: 0.125rem;
+  --radius-card: 0.1875rem;
+  --shadow-card: 0 1px 2px rgb(27 39 51 / 0.05);
+  --shadow-raised: 0 24px 48px -12px rgb(11 16 23 / 0.35);
 }
 
 :root {
@@ -76,49 +80,52 @@
  * var(--color-*), and even an opacity modifier like bg-sunken/70 goes through
  * color-mix against the variable, which means it follows the theme too.
  *
- * accent-ink inverts on purpose: the app uses it as TEXT and as the focus
- * outline, so on a dark surface it has to be the light blue, not the navy.
+ * accent-ink stays readable as TEXT and as the focus outline on dark panes,
+ * so it holds the lifted vermilion rather than a darker shade.
  */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --color-paper: #0b0f14;
-  --color-surface: #121821;
-  --color-sunken: #070a0e;
+  --color-paper: #0b1017;
+  --color-paper-glow: #15202e;
+  --color-surface: #131b24;
+  --color-sunken: #0f1620;
 
-  --color-line: #1f2833;
-  --color-line-strong: #2e3a49;
+  --color-line: #253544;
+  --color-line-strong: #2c3d4e;
+  --color-rail: #2c3d4e;
 
-  --color-ink: #dde5ef;
-  --color-ink-muted: #9baabb;
-  --color-ink-faint: #71818f;
+  --color-ink: #dee6ee;
+  --color-ink-muted: #97a7b5;
+  --color-ink-faint: #6b7c8a;
 
-  --color-accent: #22405f;
-  --color-accent-soft: #16212e;
-  --color-accent-ink: #8db6de;
+  --color-accent: #d06a50;
+  --color-accent-soft: #26130e;
+  --color-accent-ink: #d06a50;
+  --color-code-ink: #9fb4c6;
 
-  --color-blue: #6fa8e0;
-  --color-blue-soft: #0f1a26;
-  --color-teal: #55bcb0;
-  --color-teal-soft: #0c1d1b;
-  --color-violet: #a78fe0;
-  --color-violet-soft: #151228;
-  --color-coral: #e08f80;
-  --color-coral-soft: #1e1210;
-  --color-amber: #d8b063;
-  --color-amber-soft: #1e180f;
+  --color-blue: #7fa6c8;
+  --color-blue-soft: #101a26;
+  --color-teal: #5fa983;
+  --color-teal-soft: #0f1e17;
+  --color-violet: #9a94c4;
+  --color-violet-soft: #15121f;
+  --color-coral: #d06a50;
+  --color-coral-soft: #26130e;
+  --color-amber: #b39a82;
+  --color-amber-soft: #1c1913;
 
-  --color-danger: #be5257;
-  --color-danger-soft: #1e1012;
-  --color-success: #4fa365;
-  --color-success-soft: #0c1a11;
-  --color-warn: #d3a24a;
-  --color-warn-soft: #1e1810;
+  --color-danger: #d06a50;
+  --color-danger-soft: #26130e;
+  --color-success: #5fa983;
+  --color-success-soft: #0f1e17;
+  --color-warn: #c2a468;
+  --color-warn-soft: #1c1913;
 
-  --color-scrim: rgb(0 0 0 / 0.72);
+  --color-scrim: rgb(0 0 0 / 0.7);
 
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5);
-  --shadow-raised: 0 16px 40px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-raised: 0 24px 48px -12px rgb(0 0 0 / 0.7);
 }
 
 @layer base {
@@ -135,9 +142,11 @@
     min-width: 320px;
     min-height: 100svh;
     overflow-x: hidden;
-    background: var(--color-paper);
+    background: radial-gradient(120% 90% at 50% 0%, var(--color-paper-glow) 0%, var(--color-paper) 58%);
+    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
+    font-feature-settings: "tnum" 1;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -162,7 +171,7 @@
 
   ::selection {
     background: var(--color-accent);
-    color: var(--color-on-dark);
+    color: #ffffff;
   }
 }
 
@@ -173,19 +182,23 @@
   .btn-quiet,
   .btn-danger,
   .btn-icon {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-control border text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-control border border-line text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn {
     @apply px-4 py-2.5;
   }
 
+  .btn-sm {
+    @apply px-3 py-1.5 text-[0.8125rem];
+  }
+
   .btn-primary {
-    @apply border-accent bg-accent text-white hover:bg-accent-ink;
+    @apply border-transparent bg-accent font-condensed text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-white hover:brightness-110;
   }
 
   .btn-secondary {
-    @apply border-line-strong bg-surface text-ink hover:bg-sunken;
+    @apply border-line bg-surface text-ink hover:border-line-strong hover:bg-sunken;
   }
 
   .btn-quiet {
@@ -193,19 +206,19 @@
   }
 
   .btn-danger {
-    @apply border-danger bg-danger text-white hover:bg-danger/90;
+    @apply border-danger bg-transparent text-danger hover:bg-danger-soft;
   }
 
   .btn-icon {
-    @apply h-9 w-9 border-line-strong bg-surface text-ink-muted hover:bg-sunken hover:text-ink;
+    @apply h-9 w-9 border-line bg-surface text-ink-muted hover:bg-sunken hover:text-ink;
   }
 
   .label {
-    @apply mb-2 block text-sm font-medium text-ink;
+    @apply mb-2 block font-condensed text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-ink-faint;
   }
 
   .field {
-    @apply block w-full rounded-control border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-ink-faint focus:border-accent-ink focus:ring-1 focus:ring-accent-ink disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-faint;
+    @apply block w-full rounded-control border border-line bg-sunken px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent focus:bg-surface disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-faint;
   }
 
   .panel {
@@ -217,11 +230,11 @@
   }
 
   .table th {
-    @apply border-b border-line px-5 py-2.5 text-xs font-medium text-ink-muted;
+    @apply border-b border-rail px-5 py-2 font-condensed text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-ink-muted;
   }
 
   .table td {
-    @apply border-b border-line px-5 py-3 text-sm align-middle text-ink last:border-b-0;
+    @apply border-b border-line px-5 py-2.5 text-sm align-middle text-ink last:border-b-0;
   }
 
   .table tbody tr {
@@ -229,35 +242,36 @@
   }
 
   .eyebrow {
-    @apply text-xs text-ink-faint;
+    @apply font-condensed text-xs font-semibold uppercase tracking-[0.09em] text-ink-faint;
   }
 
   .stamp {
-    @apply inline-flex items-center rounded-stamp bg-sunken px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase leading-4 tracking-[0.04em] text-ink-muted;
+    @apply inline-flex items-center rounded-stamp border border-line bg-sunken px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase leading-4 tracking-[0.02em] text-code-ink;
   }
 
   .nav-link {
-    @apply flex cursor-pointer items-center gap-3 rounded-control px-2.5 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink;
+    @apply flex cursor-pointer items-center gap-3 rounded-control px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
   }
 
   .nav-link-active {
-    @apply bg-accent-soft font-medium text-accent-ink;
+    @apply bg-ink font-semibold text-surface hover:bg-ink hover:text-surface;
   }
 
   .choice {
-    @apply grid cursor-pointer gap-1 rounded-card border border-line-strong bg-surface p-3.5 transition-colors hover:border-ink-faint;
+    @apply grid cursor-pointer gap-1 rounded-card border border-line bg-surface p-3.5 transition-colors hover:border-line-strong;
   }
 
   .choice-active {
-    @apply border-accent-ink bg-accent-soft;
+    border-color: var(--color-ink);
+    box-shadow: inset 3px 0 0 0 var(--color-accent);
   }
 
   .badge {
-    @apply inline-flex items-center rounded-stamp bg-sunken px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase leading-4 tracking-[0.04em] text-ink-muted;
+    @apply inline-flex items-center rounded-stamp border border-line bg-sunken px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase leading-4 tracking-[0.02em] text-code-ink;
   }
 
   .error-note {
-    @apply flex items-start gap-2 rounded-card border border-danger/30 bg-danger-soft px-4 py-3 text-sm leading-6 text-danger;
+    @apply flex items-start gap-2 rounded-card border border-danger/40 bg-danger-soft px-4 py-3 text-sm leading-6 text-danger;
   }
 
   .empty {
@@ -269,11 +283,194 @@
   }
 
   .toast-error {
-    @apply border-danger/40 text-danger;
+    @apply border-danger/50 text-danger;
   }
 
   .skip-link {
-    @apply fixed left-3 top-3 z-[100] -translate-y-20 rounded-card bg-accent px-4 py-2 text-sm font-semibold text-white transition-transform focus:translate-y-0;
+    @apply fixed left-3 top-3 z-[100] -translate-y-20 rounded-control bg-accent px-4 py-2 text-sm font-semibold text-white transition-transform focus:translate-y-0;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /*
+   * Markdown layer for agent answers. The text is untrusted document
+   * content: every element below is styled defensively (no raw HTML is
+   * ever rendered, links open in a new tab with noreferrer) and follows
+   * the sheet grammar — condensed caps headings, mono code chips, ruled
+   * tables with tabular numerals, tick-railed callouts.
+   */
+  .retriv-md {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--color-ink);
+    overflow-wrap: break-word;
+  }
+
+  .retriv-md > :first-child {
+    margin-top: 0;
+  }
+
+  .retriv-md > :last-child {
+    margin-bottom: 0;
+  }
+
+  .retriv-md p {
+    margin: 0.5rem 0;
+  }
+
+  .retriv-md h1,
+  .retriv-md h2,
+  .retriv-md h3,
+  .retriv-md h4 {
+    font-family: var(--font-condensed);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--color-ink);
+    margin: 1.1rem 0 0.4rem;
+  }
+
+  .retriv-md h1 {
+    font-size: 1.25rem;
+  }
+
+  .retriv-md h2 {
+    font-size: 1.0625rem;
+  }
+
+  .retriv-md h3 {
+    font-size: 0.9375rem;
+  }
+
+  .retriv-md h4 {
+    font-size: 0.875rem;
+  }
+
+  .retriv-md ul,
+  .retriv-md ol {
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+  }
+
+  .retriv-md ul {
+    list-style: square;
+  }
+
+  .retriv-md li {
+    margin: 0.2rem 0;
+  }
+
+  .retriv-md li::marker {
+    color: var(--color-ink-faint);
+  }
+
+  .retriv-md code {
+    display: inline-block;
+    padding: 0 5px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-stamp);
+    background: var(--color-sunken);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
+    color: var(--color-code-ink);
+  }
+
+  .retriv-md pre {
+    margin: 0.6rem 0;
+    padding: 10px 12px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-stamp);
+    background: var(--color-sunken);
+    overflow-x: auto;
+  }
+
+  .retriv-md pre code {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 0.75rem;
+    line-height: 1.55;
+  }
+
+  .retriv-md table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.7rem 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .retriv-md th {
+    text-align: left;
+    padding: 5px 12px 5px 0;
+    border-bottom: 1px solid var(--color-rail);
+    font-family: var(--font-condensed);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+  }
+
+  .retriv-md td {
+    padding: 6px 12px 6px 0;
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .retriv-md tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .retriv-md th[align="right"],
+  .retriv-md td[align="right"] {
+    text-align: right;
+  }
+
+  .retriv-md blockquote {
+    margin: 0.6rem 0;
+    padding: 0.1rem 0 0.1rem 12px;
+    border-left: 3px solid var(--color-accent);
+    color: var(--color-ink-muted);
+  }
+
+  .retriv-md blockquote p {
+    margin: 0.25rem 0;
+  }
+
+  .retriv-md hr {
+    border: 0;
+    border-top: 1px solid var(--color-line);
+    margin: 0.9rem 0;
+  }
+
+  .retriv-md a {
+    display: inline-block;
+    padding: 0 5px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-stamp);
+    background: var(--color-sunken);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
+    line-height: 1.5;
+    color: var(--color-code-ink);
+    text-decoration: none;
+    transition: border-color 150ms, color 150ms;
+  }
+
+  .retriv-md a:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  .retriv-md strong {
+    font-weight: 600;
   }
 }
 

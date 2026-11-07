@@ -166,7 +166,7 @@ export const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   success: 'bg-success-soft text-success',
   warning: 'bg-warn-soft text-warn',
   danger: 'bg-danger-soft text-danger',
-  info: 'bg-accent-soft text-accent-ink',
+  info: 'bg-blue-soft text-blue',
   neutral: 'bg-sunken text-ink-muted',
 }
 

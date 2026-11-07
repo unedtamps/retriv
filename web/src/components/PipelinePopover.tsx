@@ -90,9 +90,9 @@ export function PipelinePopover({
       <button
         ref={buttonRef}
         type="button"
-        className={`inline-flex h-9 w-9 items-center justify-center rounded-control transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink ${
+        className={`inline-flex h-9 w-9 items-center justify-center rounded-control transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
           running
-            ? 'bg-accent-soft text-accent-ink hover:bg-accent-soft/70'
+            ? 'bg-blue-soft text-blue hover:bg-blue-soft/70'
             : 'text-ink-muted hover:bg-sunken hover:text-ink'
         }`}
         aria-label="Pipeline status"

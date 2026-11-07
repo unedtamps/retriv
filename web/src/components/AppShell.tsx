@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { ArrowLeftRight, Check, ChevronsDown, FileText, FileUp, KeyRound, LayoutGrid, LockKeyhole, LogOut, Menu, MessageSquare, Plus, Sparkles, Users, X } from 'lucide-react'
+import { ArrowLeftRight, Check, ChevronsDown, FileText, FileUp, HelpCircle, KeyRound, LayoutGrid, LockKeyhole, LogOut, Menu, MessageSquare, Plus, Sparkles, Users, X } from 'lucide-react'
 import type { AppRoute, CurrentUser, DashboardView, DocumentSearchHit, Workspace } from '../types'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import { ConfirmDialog } from './Dialog'
@@ -79,6 +79,7 @@ export function AppShell({
     && activeView !== 'api-keys'
     && activeView !== 'users'
     && activeView !== 'agent-model'
+    && activeView !== 'help'
     && activeView !== 'chat'
 
   useEffect(() => {
@@ -130,7 +131,7 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-svh bg-paper text-ink">
+    <div className="min-h-svh text-ink">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
@@ -153,7 +154,7 @@ export function AppShell({
         inert={isDesktop ? undefined : !navigationOpen}
         className={
           isDesktop
-            ? 'fixed inset-y-0 left-0 z-30 flex w-[15.5rem] flex-col border-r border-line bg-surface'
+            ? 'fixed inset-y-3 left-3 z-30 flex w-[15.5rem] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card'
             : `fixed inset-y-0 left-0 z-50 flex w-80 max-w-[88vw] flex-col border-r border-line bg-surface shadow-raised transition-transform duration-200 ${navigationOpen ? 'translate-x-0' : '-translate-x-full'}`
         }
       >
@@ -180,9 +181,9 @@ export function AppShell({
         />
       </div>
 
-      <div className="lg:pl-[15.5rem]">
+      <div className="lg:pl-[17rem]">
         <header
-          className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-paper/95 px-4 backdrop-blur sm:px-6"
+          className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 sm:px-6"
         >
           <button
             ref={menuButtonRef}
@@ -201,7 +202,7 @@ export function AppShell({
           </span>
 
           <div className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
-            <span className="text-ink-faint">Workspaces</span>
+            <span className="eyebrow">Workspaces</span>
             <span className="text-line-strong">/</span>
             {adminMode ? (
               <span className="truncate font-medium text-ink">All workspaces</span>
@@ -413,6 +414,17 @@ function Navigation({
               </button>
             </li>
           ) : null}
+          <li>
+            <button
+              type="button"
+              className={`nav-link w-full justify-start ${activeView === 'help' && route === '/dashboard' ? 'nav-link-active' : ''}`}
+              aria-current={activeView === 'help' && route === '/dashboard' ? 'page' : undefined}
+              onClick={() => onSelectView('help')}
+            >
+              <HelpCircle aria-hidden="true" size={16} />
+              Help
+            </button>
+          </li>
         </ul>
 
         <div className="mt-5 flex items-center justify-between px-2">
@@ -439,7 +451,7 @@ function Navigation({
         {isAdmin ? (
           <button
             type="button"
-            className="mt-1.5 flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+            className="mt-1.5 flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             onClick={onCreateWorkspace}
           >
             <Plus aria-hidden="true" size={15} />
@@ -470,7 +482,7 @@ function Navigation({
                       type="button"
                       className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors ${
                         selected
-                          ? 'bg-accent-soft text-accent-ink'
+                          ? 'bg-sunken text-ink shadow-[inset_2px_0_0_var(--color-accent)]'
                           : 'text-ink-muted hover:bg-sunken hover:text-ink'
                       }`}
                       aria-label={`Open ${workspace.name} workspace`}
@@ -488,7 +500,7 @@ function Navigation({
               <>
                 <button
                   type="button"
-                  className="mt-1 flex h-[22px] w-full items-center justify-center rounded-control text-ink-faint transition-colors hover:bg-sunken hover:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+                  className="mt-1 flex h-[22px] w-full items-center justify-center rounded-control text-ink-faint transition-colors hover:bg-sunken hover:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   aria-label={
                     directoryOpen ? 'Collapse catalogued workspaces' : 'Show catalogued workspaces'
                   }
@@ -545,7 +557,7 @@ function Navigation({
           <Avatar name={user.username} seed={user.id} size="md" />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-ink">{user.username}</p>
-            <p className="text-[0.7rem] capitalize text-ink-muted">{user.role}</p>
+            <p className="font-mono text-[0.65rem] capitalize text-ink-muted">{user.role}</p>
           </div>
           <div className="ml-auto flex items-center gap-0.5">
             <ThemeMenu preference={themePreference} resolved={themeResolved} onSelect={onThemeChange} />
@@ -621,7 +633,7 @@ function WorkspaceSwitcher({
     <div ref={containerRef} className="relative mt-2">
       <button
         type="button"
-        className="flex w-full items-center gap-2.5 rounded-control bg-sunken/70 px-2.5 py-2 text-left transition-colors hover:bg-sunken focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+        className="flex w-full items-center gap-2.5 rounded-control border border-line bg-sunken px-2.5 py-2 text-left transition-colors hover:border-line-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         aria-haspopup={hasChoices ? 'menu' : undefined}
         aria-expanded={hasChoices ? open : undefined}
         aria-label={
@@ -648,7 +660,7 @@ function WorkspaceSwitcher({
         {hasChoices ? (
           <ArrowLeftRight
             aria-hidden="true"
-            className={`shrink-0 text-ink-faint transition-transform duration-200 ${open ? 'text-accent-ink' : ''}`}
+            className={`shrink-0 transition-all duration-200 ${open ? 'rotate-90 text-accent' : 'text-ink-faint'}`}
             size={14}
           />
         ) : null}
@@ -669,7 +681,7 @@ function WorkspaceSwitcher({
                 role="menuitemradio"
                 aria-checked={active}
                 className={`flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-sunken ${
-                  active ? 'text-accent-ink' : 'text-ink-muted'
+                  active ? 'font-semibold text-ink' : 'text-ink-muted'
                 }`}
                 aria-label={`Switch to ${workspace.name}`}
                 onClick={() => {

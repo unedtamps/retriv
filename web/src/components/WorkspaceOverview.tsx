@@ -71,7 +71,7 @@ export function WorkspaceOverview({
               <p className="eyebrow">Workspace overview</p>
               <span className="stamp">{workspace.membership_role ?? 'catalog only'}</span>
             </div>
-            <h1 className="mt-1.5 truncate font-display text-2xl font-medium text-ink">
+            <h1 className="mt-1.5 truncate font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">
               {workspace.name}
             </h1>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-muted">
@@ -239,7 +239,7 @@ function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: 
   return (
     <button
       type="button"
-      className="group rounded-card border border-dashed border-line-strong bg-surface p-5 text-left transition-colors hover:border-accent-ink hover:bg-accent-soft/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"
+      className="group rounded-card border border-dashed border-line-strong bg-surface p-5 text-left transition-colors hover:border-accent hover:bg-accent-soft/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       onClick={onUpload}
     >
       <div className="flex items-start justify-between gap-3">
@@ -247,7 +247,7 @@ function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: 
           <p className="eyebrow">Quick upload</p>
           <p className="mt-2 text-sm font-semibold text-ink">Add context to this workspace</p>
         </div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-control border border-line bg-sunken text-ink-muted transition-colors group-hover:border-accent-ink group-hover:text-accent-ink">
+        <span className="flex h-9 w-9 items-center justify-center rounded-control border border-line bg-sunken text-ink-muted transition-colors group-hover:border-accent group-hover:text-accent">
           <UploadCloud aria-hidden="true" size={17} />
         </span>
       </div>
@@ -261,7 +261,7 @@ function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: 
 export function EmptyWorkspace({ onCreate }: { onCreate?: () => void }) {
   return (
     <div className="mx-auto flex min-h-[60svh] max-w-lg flex-col items-center justify-center px-5 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-card border border-line bg-surface text-accent-ink">
+      <span className="flex h-11 w-11 items-center justify-center rounded-card border border-line bg-surface text-ink-muted">
         <Sparkles aria-hidden="true" size={20} />
       </span>
       <h1 className="mt-4 text-xl font-semibold text-ink">No workspaces yet</h1>

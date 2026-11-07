@@ -27,7 +27,7 @@ export function WorkspaceMembersPage({
         <Avatar name={workspace.name} seed={workspace.id} size="lg" className="mt-0.5" />
         <div className="min-w-0">
           <p className="eyebrow">Members and access</p>
-          <h1 className="mt-1.5 truncate text-2xl font-semibold tracking-[-0.025em] text-ink">
+          <h1 className="mt-1.5 truncate font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">
             {workspace.name}
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-muted">

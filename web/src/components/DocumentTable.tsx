@@ -208,7 +208,7 @@ export function DocumentTable({
                             {canView && onView !== undefined ? (
                               <button
                                 type="button"
-                                className="truncate text-left text-sm font-medium text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:no-underline disabled:text-ink-faint"
+                                className="truncate text-left text-sm font-medium text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:no-underline disabled:text-ink-faint"
                                 aria-label={`View ${document.original_filename}`}
                                 disabled={document.status === 'deleting'}
                                 onClick={() => onView(document)}
@@ -246,7 +246,7 @@ export function DocumentTable({
                         {canView && onView !== undefined ? (
                           <button
                             type="button"
-                            className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-accent-ink disabled:opacity-40"
+                            className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-ink disabled:opacity-40"
                             aria-label={`Preview ${document.original_filename}`}
                             disabled={document.status === 'deleting'}
                             onClick={() => onView(document)}
@@ -257,7 +257,7 @@ export function DocumentTable({
                         {canReindex && onReindex !== undefined ? (
                           <button
                             type="button"
-                            className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-accent-ink disabled:opacity-40"
+                            className="btn-icon h-7 w-7 border-transparent bg-transparent text-ink-faint opacity-100 hover:border-line hover:text-ink disabled:opacity-40"
                             aria-label={`Reindex ${document.original_filename}`}
                             disabled={reindexingId === document.id || isActiveStatus(document.status)}
                             title={

@@ -34,14 +34,14 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   }
 
   return (
-    <main className="min-h-svh bg-paper">
-      <div className="grid min-h-svh bg-surface lg:grid-cols-[0.9fr_1.1fr]">
+    <main className="min-h-svh">
+      <div className="grid min-h-svh lg:grid-cols-[0.9fr_1.1fr]">
         <section className="relative hidden overflow-hidden bg-panel-dark text-on-dark lg:flex">
           <img
             src={loginScene}
             alt=""
             aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover opacity-90"
           />
           <div
             aria-hidden="true"
@@ -51,14 +51,18 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             <div className="flex items-center gap-3">
               <BrandMark />
               <div>
-                <p className="text-sm font-semibold">Retriv</p>
-                <p className="text-[11px] text-on-dark-faint">Control plane</p>
+                <p className="font-condensed text-sm font-bold uppercase tracking-[0.04em]">
+                  Retriv
+                </p>
+                <p className="font-mono text-[0.65rem] text-on-dark-faint">Control plane</p>
               </div>
             </div>
 
             <div>
-              <p className="text-xs text-on-dark-muted">Workspace control plane</p>
-              <h1 className="mt-4 font-display text-3xl font-medium leading-[1.12] xl:text-4xl">
+              <p className="font-condensed text-xs font-semibold uppercase tracking-[0.09em] text-on-dark-muted">
+                Workspace control plane
+              </p>
+              <h1 className="mt-4 font-condensed text-3xl font-bold uppercase leading-[1.12] tracking-[0.03em] xl:text-4xl">
                 Access is explicit
                 <br />
                 Context stays scoped
@@ -88,13 +92,17 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="w-full max-w-sm">
             <div className="mb-8 flex items-center gap-3 lg:hidden">
               <BrandMark />
-              <p className="text-sm font-semibold text-ink">Retriv</p>
+              <p className="font-condensed text-sm font-bold uppercase tracking-[0.04em] text-ink">
+                Retriv
+              </p>
             </div>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-control border border-accent-ink/20 bg-accent-soft text-accent-ink">
+            <div className="flex h-10 w-10 items-center justify-center rounded-stamp border border-line bg-sunken text-ink">
               <LockKeyhole aria-hidden="true" size={19} strokeWidth={1.8} />
             </div>
-            <h2 className="mt-4 text-xl font-medium text-ink">Sign in to the dashboard</h2>
+            <h2 className="mt-4 font-condensed text-base font-bold uppercase tracking-[0.05em] text-ink">
+              Sign in to the dashboard
+            </h2>
             <p className="mt-2 text-sm leading-6 text-ink-muted">
               Your workspace permissions are resolved from the current access policy after
               sign-in.
@@ -153,7 +161,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                 <ArrowRight aria-hidden="true" size={18} />
               </button>
             </form>
-            <p className="mt-6 border-t border-line pt-4 text-xs leading-5 text-ink-faint">
+            <p className="mt-6 border-t border-line pt-4 font-mono text-[0.65rem] leading-5 text-ink-faint">
               Sessions are kept in this browser tab and cleared when you sign out or close it.
             </p>
           </div>

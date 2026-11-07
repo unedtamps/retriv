@@ -25,7 +25,9 @@ export function BrandLockup({ subtitle = 'Control plane' }: { subtitle?: string 
     <div className="flex items-center gap-3">
       <BrandMark />
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-ink">Retriv</p>
+        <p className="font-condensed text-base font-bold uppercase tracking-[0.04em] text-ink">
+          Retriv
+        </p>
         <p className="eyebrow">{subtitle}</p>
       </div>
     </div>

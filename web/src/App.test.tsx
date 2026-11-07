@@ -525,6 +525,28 @@ describe('dashboard application', () => {
     expect(screen.getByRole('button', { name: 'All workspaces' })).toHaveClass('nav-link-active')
   })
 
+  it('opens the help reference from the rail and moves the active mark to it', async () => {
+    window.history.replaceState(null, '', '/dashboard')
+    writeSessionToken('member-token')
+    installApi(owner, [workspace])
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    await user.click(within(navigation).getByRole('button', { name: 'Help' }))
+
+    expect(await screen.findByRole('heading', { name: 'Help', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'The codes' })).toBeInTheDocument()
+    expect(screen.getByText("A document's permanent identifier inside this workspace. Cited in answers.")).toBeInTheDocument()
+    expect(window.location.search).toContain('view=help')
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const reopened = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(reopened).getByRole('button', { name: 'Help' })).toHaveClass('nav-link-active')
+    expect(within(reopened).getByRole('button', { name: 'Documents' })).not.toHaveClass('nav-link-active')
+  })
+
   it('restores the users view for an admin refreshing the dashboard', async () => {
     window.history.replaceState(null, '', '/dashboard?view=users')
     writeSessionToken('admin-token')
