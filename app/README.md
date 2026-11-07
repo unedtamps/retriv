@@ -245,6 +245,15 @@ scores as a miss. It executes no real tool, so a result is about the catalogue r
 than the corpus. Run it before adding tools and after rewriting descriptions; a merged
 or renamed variant belongs in `build_toolset` so an A/B run differs in one dimension.
 
+The final answer is checked against the evidence the turn actually served. Tools
+return a `ToolOutcome` carrying the text the model sees and the sources that text
+cites; the harness numbers those sources across the whole turn and, before emitting
+`final`, verifies that every `[n]` in the answer names one of them. An answer that
+cites a source the turn never served, or that makes a content claim after no tool
+ran, is replaced with a refusal -- the event carries `replaced` and the reason, and
+the browser swaps the already-streamed text for it. Meta messages (greetings,
+thanks, "what can you do") are the only answers allowed without a tool.
+
 A turn has two possible doors into the documents. `search_context` retrieves prose by
 meaning; `query_rows` runs SQL over tabular rows. The client's model picks, which is
 why `list_queryable_files` exists and why the CSV catalogue is repeated inside the row

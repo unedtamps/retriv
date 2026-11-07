@@ -85,8 +85,10 @@ def navigation_footer(window: NavigationWindow) -> str:
     )
 
 
-def source_indices(sources: dict[UUID, ContextSource]) -> dict[UUID, int]:
-    return {chunk_id: index for index, chunk_id in enumerate(sources, start=1)}
+def source_indices(
+    sources: dict[UUID, ContextSource], *, start: int = 1
+) -> dict[UUID, int]:
+    return {chunk_id: index for index, chunk_id in enumerate(sources, start=start)}
 
 
 def format_outline(outline: DocumentOutline) -> str:
