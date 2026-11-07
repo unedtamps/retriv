@@ -36,7 +36,7 @@ from app.db.models import (
     WorkspaceMembership,
 )
 from app.infrastructure.storage import ObjectNotFoundError, ObjectTooLargeError, StorageError
-from app.mcp.auth import McpPrincipal, require_workspace
+from app.mcp.auth import McpPrincipal
 from app.mcp.documents import find_documents as search_documents
 from app.mcp.documents import format_documents
 from app.mcp.overview import (
@@ -63,8 +63,14 @@ from app.retrieval.sql import (
     RowQueryError,
     catalogue_entries,
 )
+from app.security.authorization import (
+    ROLE_PERMISSIONS,
+    WorkspacePermission,
+    insufficient_workspace_permission_error,
+)
 
 if TYPE_CHECKING:
+    from app.db.models import User
     from app.infrastructure.storage import ArtifactStorage
 
 
@@ -135,33 +141,54 @@ def _by_chunk(sources: list[ContextSource]) -> dict[UUID, ContextSource]:
 
 
 async def _scoped_document(
-    session: AsyncSession, workspace_id: UUID, document_id: UUID
-) -> Document:
-    """The document a workspace-scoped tool may touch, or the error to raise.
+    session: AsyncSession,
+    *,
+    user: "User",
+    workspace_ids: list[UUID],
+    document_id: UUID,
+    permission: WorkspacePermission,
+) -> tuple[Document, DocumentWorkspace]:
+    """The document a tool may touch, and the workspace it was found in.
 
-    The document must be linked into the named workspace through
-    ``document_workspaces``, and neither link nor document may be under
-    deletion. The failure is the same for "not yours" and "does not exist".
+    The caller's scope says where to look; the role permission says what may
+    be done there. Both are in the query, so naming no workspace cannot widen
+    what a role may do -- a viewer finds a document through ``read`` and still
+    cannot download it -- and a document linked into several workspaces
+    resolves through the one that grants the permission.
+
+    The failure is the same for "not yours" and "does not exist".
     """
-    row = (
+    rows = (
         await session.execute(
-            select(Document, DocumentWorkspace)
+            select(Document, DocumentWorkspace, WorkspaceMembership.role)
             .join(
                 DocumentWorkspace,
                 DocumentWorkspace.document_id == Document.id,
             )
+            .join(
+                WorkspaceMembership,
+                WorkspaceMembership.workspace_id == DocumentWorkspace.workspace_id,
+            )
             .where(
                 Document.id == document_id,
-                DocumentWorkspace.workspace_id == workspace_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                WorkspaceMembership.user_id == user.id,
             )
         )
-    ).one_or_none()
-    if row is None:
-        raise ToolRejection("No such document in that workspace.")
-    document, document_link = row
+    ).all()
+    if not rows:
+        raise ToolRejection("No such document in the workspaces this key can read.")
+    allowed = [
+        row for row in rows if permission in ROLE_PERMISSIONS.get(row[2], frozenset())
+    ]
+    if not allowed:
+        # Found, but the role here does not reach that far. Saying so is safe:
+        # the workspace is already inside this key's scope.
+        raise ToolRejection(insufficient_workspace_permission_error().detail or "Forbidden.")
+    document, document_link, _role = allowed[0]
     if document.deleted_at is not None or document_link.deleted_at is not None:
         raise ToolRejection("That document is being deleted and can no longer be read.")
-    return document
+    return document, document_link
 
 
 def _artifact_bytes(
@@ -254,7 +281,7 @@ class AgentToolKit:
         self,
         *,
         document_id: UUID,
-        workspace_id: UUID,
+        workspace_id: UUID | None = None,
         start_ordinal: int = 0,
         limit: int = 20,
         start_index: int = 1,
@@ -276,7 +303,7 @@ class AgentToolKit:
         )
 
     async def get_document_outline(
-        self, *, document_id: UUID, workspace_id: UUID, limit: int = 200
+        self, *, document_id: UUID, workspace_id: UUID | None = None, limit: int = 200
     ) -> str:
         """A document's sections, so a long read starts at the right place."""
         scope = self._scope(workspace_id)
@@ -293,12 +320,13 @@ class AgentToolKit:
     async def list_queryable_files(
         self,
         *,
+        workspace_id: UUID | None = None,
         offset: int = 0,
         limit: int = 100,
         pattern: str | None = None,
     ) -> str:
         runtime = self._runtime
-        scope = tuple(self._principal.workspace_ids)
+        scope = tuple(self._scope(workspace_id))
         if not scope:
             return format_catalogue(
                 Catalogue(entries=[], hidden=0),
@@ -391,7 +419,9 @@ class AgentToolKit:
             ]
         )
 
-    async def describe_document(self, *, document_id: UUID, workspace_id: UUID) -> str:
+    async def describe_document(
+        self, *, document_id: UUID, workspace_id: UUID | None = None
+    ) -> str:
         """What the pipeline extracted, so absence is not mistaken for silence.
 
         ``find_documents`` reports whether a document is ready; this reports
@@ -402,19 +432,14 @@ class AgentToolKit:
         """
         runtime = self._runtime
         async with runtime.session_factory() as session:
-            workspace = await require_workspace(
+            document, link = await _scoped_document(
                 session,
                 user=self._principal.user,
-                workspace_id=workspace_id,
+                workspace_ids=self._scope(workspace_id),
+                document_id=document_id,
                 permission="read",
             )
-            document = await _scoped_document(session, workspace_id, document_id)
-            link = await session.scalar(
-                select(DocumentWorkspace).where(
-                    DocumentWorkspace.document_id == document.id,
-                    DocumentWorkspace.workspace_id == workspace_id,
-                )
-            )
+            workspace = await session.get(Workspace, link.workspace_id)
             run = (
                 await session.get(ProcessingRun, document.active_processing_run_id)
                 if document.active_processing_run_id is not None
@@ -456,7 +481,7 @@ class AgentToolKit:
         if not row_stored and run is not None:
             outline = await runtime.navigator.outline(
                 document_id=document.id,
-                workspace_ids=[workspace_id],
+                workspace_ids=[link.workspace_id],
                 limit=1,
             )
             pages = outline.page_count
@@ -473,10 +498,10 @@ class AgentToolKit:
 
         return format_document_report(
             DocumentReport(
-                filename=link.filename if link is not None else document.original_filename,
+                filename=link.filename,
                 document_id=document.id,
-                workspace_name=workspace.name,
-                workspace_id=workspace_id,
+                workspace_name=workspace.name if workspace is not None else "",
+                workspace_id=link.workspace_id,
                 media_type=document.detected_media_type,
                 size_bytes=document.size_bytes,
                 uploaded_at=document.created_at,
@@ -553,35 +578,19 @@ class AgentToolKit:
             )
         )
 
-    async def download_document(self, *, workspace_id: UUID, document_id: UUID) -> str:
+    async def download_document(
+        self, *, document_id: UUID, workspace_id: UUID | None = None
+    ) -> str:
         runtime = self._runtime
         async with runtime.session_factory() as session:
-            await require_workspace(
+            document, document_link = await _scoped_document(
                 session,
                 user=self._principal.user,
-                workspace_id=workspace_id,
+                workspace_ids=self._scope(workspace_id),
+                document_id=document_id,
                 permission="download",
             )
-            row = (
-                await session.execute(
-                    select(Document, DocumentWorkspace)
-                    .join(
-                        DocumentWorkspace,
-                        DocumentWorkspace.document_id == Document.id,
-                    )
-                    .where(
-                        Document.id == document_id,
-                        DocumentWorkspace.workspace_id == workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise ToolRejection("No such document in that workspace.")
-            document, document_link = row
-            if document.deleted_at is not None or document_link.deleted_at is not None:
-                raise ToolRejection(
-                    "That document is being deleted and can no longer be downloaded."
-                )
+            owning_workspace = document_link.workspace_id
 
         ttl = runtime.settings.mcp_download_link_ttl_seconds
         try:
@@ -597,29 +606,31 @@ class AgentToolKit:
             raise ToolRejection(
                 "The document could not be signed for download. Its url still "
                 "works: "
-                f"/v1/workspaces/{workspace_id}/documents/{document_id}/download"
+                f"/v1/workspaces/{owning_workspace}/documents/{document_id}/download"
             ) from exc
 
         return "\n".join(
             (
                 f"link={link}",
                 f"link_expires_in_seconds={ttl}",
-                f"url=/v1/workspaces/{workspace_id}/documents/{document_id}/download",
+                f"url=/v1/workspaces/{owning_workspace}/documents/{document_id}/download",
                 f"filename={document_link.filename}",
                 f"media_type={document.detected_media_type}",
                 f"size_bytes={document.size_bytes}",
             )
         )
 
-    async def list_images(self, *, workspace_id: UUID, document_id: UUID) -> str:
+    async def list_images(
+        self, *, document_id: UUID, workspace_id: UUID | None = None
+    ) -> str:
         async with self._runtime.session_factory() as session:
-            await require_workspace(
+            document, _link = await _scoped_document(
                 session,
                 user=self._principal.user,
-                workspace_id=workspace_id,
+                workspace_ids=self._scope(workspace_id),
+                document_id=document_id,
                 permission="read",
             )
-            document = await _scoped_document(session, workspace_id, document_id)
             images = (
                 (
                     await session.execute(
@@ -646,17 +657,17 @@ class AgentToolKit:
         return "\n".join(lines)
 
     async def get_image(
-        self, *, workspace_id: UUID, document_id: UUID, ref: str
+        self, *, document_id: UUID, workspace_id: UUID | None = None, ref: str
     ) -> ImagePayload:
         runtime = self._runtime
         async with runtime.session_factory() as session:
-            await require_workspace(
+            document, _link = await _scoped_document(
                 session,
                 user=self._principal.user,
-                workspace_id=workspace_id,
+                workspace_ids=self._scope(workspace_id),
+                document_id=document_id,
                 permission="read",
             )
-            document = await _scoped_document(session, workspace_id, document_id)
             image = await session.scalar(
                 select(DocumentImage).where(
                     DocumentImage.document_id == document.id,

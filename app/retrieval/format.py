@@ -27,7 +27,7 @@ def format_context(sources: list[ContextSource], indices: dict[UUID, int]) -> st
         sections.append(
             f"[{index}] filename={filename}{section}{kind} ordinal={source.ordinal} "
             f"workspace_id={source.workspace_id} "
-            f"document_id={source.document_id} chunk_id={source.chunk_id} pages={pages}\n"
+            f"document_id={source.document_id} pages={pages}\n"
             f"<untrusted_document_text>\n{escape(source.text)}\n</untrusted_document_text>"
         )
     return "\n\n".join(sections)

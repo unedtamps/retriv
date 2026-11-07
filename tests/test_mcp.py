@@ -562,7 +562,7 @@ async def test_query_rows_states_the_jsonb_shape_before_any_failure(
     description = tools["query_rows"]["description"]
     assert "JSONB" in description
     assert "document_rows" in description
-    assert "(data->>'Amount')::numeric" in description
+    assert "nullif(data->>'Amount','')::numeric" in description
 
 
 def test_the_csv_note_appears_only_when_the_row_tool_does() -> None:
@@ -893,7 +893,7 @@ async def test_download_document_refuses_a_workspace_outside_the_key(
         document_id=str(seeded.document_id),
     )
     assert result["isError"] is True
-    assert "does not exist or is not accessible" in text_of(result)
+    assert "not in scope for this API key" in text_of(result)
     assert mcp.storage.presigned == []
 
 
@@ -1123,7 +1123,7 @@ async def test_get_image_refuses_a_key_without_the_workspace(mcp: McpEnv) -> Non
         ref=ref,
     )
     assert result["isError"] is True
-    assert "does not exist or is not accessible" in text_of(result)
+    assert "not in scope for this API key" in text_of(result)
 
 
 async def test_list_images_names_the_pictures(mcp: McpEnv) -> None:
@@ -1161,7 +1161,7 @@ async def test_list_images_refuses_a_key_without_the_workspace(mcp: McpEnv) -> N
         document_id=str(seeded.document_id),
     )
     assert result["isError"] is True
-    assert "does not exist or is not accessible" in text_of(result)
+    assert "not in scope for this API key" in text_of(result)
 
 
 async def test_search_text_returns_literal_matches(mcp: McpEnv) -> None:
@@ -1236,6 +1236,47 @@ async def test_describe_document_reports_what_was_extracted(mcp: McpEnv) -> None
     assert "chunks: 3 (3 embedded)" in body
     assert "pages: 4" in body
     assert "sections: 2" in body
+
+
+async def test_a_document_tool_works_without_a_workspace_argument(mcp: McpEnv) -> None:
+    """The key's scope is the default, so naming a workspace is optional.
+
+    Every read tool used to make the caller repeat a workspace it already knew
+    the key could see, and two of them did not accept one at all.
+    """
+    document_id = await _seed_processed_document(
+        mcp,
+        entries=[
+            ("1. Introduction", ["1. Introduction"], 1),
+            ("The policy covers procurement.", ["1. Introduction"], 2),
+        ],
+    )
+
+    described = await mcp.session.call(
+        mcp.alice_key, "describe_document", document_id=str(document_id)
+    )
+    assert described["isError"] is False
+    assert "status: ready" in text_of(described)
+
+    read = await mcp.session.call(
+        mcp.alice_key, "read_document", document_id=str(document_id)
+    )
+    # The seeded chunks carry no embedding row, so the window comes back empty
+    # -- but an empty window means the document was found and scoped: an id
+    # that resolves nowhere is a rejection instead.
+    assert read["isError"] is False
+    assert "chunks" in text_of(read)
+
+    outline = await mcp.session.call(
+        mcp.alice_key, "get_document_outline", document_id=str(document_id)
+    )
+    assert outline["isError"] is False
+    assert "Introduction" in text_of(outline)
+
+    catalogue = await mcp.session.call(
+        mcp.alice_key, "list_queryable_files", workspace_id=str(mcp.entities.legal.id)
+    )
+    assert catalogue["isError"] is False
 
 
 async def test_describe_document_flags_an_extraction_that_produced_no_text(
