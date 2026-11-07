@@ -654,6 +654,23 @@ async def test_find_documents_shows_that_a_csv_is_queryable(
     assert "0 rows" in body
 
 
+async def test_find_documents_shows_that_a_workbook_is_queryable(
+    mcp: McpEnv,
+) -> None:
+    """A workbook is stored as rows, so the listing offers it like a CSV.
+
+    Keyed on the detected media type rather than the filename: the catalogue
+    already lists both, and a listing that stayed silent about the workbook
+    sent a model looking for rows it was never told about.
+    """
+    await _seed_document(mcp, filename="Accounts-Receivable.xlsx")
+    result = await mcp.session.call(mcp.alice_key, "find_documents")
+
+    body = text_of(result)
+    assert "queryable with query_rows" in body
+    assert "0 rows" in body
+
+
 async def test_find_documents_keeps_two_revisions_of_one_name_apart(
     mcp: McpEnv,
 ) -> None:
@@ -980,6 +997,15 @@ class SeededDocument:
     object_key: str
 
 
+def _media_type_of(filename: str) -> str:
+    lowered = filename.lower()
+    if lowered.endswith(".csv"):
+        return "text/csv"
+    if lowered.endswith(".xlsx"):
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return "application/pdf"
+
+
 async def _seed_document(mcp: McpEnv, *, filename: str, workspace: str = "legal") -> SeededDocument:
     """A document row and its stored object, as the upload path leaves both."""
     workspace_id = getattr(mcp.entities, workspace).id
@@ -988,9 +1014,7 @@ async def _seed_document(mcp: McpEnv, *, filename: str, workspace: str = "legal"
         document = Document(
             origin_workspace_id=workspace_id,
             original_filename=filename,
-            detected_media_type=(
-                "text/csv" if filename.lower().endswith(".csv") else "application/pdf"
-            ),
+            detected_media_type=_media_type_of(filename),
             size_bytes=len(SEED_BYTES),
             sha256=uuid4().hex * 2,
             bucket="raw-documents",

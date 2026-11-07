@@ -47,7 +47,7 @@ def format_documents(
             f"status={summary.status}",
             f"{summary.size_bytes} bytes",
         ]
-        if summary.is_csv:
+        if summary.is_row_stored:
             details.append(f"{summary.row_count} rows")
             details.append("queryable with query_rows")
         lines.append("  " + "  ".join(details))
@@ -61,6 +61,6 @@ def format_documents(
     if pattern is None:
         body += (
             "\nUse this when you need a document_id: pass it to "
-            "download_document, or to query_rows for a CSV.\n"
+            "download_document, or to query_rows for a CSV or workbook.\n"
         )
     return body + "\n\n"

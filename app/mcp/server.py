@@ -351,9 +351,10 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         whole set.
 
         `status` tells you whether searching it will help: `ready` documents
-        are searchable, `processing` ones are not yet. A CSV also shows its
-        row count and is queryable with query_rows; any other file is read
-        with search_context, or fetched whole with download_document.
+        are searchable, `processing` ones are not yet. A CSV or a workbook
+        also shows its row count and is queryable with query_rows; any other
+        file is read with search_context, or fetched whole with
+        download_document.
 
         Filenames are not unique, and one canonical document can appear in
         several linked workspaces with a different name in each. Compare
