@@ -685,7 +685,7 @@ describe('dashboard application', () => {
 
     await user.click(within(panel).getByRole('option', { name: /shared-notes\.pdf/ }))
 
-    expect(await screen.findByRole('heading', { name: 'Read only', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     expect(window.location.search).toContain('ws=workspace-2')
     expect(window.location.search).toContain('view=documents')
   })
@@ -697,7 +697,7 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).getByRole('button', { name: 'Documents' })).toHaveClass('nav-link-active')
@@ -721,13 +721,13 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Launch notes', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(
       screen.getByRole('button', { name: 'Current workspace Launch notes, switch workspace' }),
     )
     await user.click(screen.getByRole('menuitemradio', { name: 'Switch to Read only' }))
-    expect(await screen.findByRole('heading', { name: 'Read only', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Documents', level: 1 })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).getByRole('button', { name: 'Documents' })).toHaveClass('nav-link-active')

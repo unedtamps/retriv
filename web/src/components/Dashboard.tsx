@@ -285,7 +285,7 @@ export function Dashboard({
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}
           documents={documents}
-          searchQuery={searchQuery}
+          runs={runs}
           focusDocumentId={focusDocumentId}
           canReindex={selectedWorkspace.membership_role === 'owner'}
           reindexingId={reindexingId}
@@ -307,7 +307,6 @@ export function Dashboard({
         <WorkspaceOverview
           workspace={selectedWorkspace}
           documents={documents}
-          runs={runs}
           onUpload={openUpload}
           onOpenMembers={() => setActiveView('members')}
           onOpenChat={() => setActiveView('chat')}

@@ -3,7 +3,6 @@ import { ArrowRight, FileUp, LockKeyhole, Plus, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import type { ApiResource } from '../hooks/useApiResource'
 import { useApiResource } from '../hooks/useApiResource'
-import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import type { WorkspaceDocumentsData } from '../hooks/useWorkspaceDocuments'
 import {
   formatBytes,
@@ -19,7 +18,6 @@ import { Avatar } from './ui/Avatar'
 interface WorkspaceOverviewProps {
   workspace: Workspace
   documents: ApiResource<WorkspaceDocumentsData>
-  runs: ProcessingRuns
   onUpload: () => void
   onOpenMembers: () => void
   onOpenChat: () => void
@@ -107,7 +105,6 @@ function TickBar({ share, tone }: { share: number; tone: 'go' | 'urgent' | 'idle
 export function WorkspaceOverview({
   workspace,
   documents,
-  runs,
   onUpload,
   onOpenMembers,
   onOpenChat,
