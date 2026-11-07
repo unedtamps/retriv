@@ -273,4 +273,6 @@ export interface AgentChatEvent {
   message?: string
   retryable?: boolean
   turns_allowed?: number
+  replaced?: boolean
+  reason?: string
 }

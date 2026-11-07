@@ -81,6 +81,55 @@ class ImagePayload:
     text: str
 
 
+@dataclass(frozen=True)
+class ServedSource:
+    """One citable source a tool actually handed the model in this turn.
+
+    ``index`` is the label the model sees (``[1]``); the harness renumbers
+    across tool calls so a citation in the answer can only mean one row.
+    """
+
+    index: int
+    chunk_id: UUID
+    document_id: UUID
+    workspace_id: UUID
+    filename: str | None
+    ordinal: int
+    section_path: list[str]
+    page_numbers: list[int]
+
+
+@dataclass(frozen=True)
+class ToolOutcome:
+    """A tool's text for the model, plus the sources that text cites.
+
+    Tools that return no citable evidence (metadata, computed aggregates,
+    listings) carry an empty tuple; the harness uses that to decide whether
+    an answer can be grounded at all.
+    """
+
+    text: str
+    sources: tuple[ServedSource, ...] = ()
+
+
+def _served_sources(
+    sources: list[ContextSource], indices: dict[UUID, int]
+) -> tuple[ServedSource, ...]:
+    return tuple(
+        ServedSource(
+            index=indices[source.chunk_id],
+            chunk_id=source.chunk_id,
+            document_id=source.document_id,
+            workspace_id=source.workspace_id,
+            filename=source.filename,
+            ordinal=source.ordinal,
+            section_path=list(source.section_path),
+            page_numbers=list(source.page_numbers),
+        )
+        for source in sources
+    )
+
+
 def _by_chunk(sources: list[ContextSource]) -> dict[UUID, ContextSource]:
     return {source.chunk_id: source for source in sources}
 
@@ -150,10 +199,11 @@ class AgentToolKit:
         workspace_id: UUID | None = None,
         document_id: UUID | None = None,
         min_score: float | None = None,
-    ) -> str:
+        start_index: int = 1,
+    ) -> ToolOutcome:
         scope = self._scope(workspace_id)
         if not scope:
-            return "No searchable workspace is in scope for this API key."
+            return ToolOutcome(text="No searchable workspace is in scope for this API key.")
         sources = await self._runtime.retriever.retrieve(
             query,
             scope,
@@ -163,11 +213,12 @@ class AgentToolKit:
             document_id=document_id,
         )
         if not sources:
-            return "No relevant sources were found."
-        indices = source_indices(_by_chunk(sources))
+            return ToolOutcome(text="No relevant sources were found.")
+        indices = source_indices(_by_chunk(sources), start=start_index)
         body = format_context(sources, indices)
         hint = navigation_hint(sources, indices)
-        return f"{body}\n\n{hint}" if hint else body
+        text = f"{body}\n\n{hint}" if hint else body
+        return ToolOutcome(text=text, sources=_served_sources(sources, indices))
 
     async def search_text(
         self,
@@ -176,21 +227,28 @@ class AgentToolKit:
         limit: int,
         workspace_id: UUID | None = None,
         document_id: UUID | None = None,
-    ) -> str:
+        start_index: int = 1,
+    ) -> ToolOutcome:
         """Literal matches, for identifiers an embedding cannot resolve."""
         scope = self._scope(workspace_id)
         if not scope:
-            return "No searchable workspace is in scope for this API key."
+            return ToolOutcome(text="No searchable workspace is in scope for this API key.")
         sources = await self._runtime.retriever.search_text(
             query, scope, limit, document_id=document_id
         )
         if not sources:
-            return (
-                f"No chunk contains the literal text {query!r}. This search "
-                "matches exact words rather than meaning; use search_context "
-                "for a paraphrase."
+            return ToolOutcome(
+                text=(
+                    f"No chunk contains the literal text {query!r}. This search "
+                    "matches exact words rather than meaning; use search_context "
+                    "for a paraphrase."
+                )
             )
-        return format_context(sources, source_indices(_by_chunk(sources)))
+        indices = source_indices(_by_chunk(sources), start=start_index)
+        return ToolOutcome(
+            text=format_context(sources, indices),
+            sources=_served_sources(sources, indices),
+        )
 
     async def read_document(
         self,
@@ -199,7 +257,8 @@ class AgentToolKit:
         workspace_id: UUID,
         start_ordinal: int = 0,
         limit: int = 20,
-    ) -> str:
+        start_index: int = 1,
+    ) -> ToolOutcome:
         scope = self._scope(workspace_id)
         window = await self._runtime.navigator.read_window(
             document_id=document_id,
@@ -208,10 +267,13 @@ class AgentToolKit:
             limit=limit,
         )
         if not window.sources:
-            return navigation_footer(window)
-        indices = source_indices(_by_chunk(window.sources))
+            return ToolOutcome(text=navigation_footer(window))
+        indices = source_indices(_by_chunk(window.sources), start=start_index)
         body = format_context(window.sources, indices)
-        return f"{body}\n\n{navigation_footer(window)}"
+        return ToolOutcome(
+            text=f"{body}\n\n{navigation_footer(window)}",
+            sources=_served_sources(window.sources, indices),
+        )
 
     async def get_document_outline(
         self, *, document_id: UUID, workspace_id: UUID, limit: int = 200
@@ -436,14 +498,14 @@ class AgentToolKit:
             )
         )
 
-    async def query_rows(self, *, sql: str) -> str:
+    async def query_rows(self, *, sql: str, start_index: int = 1) -> ToolOutcome:
         runtime = self._runtime
         rows = runtime.row_query
         if rows is None:
             raise ToolRejection("Row queries are not enabled on this deployment.")
         scope = tuple(self._principal.workspace_ids)
         if not scope:
-            return format_catalogue(Catalogue(entries=[], hidden=0))
+            return ToolOutcome(text=format_catalogue(Catalogue(entries=[], hidden=0)))
         if not mentions_document_id(sql):
             prefix = await self._rejection_prefix(scope)
             raise ToolRejection(
@@ -468,19 +530,27 @@ class AgentToolKit:
                 result.as_source(filenames.get(result.document_id))
                 for result in outcome.sources
             ]
-            body = format_context(sources, source_indices(_by_chunk(sources)))
-            return f"{body}{computed}"
-        if computed:
-            return (
-                f"{computed}\n"
-                "These values are computed from the rows, so there is no "
-                "single row to cite. Give the number and name the file it "
-                "came from.\n"
+            indices = source_indices(_by_chunk(sources), start=start_index)
+            body = format_context(sources, indices)
+            return ToolOutcome(
+                text=f"{body}{computed}",
+                sources=_served_sources(sources, indices),
             )
-        return (
-            "No rows matched. Check the document_id and column names "
-            "against the catalogue from list_queryable_files; a "
-            "misspelled column returns nothing."
+        if computed:
+            return ToolOutcome(
+                text=(
+                    f"{computed}\n"
+                    "These values are computed from the rows, so there is no "
+                    "single row to cite. Give the number and name the file it "
+                    "came from.\n"
+                )
+            )
+        return ToolOutcome(
+            text=(
+                "No rows matched. Check the document_id and column names "
+                "against the catalogue from list_queryable_files; a "
+                "misspelled column returns nothing."
+            )
         )
 
     async def download_document(self, *, workspace_id: UUID, document_id: UUID) -> str:

@@ -184,13 +184,13 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         document; omit it to search every document in scope. `min_score`
         raises or lowers the relevance floor for this search only.
         """
-        return await (await _kit(box.runtime, ctx.headers)).search_context(
+        return (await (await _kit(box.runtime, ctx.headers)).search_context(
             query=query,
             limit=limit,
             workspace_id=workspace_id,
             document_id=document_id,
             min_score=min_score,
-        )
+        )).text
 
     @mcp.tool()
     @_guarded
@@ -214,12 +214,12 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         phrase and not either word alone. Pass `document_id` to stay inside one
         file; omit it to search every document in scope.
         """
-        return await (await _kit(box.runtime, ctx.headers)).search_text(
+        return (await (await _kit(box.runtime, ctx.headers)).search_text(
             query=query,
             limit=limit,
             workspace_id=workspace_id,
             document_id=document_id,
-        )
+        )).text
 
     @mcp.tool()
     @_guarded
@@ -245,12 +245,12 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         CSV files are stored as rows, not text, and are not readable here; use
         list_queryable_files and query_rows for those.
         """
-        return await (await _kit(box.runtime, ctx.headers)).read_document(
+        return (await (await _kit(box.runtime, ctx.headers)).read_document(
             document_id=document_id,
             workspace_id=workspace_id,
             start_ordinal=start_ordinal,
             limit=limit,
-        )
+        )).text
 
     @mcp.tool()
     @_guarded
@@ -395,7 +395,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             aggregate such as `count(*)` returns no rows and is reported as a
             value.
             """
-            return await (await _kit(box.runtime, ctx.headers)).query_rows(sql=sql)
+            return (await (await _kit(box.runtime, ctx.headers)).query_rows(sql=sql)).text
 
     @mcp.tool()
     @_guarded

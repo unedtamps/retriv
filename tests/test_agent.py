@@ -217,7 +217,7 @@ async def test_chat_streams_tool_calls_to_an_answer(
                 ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
             ],
         ),
-        ChatTurn(content="Net revenue rose by a tenth, per report.pdf.", tool_calls=[]),
+        ChatTurn(content="Net revenue rose by a tenth [1], per report.pdf.", tool_calls=[]),
     ]
 
     headers = await login(client, "alice", OWNER_PASSWORD)
@@ -494,14 +494,31 @@ async def test_a_streaming_answer_forwards_deltas_then_final(
     browser sees every delta in order and then the same text as the
     authoritative `final`.
     """
+    from app.agents.chat import ToolCall
+
     provider = FakeStreamingProvider(
         [
             [
+                {
+                    "kind": "turn",
+                    "turn": ChatTurn(
+                        content=None,
+                        tool_calls=[
+                            ToolCall(
+                                id="call-1",
+                                name="search_context",
+                                arguments={"query": "revenue"},
+                            )
+                        ],
+                    ),
+                }
+            ],
+            [
                 {"kind": "delta", "text": "Net "},
                 {"kind": "delta", "text": "revenue rose "},
-                {"kind": "delta", "text": "by a tenth."},
-                {"kind": "turn", "turn": ChatTurn(content="Net revenue rose by a tenth.")},
-            ]
+                {"kind": "delta", "text": "by a tenth [1]."},
+                {"kind": "turn", "turn": ChatTurn(content="Net revenue rose by a tenth [1].")},
+            ],
         ]
     )
     monkeypatch.setattr("app.routes.agent.provider_for", lambda config, session_id=None: provider)
@@ -517,11 +534,19 @@ async def test_a_streaming_answer_forwards_deltas_then_final(
     assert response.status_code == 200, response.text
     events = sse_events(response.text)
     kinds = [event["type"] for event in events]
-    assert kinds == ["turn_start", "message_delta", "message_delta", "message_delta", "final"]
+    assert kinds == [
+        "turn_start",
+        "tool_call",
+        "tool_result",
+        "message_delta",
+        "message_delta",
+        "message_delta",
+        "final",
+    ]
     assert "".join(e.get("content", "") for e in events if e["type"] == "message_delta") == (
-        "Net revenue rose by a tenth."
+        "Net revenue rose by a tenth [1]."
     )
-    assert events[-1]["content"] == "Net revenue rose by a tenth."
+    assert events[-1]["content"] == "Net revenue rose by a tenth [1]."
 
 
 async def test_stream_turn_assembles_fragmented_tool_calls() -> None:
@@ -783,8 +808,9 @@ class _LimitRecordingKit:
         workspace_id: Any = None,
         document_id: Any = None,
         min_score: float | None = None,
+        start_index: int = 1,
     ) -> str:
-        del query, workspace_id
+        del query, workspace_id, start_index
         self.limits.append(limit)
         self.min_scores.append(min_score)
         self.document_ids.append(document_id)
@@ -797,8 +823,9 @@ class _LimitRecordingKit:
         limit: int,
         workspace_id: Any = None,
         document_id: Any = None,
+        start_index: int = 1,
     ) -> str:
-        del workspace_id
+        del workspace_id, start_index
         self.text_queries.append((query, limit, document_id))
         return "ok"
 
@@ -890,3 +917,157 @@ async def test_an_outline_without_a_workspace_is_rejected_before_the_call() -> N
         )
 
     assert kit.outlines == []
+
+
+async def test_an_answer_without_a_citation_is_replaced(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """A search served a source; an answer that cites none is not shown."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(content="Net revenue rose by a tenth.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    events = sse_events(response.text)
+    final = events[-1]
+    assert final["type"] == "final"
+    assert final["replaced"] is True
+    assert final["reason"] == "no_citation"
+    assert "Net revenue" not in final["content"]
+    assert "could not verify" in final["content"]
+
+
+async def test_an_answer_without_any_tool_is_replaced(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """A content question answered from general knowledge is not shown."""
+    await seed_model_config(db_session_factory)
+    scripted_model.turns = [
+        ChatTurn(content="Paris is the capital of France.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "What is the capital of France?"},
+        headers=headers,
+    )
+    events = sse_events(response.text)
+    final = events[-1]
+    assert final["type"] == "final"
+    assert final["replaced"] is True
+    assert final["reason"] == "no_tool"
+    assert "Paris" not in final["content"]
+
+
+async def test_a_citation_to_an_unserved_source_is_replaced(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(content="Net revenue rose by a tenth [9].", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["replaced"] is True
+    assert final["reason"] == "invalid_citation"
+
+
+async def test_a_not_found_answer_after_a_search_is_allowed(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """Sources were served, but the answer honestly says they do not cover it."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(content="The documents do not mention that.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "What about revenue?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert final["content"] == "The documents do not mention that."
+
+
+async def test_a_meta_message_is_answered_without_a_tool(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    await seed_model_config(db_session_factory)
+    scripted_model.turns = [
+        ChatTurn(content="Halo! Saya bisa mencari di dokumen workspace.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "Halo"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert final["content"].startswith("Halo!")
