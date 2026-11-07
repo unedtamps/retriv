@@ -76,6 +76,7 @@ function installApi(
   auth: { refresh?: 'ok' | 'rejected'; meFirst?: 'ok' | 'expired' } = {},
   chat: {
     holdBeforeFinalMs?: number
+    preToolDeltas?: string[]
     toolCalls?: { name: string; arguments: Record<string, unknown>; preview: string }[]
   } = {},
 ) {
@@ -137,6 +138,10 @@ function installApi(
           ]
           const early = [
             { type: 'turn_start', turns_allowed: 12 },
+            ...(chat.preToolDeltas ?? []).map((content) => ({
+              type: 'message_delta' as const,
+              content,
+            })),
             ...toolCalls.flatMap((call) => [
               { type: 'tool_call', name: call.name, arguments: call.arguments },
               {
@@ -874,6 +879,33 @@ describe('dashboard application', () => {
 
     await user.click(screen.getByRole('button', { name: /2 tool calls/ }))
     expect(await screen.findByText('find_documents')).toBeInTheDocument()
+  })
+
+  it('settles streamed prose when the turn hands over to tools', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi(admin, [workspace], undefined, {}, {}, {}, {}, {
+      preToolDeltas: ["I'll locate the prospectus and dig into its risk factors."],
+      toolCalls: [
+        { name: 'find_documents', arguments: { pattern: 'risk' }, preview: 'found the 10-K' },
+      ],
+    })
+    const user = userEvent.setup()
+    writeSessionToken('member-token')
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    await user.type(input, 'What are the risk factors?')
+    await user.keyboard('{Enter}')
+
+    expect(
+      await screen.findByText("I'll locate the prospectus and dig into its risk factors."),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument(),
+    )
+    const transcript = screen.getByTestId('chat-transcript')
+    expect(within(transcript).getByText(/The workspace holds one report\./)).toBeInTheDocument()
+    expect(transcript.querySelector('.animate-pulse')).toBeNull()
   })
 
   it('does not abort the first message of a new chat while the draft promotes', async () => {

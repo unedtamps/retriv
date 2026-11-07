@@ -203,9 +203,20 @@ export function useAgentConversation(onUnauthorized: () => void) {
       )
     }
 
+    const settleStreaming = () => {
+      setItems((current) =>
+        current.map((item) =>
+          item.kind === 'assistant' && item.streaming === true
+            ? { kind: 'assistant', text: item.text }
+            : item,
+        ),
+      )
+    }
+
     const onEvent = (event: AgentChatEvent) => {
       if (event.type === 'turn_start') {
         streamingRef.current = false
+        settleStreaming()
         return
       }
       if (event.type === 'message_delta') {
@@ -214,6 +225,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
       }
       if (event.type === 'tool_call') {
         streamingRef.current = false
+        settleStreaming()
         patchActivity((calls) => [
           ...calls,
           {
@@ -250,6 +262,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
         return
       }
       if (event.type === 'error') {
+        settleStreaming()
         setItems((current) => [
           ...current,
           { kind: 'error', text: event.message ?? 'The agent run failed.' },
@@ -273,6 +286,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
         setItems((current) => [...current, { kind: 'error', text: detail }])
       }
     } finally {
+      settleStreaming()
       abortRef.current = null
       setBusy(false)
     }
