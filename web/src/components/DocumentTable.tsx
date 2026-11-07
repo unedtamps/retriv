@@ -173,17 +173,19 @@ export function DocumentTable({
             <caption className="sr-only">Documents</caption>
             <thead>
               <tr className="border-b border-line text-left">
-                <th className="px-4 py-2.5 text-xs font-medium text-ink-muted sm:px-5">
+                <th className="px-4 py-2 font-condensed text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-ink-muted sm:px-5">
                   Document
                 </th>
-                <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">Status</th>
-                <th className="hidden px-3 py-2.5 text-xs font-medium text-ink-muted sm:table-cell">
+                <th className="px-3 py-2 font-condensed text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-ink-muted">
+                  Status
+                </th>
+                <th className="hidden px-3 py-2 font-condensed text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-ink-muted sm:table-cell">
                   Added
                 </th>
-                <th className="hidden px-3 py-2.5 text-xs font-medium text-ink-muted md:table-cell">
+                <th className="hidden px-3 py-2 font-condensed text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-ink-muted md:table-cell">
                   Size
                 </th>
-                <th className="w-12 px-3 py-2.5">
+                <th className="w-12 px-3 py-2">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>

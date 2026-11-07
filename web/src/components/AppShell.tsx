@@ -23,6 +23,7 @@ interface AppShellProps {
   user: CurrentUser
   workspaces: Workspace[]
   runs: ProcessingRuns
+  documentCount: number | null
   selectedWorkspace: Workspace | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
@@ -56,6 +57,7 @@ export function AppShell({
   user,
   workspaces,
   runs,
+  documentCount,
   selectedWorkspace,
   searchQuery,
   onSearchQueryChange,
@@ -164,6 +166,7 @@ export function AppShell({
           user={user}
           isAdmin={isAdmin}
           workspaces={workspaces}
+          documentCount={documentCount}
           selectedWorkspace={selectedWorkspace}
           onSelectWorkspace={selectWorkspace}
           onSelectView={selectView}
@@ -270,6 +273,7 @@ interface NavigationProps {
   isAdmin: boolean
   adminMode: boolean
   workspaces: Workspace[]
+  documentCount: number | null
   selectedWorkspace: Workspace | null
   onSelectWorkspace: (workspaceId: string) => void
   onSelectView: (view: DashboardView) => void
@@ -289,6 +293,7 @@ function Navigation({
   isAdmin,
   adminMode,
   workspaces,
+  documentCount,
   selectedWorkspace,
   onSelectWorkspace,
   onSelectView,
@@ -368,6 +373,11 @@ function Navigation({
                     >
                       <Icon aria-hidden="true" size={16} />
                       {item.label}
+                      {item.view === 'documents' && documentCount !== null ? (
+                        <span aria-hidden="true" className="ml-auto font-mono text-[0.65rem] text-ink-faint">
+                          {documentCount}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 )

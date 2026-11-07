@@ -219,6 +219,7 @@ export function Dashboard({
       user={user}
       workspaces={workspaces}
       runs={runs}
+      documentCount={adminMode || selectedWorkspace === null ? null : documents.data?.total ?? null}
       selectedWorkspace={selectedWorkspace}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
@@ -307,6 +308,7 @@ export function Dashboard({
           workspace={selectedWorkspace}
           isAdmin={isAdmin}
           documents={documents}
+          runs={runs}
           searchQuery={searchQuery}
           onUpload={openUpload}
           canReindex={selectedWorkspace.membership_role === 'owner'}

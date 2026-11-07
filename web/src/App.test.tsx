@@ -387,7 +387,8 @@ describe('dashboard application', () => {
     expect(screen.getByRole('button', { name: 'Show catalogued workspaces' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Close navigation drawer' }))
     await user.click(screen.getByRole('button', { name: 'Manage access' }))
-    expect(await screen.findByRole('heading', { name: 'Workspace members' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Members', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Register of members')).toBeInTheDocument()
   })
 
   it('expands catalogued workspaces inline without granting access', async () => {
@@ -851,7 +852,7 @@ describe('dashboard application', () => {
     ).toBe(true)
     expect(await screen.findByText('nada is now editor.')).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'Change access' })).not.toBeInTheDocument()
-    const memberRow = screen.getByText('nada').closest('li')
+    const memberRow = screen.getByText('nada').closest('tr')
     if (memberRow === null) throw new Error('member row missing')
     expect(within(memberRow as HTMLElement).getByText('editor')).toBeInTheDocument()
   })

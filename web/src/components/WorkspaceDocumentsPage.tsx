@@ -45,14 +45,16 @@ export function WorkspaceDocumentsPage({
         <div className="flex min-w-0 items-start gap-3.5">
           <Avatar name={workspace.name} seed={workspace.id} size="lg" className="mt-0.5" />
           <div className="min-w-0">
-            <p className="eyebrow">Workspace documents</p>
-            <h1 className="mt-1.5 truncate font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">
-              {workspace.name}
-            </h1>
-            <p className="mt-1.5 text-sm leading-6 text-ink-muted">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="truncate font-condensed text-xl font-bold uppercase tracking-[0.05em] text-ink">
+                {workspace.name}
+              </h1>
+              {restricted ? null : <span className="stamp">{total} filed</span>}
+            </div>
+            <p className="mt-1 font-mono text-[0.7rem] text-ink-muted">
               {restricted
                 ? 'Membership is required to read the files in this workspace.'
-                : `${total} document${total === 1 ? '' : 's'} · ${formatBytes(storage)} in this view · ${workspace.membership_role} access`}
+                : `${formatBytes(storage)} in this view · ${workspace.membership_role} access`}
             </p>
           </div>
         </div>

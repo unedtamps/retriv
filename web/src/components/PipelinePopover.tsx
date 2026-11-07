@@ -90,17 +90,26 @@ export function PipelinePopover({
       <button
         ref={buttonRef}
         type="button"
-        className={`inline-flex h-9 w-9 items-center justify-center rounded-control transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+        className={`inline-flex h-9 items-center gap-2 rounded-control border px-3 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
           running
-            ? 'bg-blue-soft text-blue hover:bg-blue-soft/70'
-            : 'text-ink-muted hover:bg-sunken hover:text-ink'
+            ? 'border-accent/40 bg-accent-soft text-accent hover:bg-accent-soft/70'
+            : 'border-line bg-surface text-ink-muted hover:bg-sunken hover:text-ink'
         }`}
         aria-label="Pipeline status"
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => changeOpen(!open)}
       >
-        <Activity aria-hidden="true" size={17} />
+        <span className="font-condensed text-[0.6875rem] font-bold uppercase tracking-[0.09em]">
+          Runs
+        </span>
+        {running ? (
+          <span className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.04em]">
+            {workspaceRuns.length} active
+          </span>
+        ) : (
+          <Activity aria-hidden="true" size={14} />
+        )}
       </button>
       {open
         ? createPortal(

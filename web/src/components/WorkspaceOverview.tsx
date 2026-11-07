@@ -12,18 +12,64 @@ import {
   UploadCloud,
 } from 'lucide-react'
 import type { ApiResource } from '../hooks/useApiResource'
+import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import type { WorkspaceDocumentsData } from '../hooks/useWorkspaceDocuments'
-import { formatBytes, isActiveStatus } from '../lib/visuals'
+import {
+  formatBytes,
+  isActiveStatus,
+  pipelineStage,
+  type PipelineStage,
+} from '../lib/visuals'
 import type { DocumentUpload, Workspace } from '../types'
 import { DocumentTable } from './DocumentTable'
 import { Avatar } from './ui/Avatar'
 import { RefreshButton } from './ui/RefreshButton'
 import { WorkspaceAccessSummary } from './WorkspaceAccessSummary'
 
+const STAGE_ORDER: PipelineStage[] = ['scan', 'extract', 'chunk', 'embed', 'index']
+
+const TERMINAL_STATUSES = new Set(['ready', 'failed', 'cancelled', 'unsupported_format'])
+
+function PipelineStages({ runs }: { runs: ProcessingRuns }) {
+  const workspaceRuns = runs.runs.filter(
+    (run) => run.job_kind !== 'delete' && !TERMINAL_STATUSES.has(run.status),
+  )
+  const counts = STAGE_ORDER.map(
+    (stage) => workspaceRuns.filter((run) => pipelineStage(run.status) === stage).length,
+  )
+  const max = Math.max(1, ...counts)
+  const liveStage = STAGE_ORDER.find((_, index) => counts[index] > 0)
+
+  return (
+    <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5" aria-label="Pipeline stages">
+      {STAGE_ORDER.map((stage, index) => {
+        const live = stage === liveStage
+        return (
+          <div key={stage} className="min-w-0">
+            <p className={`eyebrow ${live ? 'text-accent' : ''}`}>{stage}</p>
+            <p
+              className={`mt-1 font-mono text-lg font-semibold leading-6 ${live ? 'text-accent' : 'text-ink'}`}
+            >
+              {counts[index]}
+            </p>
+            <div className="mt-2 h-[5px] overflow-hidden rounded-stamp border border-line bg-sunken">
+              <span
+                className={`block h-full ${live ? 'bg-accent' : 'bg-success'}`}
+                style={{ width: `${Math.round((counts[index] / max) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 interface WorkspaceOverviewProps {
   workspace: Workspace
   isAdmin: boolean
   documents: ApiResource<WorkspaceDocumentsData>
+  runs: ProcessingRuns
   searchQuery: string
   canReindex?: boolean
   reindexingId?: string | null
@@ -41,6 +87,7 @@ export function WorkspaceOverview({
   workspace,
   isAdmin,
   documents,
+  runs,
   searchQuery,
   canReindex,
   reindexingId,
@@ -123,6 +170,12 @@ export function WorkspaceOverview({
           />
         </div>
       </section>
+
+      {workspace.membership_role === null ? null : (
+        <section className="mt-4 rounded-card border border-line bg-surface px-4 py-3.5 sm:px-5">
+          <PipelineStages runs={runs} />
+        </section>
+      )}
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
         <section aria-labelledby="recent-documents-title">
