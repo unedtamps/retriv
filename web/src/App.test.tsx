@@ -530,7 +530,7 @@ describe('dashboard application', () => {
   })
 
   it('offers reindex to an owner and swaps the row into its new state', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const document = {
       id: 'document-1',
@@ -550,7 +550,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
     const row = screen.getByRole('row', { name: /launch-review.pdf/ })
@@ -582,7 +581,7 @@ describe('dashboard application', () => {
   })
 
   it('hides reindex from an editor who may delete', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const editorWorkspace = { ...workspace, membership_role: 'editor' as const }
     installApi(owner, [editorWorkspace], undefined, {}, {
@@ -606,18 +605,9 @@ describe('dashboard application', () => {
         limit: 50,
       },
     })
-    const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
-    expect(await screen.findByText('editable.pdf')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
-    await user.click(
-      within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('button', {
-        name: 'Documents',
-      }),
-    )
     expect(await screen.findByText('editable.pdf')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reindex editable.pdf' })).not.toBeInTheDocument()
   })
@@ -1323,7 +1313,7 @@ describe('dashboard application', () => {
   })
 
   it('shows how many rows a CSV holds, and says plainly how a CSV is used', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const base = {
       workspace_id: workspace.id,
@@ -1347,8 +1337,6 @@ describe('dashboard application', () => {
     })
 
     render(<App />)
-    const user = userEvent.setup()
-    await gotoOverview(user)
 
     expect(await screen.findByText('sales.csv')).toBeInTheDocument()
     expect(screen.getByText(/900 rows/)).toBeInTheDocument()
@@ -1559,7 +1547,7 @@ describe('dashboard application', () => {
   })
 
   it('opens a document in the viewer and reuses the cached bytes', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const document = {
       id: 'document-1',
@@ -1579,7 +1567,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
 
@@ -1599,7 +1586,7 @@ describe('dashboard application', () => {
   })
 
   it('shows the error instead of a blank viewer when the download is refused', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     installApi(owner, [workspace], undefined, {}, {
       list: {
@@ -1626,7 +1613,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'View launch-review.pdf' }))
@@ -1637,7 +1623,7 @@ describe('dashboard application', () => {
   })
 
   it('lays out a Word document instead of refusing to preview it', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const docx = await buildDocx('Business Case Answer Sheet')
     installApi(owner, [workspace], undefined, {}, {
@@ -1665,7 +1651,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('business-case.docx')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'View business-case.docx' }))
@@ -1680,7 +1665,7 @@ describe('dashboard application', () => {
   })
 
   it('fetches a Word document once across repeated previews', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const docx = await buildDocx('Repeat preview')
     const fetchMock = installApi(owner, [workspace], undefined, {}, {
@@ -1711,7 +1696,6 @@ describe('dashboard application', () => {
       fetchMock.mock.calls.filter(([input]) => String(input).includes('/download')).length
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('repeat.docx')).toBeInTheDocument()
 
@@ -1872,7 +1856,7 @@ describe('dashboard application', () => {
   })
 
   it('lists workspace documents and deletes one after confirmation', async () => {
-    window.history.replaceState(null, '', '/dashboard')
+    window.history.replaceState(null, '', '/dashboard?view=documents')
     writeSessionToken('member-token')
     const deleted: string[] = []
     const document = {
@@ -1894,7 +1878,6 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
 
     render(<App />)
-    await gotoOverview(user)
 
     expect(await screen.findByText('launch-review.pdf')).toBeInTheDocument()
     const documentRow = screen.getByRole('row', { name: /launch-review.pdf/ })

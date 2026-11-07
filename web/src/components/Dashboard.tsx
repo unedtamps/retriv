@@ -306,20 +306,11 @@ export function Dashboard({
       ) : (
         <WorkspaceOverview
           workspace={selectedWorkspace}
-          isAdmin={isAdmin}
           documents={documents}
           runs={runs}
-          searchQuery={searchQuery}
           onUpload={openUpload}
-          canReindex={selectedWorkspace.membership_role === 'owner'}
-          reindexingId={reindexingId}
-          onReindex={setReindexTarget}
-          canView={selectedWorkspace.can_download}
-          onView={setViewTarget}
-          onViewDocuments={() => setActiveView('documents')}
-          onManageMembers={() => setActiveView('members')}
-          onUnauthorized={onUnauthorized}
-          onDeleteDocument={setDeleteTarget}
+          onOpenMembers={() => setActiveView('members')}
+          onOpenChat={() => setActiveView('chat')}
         />
       )}
 

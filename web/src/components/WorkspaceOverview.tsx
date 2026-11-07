@@ -1,116 +1,177 @@
-import type { ReactNode } from 'react'
-import {
-  ArrowRight,
-  CheckCircle2,
-  FileText,
-  FileUp,
-  HardDrive,
-  LoaderCircle,
-  LockKeyhole,
-  Plus,
-  Sparkles,
-  UploadCloud,
-} from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
+import { ArrowRight, FileUp, LockKeyhole, Plus, Sparkles } from 'lucide-react'
 import type { ApiResource } from '../hooks/useApiResource'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import type { WorkspaceDocumentsData } from '../hooks/useWorkspaceDocuments'
 import {
   formatBytes,
-  isActiveStatus,
-  pipelineStage,
-  type PipelineStage,
+  formatClock,
+  formatDuration,
+  formatShortDate,
+  runStatusLabel,
 } from '../lib/visuals'
-import type { DocumentUpload, Workspace } from '../types'
-import { DocumentTable } from './DocumentTable'
+import { loadChatHistory } from '../lib/chatHistoryStore'
+import type { Workspace } from '../types'
 import { Avatar } from './ui/Avatar'
-import { RefreshButton } from './ui/RefreshButton'
-import { WorkspaceAccessSummary } from './WorkspaceAccessSummary'
 
-const STAGE_ORDER: PipelineStage[] = ['scan', 'extract', 'chunk', 'embed', 'index']
+interface WorkspaceOverviewProps {
+  workspace: Workspace
+  documents: ApiResource<WorkspaceDocumentsData>
+  runs: ProcessingRuns
+  onUpload: () => void
+  onOpenMembers: () => void
+  onOpenChat: () => void
+}
 
-const TERMINAL_STATUSES = new Set(['ready', 'failed', 'cancelled', 'unsupported_format'])
+const ACTIVE_BUCKETS: Array<{ match: string[]; stage: 'queued' | 'fetching' | 'extracting' }> = [
+  { match: ['queued'], stage: 'queued' },
+  { match: ['fetching', 'awaiting_parser', 'retry_wait'], stage: 'fetching' },
+  {
+    match: ['extracting', 'describing', 'storing_artifact', 'chunking', 'embedding', 'syncing'],
+    stage: 'extracting',
+  },
+]
 
-function PipelineStages({ runs }: { runs: ProcessingRuns }) {
-  const workspaceRuns = runs.runs.filter(
-    (run) => run.job_kind !== 'delete' && !TERMINAL_STATUSES.has(run.status),
-  )
-  const counts = STAGE_ORDER.map(
-    (stage) => workspaceRuns.filter((run) => pipelineStage(run.status) === stage).length,
-  )
-  const max = Math.max(1, ...counts)
-  const liveStage = STAGE_ORDER.find((_, index) => counts[index] > 0)
+const TERMINAL = new Set(['ready', 'failed', 'cancelled', 'unsupported_format'])
 
+function runStateChip(status: string): string {
+  if (status === 'ready') return 'border-success/50 bg-surface text-success'
+  if (TERMINAL.has(status)) return 'border-danger/50 bg-surface text-danger'
+  if (status === 'queued') return 'border-line bg-surface text-ink-muted'
+  if (status === 'fetching' || status === 'awaiting_parser' || status === 'retry_wait') {
+    return 'border-blue/40 bg-surface text-blue'
+  }
+  return 'border-accent/50 bg-surface text-accent'
+}
+
+function runDotClass(status: string): string {
+  if (status === 'ready') return 'bg-success'
+  if (TERMINAL.has(status)) return 'bg-danger'
+  if (status === 'queued') return 'bg-ink-faint'
+  if (status === 'fetching' || status === 'awaiting_parser' || status === 'retry_wait') {
+    return 'bg-blue'
+  }
+  return 'bg-accent'
+}
+
+function StatPane({
+  label,
+  value,
+  meta,
+}: {
+  label: string
+  value: string
+  meta: string
+}) {
   return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5" aria-label="Pipeline stages">
-      {STAGE_ORDER.map((stage, index) => {
-        const live = stage === liveStage
-        return (
-          <div key={stage} className="min-w-0">
-            <p className={`eyebrow ${live ? 'text-accent' : ''}`}>{stage}</p>
-            <p
-              className={`mt-1 font-mono text-lg font-semibold leading-6 ${live ? 'text-accent' : 'text-ink'}`}
-            >
-              {counts[index]}
-            </p>
-            <div className="mt-2 h-[5px] overflow-hidden rounded-stamp border border-line bg-sunken">
-              <span
-                className={`block h-full ${live ? 'bg-accent' : 'bg-success'}`}
-                style={{ width: `${Math.round((counts[index] / max) * 100)}%` }}
-              />
-            </div>
-          </div>
-        )
-      })}
+    <div className="rounded-card border border-line bg-surface px-4 py-3.5">
+      <p className="eyebrow">{label}</p>
+      <p className="mt-1.5 font-mono text-[1.375rem] font-semibold leading-7 text-ink">{value}</p>
+      <p className="mt-1 truncate text-xs text-ink-muted">{meta}</p>
     </div>
   )
 }
 
-interface WorkspaceOverviewProps {
-  workspace: Workspace
-  isAdmin: boolean
-  documents: ApiResource<WorkspaceDocumentsData>
-  runs: ProcessingRuns
-  searchQuery: string
-  canReindex?: boolean
-  reindexingId?: string | null
-  onReindex?: (document: DocumentUpload) => void
-  canView?: boolean
-  onView?: (document: DocumentUpload) => void
-  onUpload: () => void
-  onViewDocuments: () => void
-  onManageMembers: () => void
-  onUnauthorized: () => void
-  onDeleteDocument: (document: DocumentUpload) => void
+function PaneHead({ label, children }: { label: string; children?: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
+      <p className="eyebrow">{label}</p>
+      <span className="ml-auto">{children}</span>
+    </div>
+  )
+}
+
+function TickBar({ share, tone }: { share: number; tone: 'go' | 'urgent' | 'idle' }) {
+  const width = Math.max(0, Math.min(100, Math.round(share * 100)))
+  return (
+    <div className="relative h-[5px] overflow-hidden rounded-stamp border border-line bg-sunken">
+      <span
+        className={`block h-full ${tone === 'urgent' ? 'bg-accent' : tone === 'go' ? 'bg-success' : 'bg-transparent'}`}
+        style={{ width: `${width}%` }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(90deg, transparent 0 11px, var(--color-line) 11px 12px)',
+        }}
+      />
+    </div>
+  )
 }
 
 export function WorkspaceOverview({
   workspace,
-  isAdmin,
   documents,
   runs,
-  searchQuery,
-  canReindex,
-  reindexingId,
-  onReindex,
-  canView,
-  onView,
   onUpload,
-  onViewDocuments,
-  onManageMembers,
-  onUnauthorized,
-  onDeleteDocument,
+  onOpenMembers,
+  onOpenChat,
 }: WorkspaceOverviewProps) {
   const items = documents.data?.items ?? []
   const total = documents.data?.total ?? 0
   const ready = items.filter((document) => document.status === 'ready').length
-  const active = items.filter((document) => isActiveStatus(document.status)).length
   const storage = items.reduce((sum, document) => sum + document.size_bytes, 0)
   const restricted = workspace.membership_role === null
-  const canManage = isAdmin || workspace.can_manage_members
+  const canManage = workspace.can_manage_members
+
+  const weekNew = items.filter(
+    (document) => Date.now() - new Date(document.created_at).getTime() < 7 * 24 * 3600 * 1000,
+  ).length
+
+  const workspaceRuns = useMemo(
+    () =>
+      runs.runs
+        .filter((run) => run.workspace_id === workspace.id && run.job_kind !== 'delete')
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
+    [runs.runs, workspace.id],
+  )
+  const bucketOf = (status: string): 'queued' | 'fetching' | 'extracting' | null => {
+    for (const bucket of ACTIVE_BUCKETS) {
+      if (bucket.match.includes(status)) return bucket.stage
+    }
+    return null
+  }
+  const stageCounts = { queued: 0, fetching: 0, extracting: 0 }
+  for (const run of workspaceRuns) {
+    const stage = bucketOf(run.status)
+    if (stage !== null) stageCounts[stage] += 1
+  }
+  const liveStage =
+    (['queued', 'fetching', 'extracting'] as const).find(
+      (stage) => stageCounts[stage] > 0,
+    ) ?? null
+  const queueDepth = stageCounts.queued
+  const newestRunAt = workspaceRuns[0]?.created_at ?? null
+  const runsMeta = newestRunAt === null
+    ? 'no activity'
+    : new Date(newestRunAt).toDateString() === new Date().toDateString()
+      ? 'today'
+      : formatShortDate(newestRunAt)
+
+  const questions = useMemo(() => {
+    const history = loadChatHistory()
+    return history.conversations
+      .filter((session) => session.items.some((item) => item.kind === 'user'))
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+      .slice(0, 5)
+      .map((session) => {
+        const first = session.items.find((item) => item.kind === 'user')
+        return {
+          id: session.id,
+          question: first?.text ?? session.title,
+          when:
+            new Date(session.updatedAt).toDateString() === new Date().toDateString()
+              ? formatClock(session.updatedAt)
+              : formatShortDate(session.updatedAt),
+        }
+      })
+  }, [])
 
   return (
     <div className="mx-auto max-w-[92rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3.5">
           <Avatar name={workspace.name} seed={workspace.id} size="lg" className="mt-0.5" />
           <div className="min-w-0">
@@ -129,8 +190,8 @@ export function WorkspaceOverview({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {workspace.membership_role === null ? null : (
-            <button type="button" className="btn btn-secondary" onClick={onManageMembers}>
+          {restricted ? null : (
+            <button type="button" className="btn btn-secondary" onClick={onOpenMembers}>
               {canManage ? 'Manage access' : 'View access'}
             </button>
           )}
@@ -143,172 +204,208 @@ export function WorkspaceOverview({
         </div>
       </header>
 
-      <section className="mt-5" aria-label="Workspace summary">
-        <div className="inline-flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-card border border-line bg-surface px-4 py-2.5">
-          <StatLine
-            icon={<FileText aria-hidden="true" size={13} />}
-            label="Documents"
-            value={restricted ? '—' : String(total)}
-          />
-          <StatDivider />
-          <StatLine
-            icon={<CheckCircle2 aria-hidden="true" size={13} />}
-            label="Ready"
-            value={restricted ? '—' : String(ready)}
-          />
-          <StatDivider />
-          <StatLine
-            icon={<LoaderCircle aria-hidden="true" size={13} />}
-            label="In pipeline"
-            value={restricted ? '—' : String(active)}
-          />
-          <StatDivider />
-          <StatLine
-            icon={<HardDrive aria-hidden="true" size={13} />}
-            label="Storage"
-            value={restricted ? '—' : formatBytes(storage)}
-          />
-        </div>
+      <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Workspace summary">
+        <StatPane
+          label="Documents"
+          value={restricted ? '—' : String(total)}
+          meta={restricted ? 'members only' : weekNew > 0 ? `+${weekNew} this week` : 'no new this week'}
+        />
+        <StatPane
+          label="Ready"
+          value={restricted ? '—' : String(ready)}
+          meta="indexed · searchable"
+        />
+        <StatPane
+          label="Processing"
+          value={restricted ? '—' : String(total - ready - items.filter((d) => ['failed', 'cancelled', 'unsupported_format'].includes(d.status)).length)}
+          meta={processingMeta(items)}
+        />
+        <StatPane
+          label="Storage"
+          value={restricted ? '—' : formatBytes(storage)}
+          meta="in this view"
+        />
       </section>
 
-      {workspace.membership_role === null ? null : (
-        <section className="mt-4 rounded-card border border-line bg-surface px-4 py-3.5 sm:px-5">
-          <PipelineStages runs={runs} />
+      {restricted ? (
+        <section className="mt-4 rounded-card border border-dashed border-line-strong bg-surface px-6 py-14 text-center">
+          <LockKeyhole aria-hidden="true" className="mx-auto text-ink-faint" size={26} />
+          <h2 className="mt-3 text-sm font-semibold text-ink">Documents are members-only</h2>
+          <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-ink-muted">
+            Ask a workspace owner for viewer, editor or owner access. A platform admin role
+            alone does not grant document access.
+          </p>
         </section>
-      )}
-
-      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
-        <section aria-labelledby="recent-documents-title">
-          <div className="mb-2.5 flex items-end justify-between gap-3">
-            <div>
-              <p className="eyebrow">Workspace content</p>
-              <h2 id="recent-documents-title" className="mt-1 text-base font-semibold text-ink">
-                Recent documents
-              </h2>
+      ) : (
+        <>
+          <section className="mt-3 overflow-hidden rounded-card border border-line bg-surface" aria-label="Pipeline">
+            <PaneHead label="Pipeline">
+              <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-ink-faint">
+                queue depth {queueDepth}
+              </span>
+            </PaneHead>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-4 sm:px-5">
+              <PipelineStage
+                label="Queued"
+                count={stageCounts.queued}
+                share={total > 0 ? stageCounts.queued / total : 0}
+                tone={liveStage === 'queued' ? 'urgent' : 'idle'}
+              />
+              <PipelineStage
+                label="Fetching"
+                count={stageCounts.fetching}
+                share={total > 0 ? stageCounts.fetching / total : 0}
+                tone={liveStage === 'fetching' ? 'urgent' : 'idle'}
+              />
+              <PipelineStage
+                label="Extracting"
+                count={stageCounts.extracting}
+                share={total > 0 ? stageCounts.extracting / total : 0}
+                tone={liveStage === 'extracting' ? 'urgent' : 'idle'}
+              />
+              <PipelineStage label="Ready" count={ready} share={total > 0 ? ready / total : 0} tone="go" />
             </div>
-            <div className="flex items-center gap-1">
-              {restricted ? null : (
-                <RefreshButton
-                  label="Refresh recent documents"
-                  loading={documents.loading}
-                  onRefresh={documents.reload}
-                />
+          </section>
+
+          <div className="mt-3 grid gap-3 xl:grid-cols-2 xl:items-start">
+            <section className="overflow-hidden rounded-card border border-line bg-surface" aria-label="Recent runs">
+              <PaneHead label="Recent runs">
+                <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-ink-faint">
+                  {runsMeta}
+                </span>
+              </PaneHead>
+              {workspaceRuns.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm leading-6 text-ink-muted">
+                  No runs yet. Upload a document and the pipeline will report here.
+                </p>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Run</th>
+                      <th scope="col">Document</th>
+                      <th scope="col">State</th>
+                      <th scope="col">Took</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workspaceRuns.slice(0, 5).map((run) => (
+                      <tr key={run.id}>
+                        <td>
+                          <span className="flex items-center gap-2">
+                            <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${runDotClass(run.status)}`} />
+                            <span className="font-mono text-[0.7rem] text-ink-muted">
+                              run-{run.id.slice(0, 4)}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="max-w-[14rem]">
+                          <span className="block truncate text-sm font-medium text-ink">
+                            {run.filename ?? `Document ${run.document_id.slice(0, 8)}`}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`stamp whitespace-nowrap ${runStateChip(run.status)}`}>
+                            {runStatusLabel(run.status)}
+                          </span>
+                        </td>
+                        <td className="font-mono text-meta text-ink-muted">
+                          {formatDuration(run.started_at, run.completed_at) ?? '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted transition-colors hover:text-ink"
-                onClick={onViewDocuments}
-              >
-                View all
-                <ArrowRight aria-hidden="true" size={13} />
-              </button>
-            </div>
-          </div>
-          {restricted ? (
-            <div className="rounded-card border border-dashed border-line-strong bg-surface px-6 py-12 text-center">
-              <LockKeyhole aria-hidden="true" className="mx-auto text-ink-faint" size={26} />
-              <h2 className="mt-3 text-sm font-semibold text-ink">Documents are members-only</h2>
-              <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-ink-muted">
-                Ask a workspace owner for viewer, editor or owner access. A platform admin role
-                alone does not grant document access.
-              </p>
-            </div>
-          ) : (
-            <DocumentTable
-              documents={items}
-              total={total}
-              loading={documents.loading}
-              error={documents.error}
-              canDelete={workspace.can_delete}
-              canReindex={canReindex}
-              reindexingId={reindexingId}
-              onReindex={onReindex}
-              canView={canView}
-              onView={onView}
-              searchQuery={searchQuery}
-              onDelete={onDeleteDocument}
-              limit={7}
-            />
-          )}
-        </section>
+            </section>
 
-        <aside className="grid gap-3.5" aria-label="Workspace activity">
-          <QuickUpload workspace={workspace} onUpload={onUpload} />
-          <WorkspaceAccessSummary
-            workspace={workspace}
-            isAdmin={isAdmin}
-            onManageMembers={onManageMembers}
-            onUnauthorized={onUnauthorized}
-          />
-        </aside>
+            <section className="overflow-hidden rounded-card border border-line bg-surface" aria-label="Recently answered">
+              <PaneHead label="Recently answered">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 font-condensed text-[0.6875rem] font-bold uppercase tracking-[0.09em] text-ink-muted transition-colors hover:text-accent"
+                  onClick={onOpenChat}
+                >
+                  Open chat
+                  <ArrowRight aria-hidden="true" size={12} />
+                </button>
+              </PaneHead>
+              {questions.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm leading-6 text-ink-muted">
+                  No questions yet. Answers you get in the chat are listed here.
+                </p>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Question</th>
+                      <th scope="col">When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {questions.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="max-w-[22rem]">
+                          <span className="block truncate text-sm font-medium text-ink">
+                            {entry.question}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap font-mono text-meta text-ink-muted">
+                          {entry.when}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="border-t border-line px-4 py-2 font-mono text-[0.65rem] text-ink-faint">
+                kept in this browser — the server stores no questions
+              </p>
+            </section>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function PipelineStage({
+  label,
+  count,
+  share,
+  tone,
+}: {
+  label: string
+  count: number
+  share: number
+  tone: 'go' | 'urgent' | 'idle'
+}) {
+  return (
+    <div className="min-w-0">
+      <p className={`eyebrow ${tone === 'urgent' ? 'text-accent' : ''}`}>{label}</p>
+      <p
+        className={`mt-1 font-mono text-lg font-semibold leading-6 ${tone === 'urgent' ? 'text-accent' : 'text-ink'}`}
+      >
+        {count}
+      </p>
+      <div className="mt-2">
+        <TickBar share={share} tone={tone} />
       </div>
     </div>
   )
 }
 
-/**
- * One figure in the summary line.
- *
- * The label sits beside the number instead of above it, and the explanatory
- * third line is gone: "Documents 12" and "Storage 9.2 MB" already say what
- * the old captions repeated at four times the height.
- */
-function StatLine({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode
-  label: string
-  value: string
-}) {
-  return (
-    <p className="flex items-center gap-1.5">
-      <span className="text-ink-faint">{icon}</span>
-      <span className="text-xs text-ink-faint">{label}</span>
-      <span className="font-mono text-sm font-medium text-ink">{value}</span>
-    </p>
-  )
-}
-
-function StatDivider() {
-  return <span aria-hidden="true" className="hidden h-3.5 w-px bg-line sm:block" />
-}
-
-function QuickUpload({ workspace, onUpload }: { workspace: Workspace; onUpload: () => void }) {
-  if (!workspace.can_upload) {
-    return (
-      <section className="rounded-card border border-line bg-surface p-5">
-        <p className="eyebrow">Quick upload</p>
-        <div className="mt-3 flex items-start gap-2.5 text-sm leading-6 text-ink-muted">
-          <LockKeyhole aria-hidden="true" className="mt-1 shrink-0 text-ink-faint" size={16} />
-          Your role can read this workspace but not add documents. Ask an owner to change your
-          access.
-        </div>
-      </section>
-    )
-  }
-
-  return (
-    <button
-      type="button"
-      className="group rounded-card border border-dashed border-line-strong bg-surface p-5 text-left transition-colors hover:border-accent hover:bg-accent-soft/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      onClick={onUpload}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="eyebrow">Quick upload</p>
-          <p className="mt-2 text-sm font-semibold text-ink">Add context to this workspace</p>
-        </div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-control border border-line bg-sunken text-ink-muted transition-colors group-hover:border-accent group-hover:text-accent">
-          <UploadCloud aria-hidden="true" size={17} />
-        </span>
-      </div>
-      <p className="mt-1.5 text-xs leading-5 text-ink-muted">
-        Drop a PDF, DOCX or CSV, or browse. Indexing continues in the background.
-      </p>
-    </button>
-  )
+function processingMeta(items: Array<{ status: string }>): string {
+  const extracting = items.filter((d) =>
+    ['extracting', 'describing', 'storing_artifact', 'chunking', 'embedding', 'syncing'].includes(d.status),
+  ).length
+  const queued = items.filter((d) => d.status === 'queued').length
+  const fetching = items.filter((d) => ['fetching', 'awaiting_parser', 'processing'].includes(d.status)).length
+  const parts: string[] = []
+  if (extracting > 0) parts.push(`${extracting} extracting`)
+  if (fetching > 0) parts.push(`${fetching} fetching`)
+  if (queued > 0) parts.push(`${queued} queued`)
+  return parts.length > 0 ? parts.join(' · ') : 'idle'
 }
 
 export function EmptyWorkspace({ onCreate }: { onCreate?: () => void }) {
