@@ -9,6 +9,7 @@ import {
   formatBytes,
   formatShortDate,
   isActiveStatus,
+  runStatusLabel,
   STATUS_TONE_CLASSES,
 } from '../lib/visuals'
 
@@ -176,10 +177,16 @@ export function DocumentTable({
                     <td className="px-3 py-3 align-middle">
                       <span
                         className={`stamp whitespace-nowrap ${
-                          document.status === 'failed' ? 'border-transparent bg-danger text-white' : STATUS_TONE_CLASSES[documentStatusTone(document.status)]
+                          document.status === 'failed'
+                            ? 'border-transparent bg-danger text-white'
+                            : activeRun !== undefined
+                              ? STATUS_TONE_CLASSES.info
+                              : STATUS_TONE_CLASSES[documentStatusTone(document.status)]
                         }`}
                       >
-                        {documentStatusLabel(document.status)}
+                        {activeRun !== undefined
+                          ? runStatusLabel(activeRun.status)
+                          : documentStatusLabel(document.status)}
                       </span>
                       {progress !== null ? (
                         <p className="mt-1 font-mono text-[0.62rem] text-ink-muted">{progress}</p>
