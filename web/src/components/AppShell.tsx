@@ -587,21 +587,17 @@ function WorkspaceSwitcher({
     }
   }, [open])
 
-  const hasChoices = workspaces.length > 1
+  const canOpen = workspaces.length > 0
 
   return (
     <div ref={containerRef} className="relative mt-2">
       <button
         type="button"
         className="flex w-full items-center gap-2.5 rounded-control border border-line bg-sunken px-2.5 py-2 text-left transition-colors hover:border-line-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        aria-haspopup={hasChoices ? 'menu' : undefined}
-        aria-expanded={hasChoices ? open : undefined}
-        aria-label={
-          hasChoices
-            ? `Current workspace ${selectedWorkspace?.name ?? 'none'}, switch workspace`
-            : `Current workspace ${selectedWorkspace?.name ?? 'none'}`
-        }
-        disabled={!hasChoices}
+        aria-haspopup={canOpen ? 'menu' : undefined}
+        aria-expanded={canOpen ? open : undefined}
+        aria-label={`Current workspace ${selectedWorkspace?.name ?? 'none'}, switch workspace`}
+        disabled={!canOpen}
         onClick={() => setOpen((current) => !current)}
       >
         <Avatar
@@ -617,7 +613,7 @@ function WorkspaceSwitcher({
             {selectedWorkspace?.membership_role ?? 'Not assigned'}
           </span>
         </span>
-        {hasChoices ? (
+        {canOpen ? (
           <ArrowLeftRight
             aria-hidden="true"
             className={`shrink-0 transition-all duration-200 ${open ? 'rotate-90 text-accent' : 'text-ink-faint'}`}
@@ -626,7 +622,7 @@ function WorkspaceSwitcher({
         ) : null}
       </button>
 
-      {open && hasChoices ? (
+      {open && canOpen ? (
         <div
           role="menu"
           aria-label="Switch workspace"
