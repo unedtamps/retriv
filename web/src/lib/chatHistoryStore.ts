@@ -19,7 +19,6 @@ const STORAGE_KEY = "retriv.chat.conversations.v2"
 const LEGACY_KEY = "retriv.chat.conversation.v1"
 const MAX_CONVERSATIONS = 20
 const KEEP_ITEMS = 60
-const MAX_SERIALIZED_BYTES = 1_000_000
 
 export interface StoredConversation {
   id: string

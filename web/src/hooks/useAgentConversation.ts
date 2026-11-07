@@ -47,7 +47,7 @@ export function historyOf(items: ChatItem[]): AgentChatHistoryMessage[] {
  * `activeId === null` is the draft state: nothing typed yet, no session in
  * the archive. The first message promotes it into a stored session.
  */
-export function useAgentConversation(onUnauthorized: () => void): AgentConversation {
+export function useAgentConversation(onUnauthorized: () => void) {
   const [history, setHistory] = useState<StoredChatHistory>(() => loadChatHistory())
   const active = useMemo(
     () => history.conversations.find((entry) => entry.id === history.activeId) ?? null,
