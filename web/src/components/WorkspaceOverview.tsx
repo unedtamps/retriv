@@ -1,6 +1,8 @@
 import { useMemo, type ReactNode } from 'react'
 import { ArrowRight, FileUp, LockKeyhole, Plus, Sparkles } from 'lucide-react'
+import { api } from '../api'
 import type { ApiResource } from '../hooks/useApiResource'
+import { useApiResource } from '../hooks/useApiResource'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import type { WorkspaceDocumentsData } from '../hooks/useWorkspaceDocuments'
 import {
@@ -11,7 +13,7 @@ import {
   runStatusLabel,
 } from '../lib/visuals'
 import { loadChatHistory } from '../lib/chatHistoryStore'
-import type { Workspace } from '../types'
+import type { ProcessingRun, Workspace } from '../types'
 import { Avatar } from './ui/Avatar'
 
 interface WorkspaceOverviewProps {
@@ -21,6 +23,7 @@ interface WorkspaceOverviewProps {
   onUpload: () => void
   onOpenMembers: () => void
   onOpenChat: () => void
+  onUnauthorized: () => void
 }
 
 const ACTIVE_BUCKETS: Array<{ match: string[]; stage: 'queued' | 'fetching' | 'extracting' }> = [
@@ -108,6 +111,7 @@ export function WorkspaceOverview({
   onUpload,
   onOpenMembers,
   onOpenChat,
+  onUnauthorized,
 }: WorkspaceOverviewProps) {
   const items = documents.data?.items ?? []
   const total = documents.data?.total ?? 0
@@ -120,12 +124,17 @@ export function WorkspaceOverview({
     (document) => Date.now() - new Date(document.created_at).getTime() < 7 * 24 * 3600 * 1000,
   ).length
 
+  const runsToday = useApiResource(
+    (signal) => api.listProcessingActivity({ today: true, signal }),
+    [workspace.id],
+    { onUnauthorized },
+  )
   const workspaceRuns = useMemo(
     () =>
-      runs.runs
+      (runsToday.data?.items ?? [])
         .filter((run) => run.workspace_id === workspace.id && run.job_kind !== 'delete')
         .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
-    [runs.runs, workspace.id],
+    [runsToday.data, workspace.id],
   )
   const bucketOf = (status: string): 'queued' | 'fetching' | 'extracting' | null => {
     for (const bucket of ACTIVE_BUCKETS) {
@@ -279,43 +288,45 @@ export function WorkspaceOverview({
                   No runs yet. Upload a document and the pipeline will report here.
                 </p>
               ) : (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Run</th>
-                      <th scope="col">Document</th>
-                      <th scope="col">State</th>
-                      <th scope="col">Took</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workspaceRuns.slice(0, 5).map((run) => (
-                      <tr key={run.id}>
-                        <td>
-                          <span className="flex items-center gap-2">
-                            <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${runDotClass(run.status)}`} />
-                            <span className="font-mono text-[0.7rem] text-ink-muted">
-                              run-{run.id.slice(0, 4)}
-                            </span>
-                          </span>
-                        </td>
-                        <td className="max-w-[14rem]">
-                          <span className="block truncate text-sm font-medium text-ink">
-                            {run.filename ?? `Document ${run.document_id.slice(0, 8)}`}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`stamp whitespace-nowrap ${runStateChip(run.status)}`}>
-                            {runStatusLabel(run.status)}
-                          </span>
-                        </td>
-                        <td className="font-mono text-meta text-ink-muted">
-                          {formatDuration(run.started_at, run.completed_at) ?? '—'}
-                        </td>
+                <div className="max-h-72 overflow-y-auto">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Run</th>
+                        <th scope="col">Document</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Took</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {workspaceRuns.map((run: ProcessingRun) => (
+                        <tr key={run.id}>
+                          <td>
+                            <span className="flex items-center gap-2">
+                              <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${runDotClass(run.status)}`} />
+                              <span className="font-mono text-[0.7rem] text-ink-muted">
+                                run-{run.id.slice(0, 4)}
+                              </span>
+                            </span>
+                          </td>
+                          <td className="max-w-[14rem]">
+                            <span className="block truncate text-sm font-medium text-ink">
+                              {run.filename ?? `Document ${run.document_id.slice(0, 8)}`}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`stamp whitespace-nowrap ${runStateChip(run.status)}`}>
+                              {runStatusLabel(run.status)}
+                            </span>
+                          </td>
+                          <td className="font-mono text-meta text-ink-muted">
+                            {formatDuration(run.started_at, run.completed_at) ?? '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
 

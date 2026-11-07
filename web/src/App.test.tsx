@@ -237,7 +237,7 @@ function installApi(
     if (url.startsWith('/v1/documents/search')) {
       return json(documents.search ?? { items: [], total: 0 })
     }
-    if (url === '/v1/processing-runs') {
+    if (url === '/v1/processing-runs' || url.startsWith('/v1/processing-runs?')) {
       return json(processingResponses.runs ?? { items: [], total: 0 })
     }
     if (url === '/v1/workspaces/workspace-1/documents' && init?.method === 'POST') {

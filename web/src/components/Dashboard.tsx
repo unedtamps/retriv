@@ -311,6 +311,7 @@ export function Dashboard({
           onUpload={openUpload}
           onOpenMembers={() => setActiveView('members')}
           onOpenChat={() => setActiveView('chat')}
+          onUnauthorized={onUnauthorized}
         />
       )}
 
