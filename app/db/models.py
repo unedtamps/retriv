@@ -25,7 +25,6 @@ JSON_TYPE = JSON().with_variant(JSONB(), "postgresql")
 
 JOB_EXTRACT = "extract"
 JOB_DELETE = "delete"
-JOB_ACCESS = "access"
 
 RUN_QUEUED = "queued"
 RUN_FETCHING = "fetching"
@@ -35,7 +34,6 @@ RUN_DESCRIBING = "describing"
 RUN_STORING_ARTIFACT = "storing_artifact"
 RUN_CHUNKING = "chunking"
 RUN_EMBEDDING = "embedding"
-RUN_SYNCING = "syncing"
 RUN_DELETING = "deleting"
 RUN_READY = "ready"
 RUN_RETRY_WAIT = "retry_wait"
@@ -51,7 +49,6 @@ ACTIVE_RUN_STATUSES: tuple[str, ...] = (
     RUN_STORING_ARTIFACT,
     RUN_CHUNKING,
     RUN_EMBEDDING,
-    RUN_SYNCING,
     RUN_DELETING,
 )
 NON_TERMINAL_RUN_STATUSES: tuple[str, ...] = (
@@ -216,7 +213,7 @@ class ProcessingRun(Base):
     __tablename__ = "processing_runs"
     __table_args__ = (
         CheckConstraint(
-            "job_kind IN ('extract', 'delete', 'access')",
+            "job_kind IN ('extract', 'delete')",
             name="processing_run_kind",
         ),
         UniqueConstraint(

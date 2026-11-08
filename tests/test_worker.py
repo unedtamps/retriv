@@ -70,7 +70,6 @@ from app.infrastructure.storage import (
     ObjectNotFoundError,
     ObjectTooLargeError,
 )
-from app.processing.service import enqueue_access_sync
 from app.processing.worker import ProcessingWorker, utcnow
 from app.sections import encode_section_key
 from app.vision.base import VisionProviderError
@@ -1532,11 +1531,12 @@ async def test_zero_max_images_means_no_cap(
     assert "[Image]" not in chunks[0].text
 
 
-async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
+async def test_adding_a_workspace_link_queues_no_pipeline_job(
     db_session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
     entities: SeededEntities,
 ) -> None:
+    """Adding a link is the whole operation; no pipeline job is queued."""
     storage = FakeStorage()
     document, _ = await seed_document(db_session_factory, entities.finance.id, storage=storage)
     vectors = FakeVectorSink()
@@ -1545,8 +1545,6 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
     batches_after_extract = len(vectors.batches)
 
     async with db_session_factory() as session, session.begin():
-        stored = await session.get(Document, document.id)
-        assert stored is not None
         session.add(
             DocumentWorkspace(
                 workspace_id=entities.legal.id,
@@ -1554,12 +1552,15 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
                 filename="laporan.pdf",
             )
         )
-        run_row = await enqueue_access_sync(session, stored, settings)
 
-    assert await worker.run_once() is True
+    assert await worker.run_once() is False
 
     async with db_session_factory() as session:
-        finished = await session.get(ProcessingRun, run_row.id)
+        runs = (
+            await session.scalars(
+                select(ProcessingRun).where(ProcessingRun.document_id == document.id)
+            )
+        ).all()
         links = (
             await session.scalars(
                 select(DocumentWorkspace).where(
@@ -1567,8 +1568,7 @@ async def test_access_sync_updates_every_chunk_when_a_workspace_link_is_added(
                 )
             )
         ).all()
-    assert finished is not None
-    assert finished.status == RUN_READY
+    assert [run.job_kind for run in runs] == ["extract"]
     assert {str(link.workspace_id) for link in links} == {
         str(entities.finance.id),
         str(entities.legal.id),

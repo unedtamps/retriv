@@ -34,7 +34,6 @@ from app.infrastructure.scanner import (
 )
 from app.infrastructure.storage import ObjectStorage, StorageError
 from app.processing.service import (
-    enqueue_access_sync,
     enqueue_delete,
     enqueue_extract,
     enqueue_reextract,
@@ -91,12 +90,10 @@ async def ingest_staged_upload(
                 created_by_user_id=uploader_id,
             )
             session.add(link)
-            await enqueue_access_sync(session, existing, settings)
             await session.commit()
         elif link.deleted_at is not None:
             link.deleted_at = None
             link.filename = staged.original_filename
-            await enqueue_access_sync(session, existing, settings)
             await session.commit()
         return IngestedDocument(
             document=existing,
@@ -153,7 +150,6 @@ async def ingest_staged_upload(
                 raise document_deletion_error() from None
             linked = await attach_to_existing(
                 session=session,
-                settings=settings,
                 document=concurrent_document,
                 workspace_id=workspace_id,
                 uploader_id=uploader_id,
@@ -179,7 +175,6 @@ async def ingest_staged_upload(
 async def attach_to_existing(
     *,
     session: AsyncSession,
-    settings: Settings,
     document: Document,
     workspace_id: UUID,
     uploader_id: UUID,
@@ -201,13 +196,11 @@ async def attach_to_existing(
             created_by_user_id=uploader_id,
         )
         session.add(link)
-        await enqueue_access_sync(session, document, settings)
         await session.commit()
         return link
     if link.deleted_at is not None:
         link.deleted_at = None
         link.filename = filename
-        await enqueue_access_sync(session, document, settings)
         await session.commit()
     return link
 
@@ -296,8 +289,7 @@ async def accept_document_delete(
         await session.rollback()
         return None
 
-    already_deleted = locked_link.deleted_at is not None
-    if not already_deleted:
+    if locked_link.deleted_at is None:
         locked_link.deleted_at = datetime.now(UTC)
 
     remaining_links = int(
@@ -314,8 +306,6 @@ async def accept_document_delete(
     last_link = remaining_links == 0
     if last_link:
         await enqueue_delete(session, locked_document, settings)
-    elif not already_deleted:
-        await enqueue_access_sync(session, locked_document, settings)
     await session.commit()
 
     if not last_link:

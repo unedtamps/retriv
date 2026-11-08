@@ -341,12 +341,6 @@ class AgentToolKit:
         )
         if offset:
             body = f"{body}\n(showing from offset {offset})"
-        if runtime.row_query is None and (offset or pattern):
-            body += (
-                "\nPaging and filename search need the row-query reader, which "
-                "this deployment does not have; the list above is the whole "
-                "catalogue.\n"
-            )
         return body
 
     async def find_documents(
@@ -363,7 +357,12 @@ class AgentToolKit:
             summaries, total = await search_documents(
                 session, scope, pattern=pattern, limit=limit
             )
-        return format_documents(summaries, total=total, pattern=pattern)
+        return format_documents(
+            summaries,
+            total=total,
+            pattern=pattern,
+            queryable=self.row_queries,
+        )
 
     async def list_workspaces(self) -> str:
         """The workspaces this credential may read, with their sizes.
@@ -738,19 +737,10 @@ class AgentToolKit:
         limit: int = 100,
         pattern: str | None = None,
     ) -> Catalogue:
-        """The queryable CSV files, without caching across tool calls.
-
-        The agent cached these per answer because a turn made many calls; each
-        MCP call stands alone, so the honest list is the current one.
-        """
-        runtime = self._runtime
+        """The queryable files for this call, read fresh from the database."""
         if not workspace_ids:
             return Catalogue(entries=[], hidden=0)
-        if runtime.row_query is None:
-            return await runtime.catalogue_reader.queryable_files(
-                workspace_ids=workspace_ids
-            )
-        return await runtime.row_query.queryable_files(
+        return await self._runtime.catalogue_reader.queryable_files(
             workspace_ids=workspace_ids, offset=offset, limit=limit, pattern=pattern
         )
 

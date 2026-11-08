@@ -15,12 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.db.models import (
     ACTIVE_RUN_STATUSES,
-    JOB_ACCESS,
     JOB_DELETE,
     JOB_EXTRACT,
     RUN_CANCELLED,
     RUN_QUEUED,
-    RUN_RETRY_WAIT,
     RUN_UNSUPPORTED,
     Document,
     ProcessingRun,
@@ -104,38 +102,6 @@ async def enqueue_reextract(
     return run
 
 
-async def enqueue_access_sync(
-    session: AsyncSession, document: Document, settings: Settings
-) -> ProcessingRun:
-    """Queue the small job that acknowledges a workspace-link change.
-
-    Retrieval reads the caller's scope from ``document_workspaces`` at
-    query time, so the run needs no work of its own -- it exists because
-    the link flows enqueue one. It is not an extract run: nothing is
-    downloaded, chunked, or embedded.
-    """
-    existing_run = await session.scalar(
-        select(ProcessingRun).where(
-            ProcessingRun.document_id == document.id,
-            ProcessingRun.job_kind == JOB_ACCESS,
-            ProcessingRun.status.in_((RUN_QUEUED, RUN_RETRY_WAIT)),
-        )
-    )
-    if existing_run is not None:
-        return existing_run
-
-    run = ProcessingRun(
-        id=uuid4(),
-        document_id=document.id,
-        origin_workspace_id=document.origin_workspace_id,
-        job_kind=JOB_ACCESS,
-        pipeline_version=settings.pipeline_version,
-        status=RUN_QUEUED,
-    )
-    session.add(run)
-    return run
-
-
 async def enqueue_delete(
     session: AsyncSession, document: Document, settings: Settings
 ) -> ProcessingRun | None:
@@ -153,7 +119,7 @@ async def enqueue_delete(
         update(ProcessingRun)
         .where(
             ProcessingRun.document_id == document.id,
-            ProcessingRun.job_kind.in_((JOB_EXTRACT, JOB_ACCESS)),
+            ProcessingRun.job_kind == JOB_EXTRACT,
             ProcessingRun.status.in_((*ACTIVE_RUN_STATUSES, RUN_QUEUED)),
         )
         .values(

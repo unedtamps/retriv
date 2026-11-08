@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import ProcessingActivityResponse, ProcessingRunSummary
 from app.db.models import (
-    JOB_ACCESS,
     NON_TERMINAL_RUN_STATUSES,
     DocumentWorkspace,
     ProcessingRun,
@@ -43,10 +42,7 @@ async def list_processing_activity(
         return ProcessingActivityResponse(items=[], total=0)
 
     link_workspace, link_filename = _link_columns(workspace_ids)
-    filters: list[Any] = [
-        link_workspace.is_not(None),
-        ProcessingRun.job_kind != JOB_ACCESS,
-    ]
+    filters: list[Any] = [link_workspace.is_not(None)]
     if today:
         day_start = datetime.now(UTC).replace(
             hour=0, minute=0, second=0, microsecond=0

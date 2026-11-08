@@ -63,7 +63,7 @@ from app.infrastructure.storage import (
 from app.main import create_app
 from app.processing.worker import ProcessingWorker
 from app.retrieval.context import ContextRetriever
-from app.retrieval.sql import RowQuery, RowQueryError
+from app.retrieval.sql import CatalogueReader, RowQuery, RowQueryError
 from app.sections import encode_section_key
 from app.security.auth import hash_password
 from tests.conftest import CleanScanner, InMemoryObjectStorage
@@ -671,6 +671,7 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
 
         reader = create_async_engine(reader_url(database_url(), role))
         query = RowQuery(reader, statement_timeout_ms=5_000, max_result_rows=200)
+        catalogue_reader = CatalogueReader(factory)
         scope = (workspace,)
 
         outcome = await query.run(
@@ -713,7 +714,7 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
         assert empty.sources == []
         assert empty.values[0]["n"] == 0
 
-        catalogue = await query.queryable_files(workspace_ids=scope)
+        catalogue = await catalogue_reader.queryable_files(workspace_ids=scope)
         assert [entry.filename for entry in catalogue.entries] == ["sales.csv"]
         assert sorted(catalogue.entries[0].columns) == ["amount", "id", "status"]
         assert catalogue.hidden == 0
@@ -805,17 +806,20 @@ async def test_the_catalogue_is_scoped_and_the_model_cannot_name_processing_runs
 
         reader = create_async_engine(reader_url(database_url(), role))
         query = RowQuery(reader, statement_timeout_ms=5_000, max_result_rows=200)
+        catalogue_reader = CatalogueReader(factory)
 
-        catalogue = await query.queryable_files(workspace_ids=(mine,))
+        catalogue = await catalogue_reader.queryable_files(workspace_ids=(mine,))
         assert [entry.filename for entry in catalogue.entries] == ["sales.csv"]
         assert catalogue.entries[0].columns == ["id", "status", "amount"]
         assert catalogue.entries[0].row_count == 1
         assert catalogue.filenames == {mine_document.id: "sales.csv"}
 
-        other = await query.queryable_files(workspace_ids=(theirs,))
+        other = await catalogue_reader.queryable_files(workspace_ids=(theirs,))
         assert [entry.filename for entry in other.entries] == ["theirs.csv"]
 
-        assert (await query.queryable_files(workspace_ids=(mine,), pattern="sales")).entries
+        assert (
+            await catalogue_reader.queryable_files(workspace_ids=(mine,), pattern="sales")
+        ).entries
         with pytest.raises(RowQueryError, match="may only read"):
             await query.run(
                 "select lease_token from processing_runs where document_id = :d",
@@ -844,7 +848,6 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
     """A file that would answer nothing must not appear as queryable."""
     engine = create_async_engine(database_url())
     role = "rls_probe_inflight"
-    reader: AsyncEngine | None = None
     try:
         async with engine.begin() as conn:
             await conn.execute(text(f"drop role if exists {role}"))
@@ -900,13 +903,10 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
                 document.active_processing_run_id = run.id
             await session.commit()
 
-        reader = create_async_engine(reader_url(database_url(), role))
-        query = RowQuery(reader, statement_timeout_ms=5_000, max_result_rows=200)
-        catalogue = await query.queryable_files(workspace_ids=(workspace,))
+        catalogue_reader = CatalogueReader(factory)
+        catalogue = await catalogue_reader.queryable_files(workspace_ids=(workspace,))
         assert [entry.filename for entry in catalogue.entries] == ["ready.csv"]
     finally:
-        if reader is not None:
-            await reader.dispose()
         async with engine.connect() as conn:
             await conn.execute(
                 text(
@@ -926,7 +926,6 @@ async def test_the_catalogue_omits_deleted_and_unfinished_documents() -> None:
 async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
     engine = create_async_engine(database_url())
     role = "rls_probe_paging"
-    reader: AsyncEngine | None = None
     try:
         async with engine.begin() as conn:
             await conn.execute(text(f"drop role if exists {role}"))
@@ -977,30 +976,33 @@ async def test_the_catalogue_reports_files_it_hid_and_pages_past_them() -> None:
                 document.active_processing_run_id = run.id
             await session.commit()
 
-        reader = create_async_engine(reader_url(database_url(), role))
-        query = RowQuery(reader, statement_timeout_ms=5_000, max_result_rows=200)
+        catalogue_reader = CatalogueReader(factory)
 
-        first = await query.queryable_files(workspace_ids=(workspace,), limit=2)
+        first = await catalogue_reader.queryable_files(workspace_ids=(workspace,), limit=2)
         assert [entry.filename for entry in first.entries] == [
             "file-00.csv",
             "file-01.csv",
         ]
         assert first.hidden == 3
 
-        second = await query.queryable_files(workspace_ids=(workspace,), offset=2, limit=2)
+        second = await catalogue_reader.queryable_files(
+            workspace_ids=(workspace,), offset=2, limit=2
+        )
         assert [entry.filename for entry in second.entries] == [
             "file-02.csv",
             "file-03.csv",
         ]
         assert second.hidden == 3
 
-        literal = await query.queryable_files(workspace_ids=(workspace,), pattern="file-0_")
+        literal = await catalogue_reader.queryable_files(
+            workspace_ids=(workspace,), pattern="file-0_"
+        )
         assert [entry.filename for entry in literal.entries] == []
-        exact = await query.queryable_files(workspace_ids=(workspace,), pattern="file-03")
+        exact = await catalogue_reader.queryable_files(
+            workspace_ids=(workspace,), pattern="file-03"
+        )
         assert [entry.filename for entry in exact.entries] == ["file-03.csv"]
     finally:
-        if reader is not None:
-            await reader.dispose()
         async with engine.connect() as conn:
             await conn.execute(
                 text(
@@ -1158,7 +1160,9 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
             statement_timeout_ms=5_000,
             max_result_rows=100,
         )
-        listed = await catalogue.queryable_files(workspace_ids=(workspace_id,))
+        listed = await CatalogueReader(factory).queryable_files(
+            workspace_ids=(workspace_id,)
+        )
         assert [entry.filename for entry in listed.entries] == ["sales.csv"]
         assert listed.entries[0].document_id == document_id
         assert sorted(listed.entries[0].columns) == ["amount", "currency", "id", "status"]
@@ -1281,7 +1285,9 @@ async def test_an_xlsx_upload_lands_as_named_sheets_with_visuals() -> None:
             statement_timeout_ms=5_000,
             max_result_rows=100,
         )
-        listed = await catalogue.queryable_files(workspace_ids=(workspace_id,))
+        listed = await CatalogueReader(factory).queryable_files(
+            workspace_ids=(workspace_id,)
+        )
         assert [entry.filename for entry in listed.entries] == ["visual.xlsx"]
         assert listed.entries[0].sheet == "Data"
         assert "Revenue" in listed.entries[0].columns
@@ -1454,10 +1460,8 @@ def _plan_methods(node: Any) -> set[str]:
 async def test_the_database_allows_only_one_in_flight_extract_per_document() -> None:
     """The partial unique index, not just the application guards.
 
-    Two extracts of one document cannot be in flight together, but the two
-    combinations that are legitimate must still work: an ``access`` run
-    alongside a running extract (a link created or restored while extraction
-    runs), and a fresh extract once the previous one reached a terminal state.
+    Two extracts of one document cannot be in flight together. A fresh
+    extract is allowed once the previous one reached a terminal state.
     """
     engine = create_async_engine(database_url())
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -1487,10 +1491,6 @@ async def test_the_database_allows_only_one_in_flight_extract_per_document() -> 
             with pytest.raises(DBAPIError, match="uq_processing_runs_one_active_extract"):
                 await session.commit()
             await session.rollback()
-
-            # Allowed: an access run beside a running extract.
-            session.add(_run(document_id, workspace_id, "access", "queued"))
-            await session.commit()
 
             # Allowed: a new extract once the previous one is terminal.
             first = await session.scalar(

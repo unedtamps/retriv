@@ -7,6 +7,8 @@ handler, and the workspace scope must follow the key of the individual
 request rather than the session it happens to ride in.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import hashlib
@@ -44,8 +46,6 @@ from app.retrieval.context import ContextRetriever
 from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import (
-    Catalogue,
-    CatalogueEntry,
     CatalogueReader,
     RowQuery,
     RowQueryError,
@@ -116,7 +116,6 @@ class FakeRowQuery(RowQuery):
         self.runs: list[str] = []
         self.outcome = RowQueryResult(sources=[], values=[], columns=[])
         self.error: RowQueryError | None = None
-        self.catalogue = Catalogue(entries=[], hidden=0)
 
     async def run(self, sql: str, *, workspace_ids: tuple[UUID, ...]) -> RowQueryResult:
         del workspace_ids
@@ -124,17 +123,6 @@ class FakeRowQuery(RowQuery):
         if self.error is not None:
             raise self.error
         return self.outcome
-
-    async def queryable_files(
-        self,
-        *,
-        workspace_ids: tuple[UUID, ...],
-        offset: int = 0,
-        limit: int = 100,
-        pattern: str | None = None,
-    ) -> Catalogue:
-        del workspace_ids, offset, limit, pattern
-        return self.catalogue
 
 
 class McpSession:
@@ -229,17 +217,6 @@ def make_row(document_id: UUID, workspace_id: UUID) -> RowResult:
     )
 
 
-def make_entry(document_id: UUID, workspace_id: UUID, filename: str) -> CatalogueEntry:
-    return CatalogueEntry(
-        document_id=document_id,
-        workspace_id=workspace_id,
-        processing_run_id=uuid4(),
-        filename=filename,
-        row_count=10,
-        columns=["name", "amount"],
-    )
-
-
 @dataclass
 class McpEnv:
     session: McpSession
@@ -248,7 +225,7 @@ class McpEnv:
     storage: InMemoryObjectStorage
     entities: SeededEntities
     retriever: FakeRetriever
-    row_query: FakeRowQuery
+    row_query: FakeRowQuery | None
     alice_key: str
     bob_key: str
     admin_key: str
@@ -274,7 +251,7 @@ async def running_mcp(
     application.dependency_overrides[get_malware_scanner] = lambda: scanner
 
     retriever = FakeRetriever()
-    row_query = FakeRowQuery()
+    row_query = FakeRowQuery() if settings.sql_database_url else None
     application.state.mcp.set(
         McpRuntime(
             settings=settings,
@@ -583,20 +560,68 @@ async def test_no_tool_writes_to_a_workspace(mcp: McpEnv) -> None:
     assert not names & {"upload_document", "delete_document", "get_document_status"}
 
 
+async def _seed_queryable_csv(
+    mcp: McpEnv,
+    *,
+    filename: str,
+    workspace: str = "legal",
+    columns: list[str] | None = None,
+    row_count: int = 10,
+) -> SeededDocument:
+    seeded = await _seed_document(mcp, filename=filename, workspace=workspace)
+    workspace_id = getattr(mcp.entities, workspace).id
+    async with mcp.session_factory() as session:
+        document = await session.get(Document, seeded.document_id)
+        assert document is not None
+        run = ProcessingRun(
+            document_id=document.id,
+            origin_workspace_id=workspace_id,
+            job_kind=JOB_EXTRACT,
+            pipeline_version=mcp.settings.pipeline_version,
+            status="ready",
+            row_count=row_count,
+            csv_columns=[
+                {
+                    "sheet": "",
+                    "columns": columns or ["name", "amount"],
+                    "rows": row_count,
+                }
+            ],
+        )
+        session.add(run)
+        await session.flush()
+        document.active_processing_run_id = run.id
+        await session.commit()
+    return seeded
+
+
 async def test_list_queryable_files_shows_ids_and_columns(mcp: McpEnv) -> None:
-    document_id = uuid4()
-    mcp.row_query.catalogue = Catalogue(
-        entries=[make_entry(document_id, mcp.entities.legal.id, "invoices.csv")],
-        hidden=0,
-    )
+    seeded = await _seed_queryable_csv(mcp, filename="invoices.csv")
     result = await mcp.session.call(mcp.bob_key, "list_queryable_files")
     body = text_of(result)
     assert "invoices.csv" in body
-    assert str(document_id) in body
+    assert str(seeded.document_id) in body
     assert "name, amount" in body
 
 
+async def test_list_queryable_files_pages_and_searches(mcp: McpEnv) -> None:
+    first = await _seed_queryable_csv(mcp, filename="file-00.csv")
+    await _seed_queryable_csv(mcp, filename="file-01.csv")
+    await _seed_queryable_csv(mcp, filename="file-02.csv")
+
+    result = await mcp.session.call(
+        mcp.bob_key, "list_queryable_files", offset=1, limit=1, pattern="file-"
+    )
+    body = text_of(result)
+    assert "file-01.csv" in body
+    assert "file-00.csv" not in body
+    assert "file-02.csv" not in body
+    assert "showing from offset 1" in body
+    assert str(first.document_id) not in body
+
+
 async def test_query_rows_requires_a_document_id(mcp: McpEnv) -> None:
+    assert mcp.row_query is not None
     result = await mcp.session.call(mcp.bob_key, "query_rows", sql="select count(*) from rows")
     assert result["isError"] is True
     assert "does not name a document_id" in text_of(result)
@@ -604,11 +629,8 @@ async def test_query_rows_requires_a_document_id(mcp: McpEnv) -> None:
 
 
 async def test_query_rows_returns_an_aggregate_as_a_value(mcp: McpEnv) -> None:
+    assert mcp.row_query is not None
     document_id = uuid4()
-    mcp.row_query.catalogue = Catalogue(
-        entries=[make_entry(document_id, mcp.entities.legal.id, "invoices.csv")],
-        hidden=0,
-    )
     mcp.row_query.outcome = RowQueryResult(sources=[], values=[{"count": 12}], columns=["count"])
     result = await mcp.session.call(
         mcp.bob_key,
@@ -621,6 +643,7 @@ async def test_query_rows_returns_an_aggregate_as_a_value(mcp: McpEnv) -> None:
 
 
 async def test_query_rows_surfaces_a_rejection(mcp: McpEnv) -> None:
+    assert mcp.row_query is not None
     mcp.row_query.error = RowQueryError("relation does not exist")
     result = await mcp.session.call(
         mcp.bob_key, "query_rows", sql="select 1 where document_id = 'x'"
@@ -971,9 +994,11 @@ async def test_the_row_tool_is_absent_when_no_reader_is_configured(
 ) -> None:
     no_reader = settings.model_copy(update={"sql_database_url": None})
     async with running_mcp(no_reader, db_session_factory, object_storage, scanner, entities) as env:
+        await _seed_queryable_csv(env, filename="invoices.csv")
         listed = await env.session.request(env.alice_key, "tools/list", {})
         names = {tool["name"] for tool in listed["result"]["tools"]}
         listing = await env.session.call(env.alice_key, "list_queryable_files")
+        found = await env.session.call(env.alice_key, "find_documents", pattern="invoices")
     assert "query_rows" not in names
     assert names == {
         "search_context",
@@ -989,6 +1014,7 @@ async def test_the_row_tool_is_absent_when_no_reader_is_configured(
         "get_image",
     }
     assert listing["isError"] is False
+    assert "row queries are not enabled" in text_of(found)
 
 
 @dataclass(frozen=True)
@@ -1038,7 +1064,7 @@ async def _seed_document(mcp: McpEnv, *, filename: str, workspace: str = "legal"
     return SeededDocument(document_id=document_id, object_key=object_key)
 
 
-async def _seed_picture(mcp: "McpEnv", *, described: bool = True) -> tuple[UUID, UUID, str]:
+async def _seed_picture(mcp: McpEnv, *, described: bool = True) -> tuple[UUID, UUID, str]:
     """A processed document with one stored picture, as the worker leaves all three."""
     seeded = await _seed_document(mcp, filename="report.pdf")
     import pymupdf

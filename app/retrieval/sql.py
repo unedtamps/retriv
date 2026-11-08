@@ -29,9 +29,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import bindparam, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+from app.db.models import RUN_READY, Document, DocumentWorkspace, ProcessingRun
+from app.sections import LIKE_ESCAPE
 
 if TYPE_CHECKING:
     from app.retrieval.schemas import ContextSource
@@ -51,15 +54,18 @@ ROW_STORED_MEDIA_TYPES = (
     "text/csv",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
-"""Media types whose content is stored as rows rather than as chunks.
-
-Both a CSV and a workbook land in ``document_rows``, so both belong in the
-catalogue the agent reads. Naming them here keeps the two catalogue paths
--- the application-session reader and the restricted-role one -- from
-disagreeing about what counts as queryable."""
+"""Media types whose content is stored as rows, not chunks."""
 
 
 CATALOGUE_PAGE = 100
+
+
+def escape_like(value: str) -> str:
+    """Escape LIKE wildcards in a user-provided search term."""
+    for character in ("\\", "%", "_"):
+        value = value.replace(character, "\\" + character)
+    return value
+
 
 _TABLE_REFERENCE = re.compile(r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_.]*)", re.IGNORECASE)
 _CTE_NAME = re.compile(r"(?:\bwith\b|,)\s*([A-Za-z_][A-Za-z0-9_]*)\s+as\s*\(", re.IGNORECASE)
@@ -201,56 +207,52 @@ def catalogue_entries(
 
 
 class CatalogueReader:
-    """Lists CSV files using the application's own session.
-
-    Exists because the catalogue and the row tool have different security
-    needs, and conflating them leaves the agent unable to say anything at all
-    when row queries are switched off. Telling the model which files exist is
-    not a privilege escalation: the document list already returns their names
-    and media types under the same workspace scope. What needs the restricted
-    role is *running* a query, and that stays behind ``RowQuery``.
-
-    Without this, a deployment with CSVs but no reader DSN gave the model a
-    document search and nothing else, so it concluded the workspace held no
-    such data. That reads as a fact about the data rather than as a limit on
-    what the agent can do, which is the more damaging of the two.
-    """
+    """Lists queryable row files using the application session."""
 
     def __init__(self, session_factory: Any) -> None:
         self._session_factory = session_factory
 
-    async def queryable_files(self, *, workspace_ids: tuple[UUID, ...]) -> Catalogue:
-        from sqlalchemy import select as sa_select
-
-        from app.db.models import Document, DocumentWorkspace, ProcessingRun
-
+    async def queryable_files(
+        self,
+        *,
+        workspace_ids: tuple[UUID, ...],
+        offset: int = 0,
+        limit: int = CATALOGUE_PAGE,
+        pattern: str | None = None,
+    ) -> Catalogue:
         if not workspace_ids:
             return Catalogue(entries=[], hidden=0)
-        async with self._session_factory() as session:
-            rows = await session.execute(
-                sa_select(
-                    Document.id,
-                    DocumentWorkspace.workspace_id,
-                    ProcessingRun.id,
-                    DocumentWorkspace.filename,
-                    ProcessingRun.row_count,
-                    ProcessingRun.csv_columns,
-                )
-                .join(
-                    DocumentWorkspace,
-                    DocumentWorkspace.document_id == Document.id,
-                )
-                .join(ProcessingRun, ProcessingRun.id == Document.active_processing_run_id)
-                .where(
-                    DocumentWorkspace.workspace_id.in_(workspace_ids),
-                    DocumentWorkspace.deleted_at.is_(None),
-                    Document.deleted_at.is_(None),
-                    Document.detected_media_type.in_(ROW_STORED_MEDIA_TYPES),
-                    ProcessingRun.status == "ready",
-                )
-                .order_by(DocumentWorkspace.filename, Document.id)
+
+        statement = (
+            select(
+                Document.id,
+                DocumentWorkspace.workspace_id,
+                ProcessingRun.id,
+                DocumentWorkspace.filename,
+                ProcessingRun.row_count,
+                ProcessingRun.csv_columns,
             )
-            found = [tuple(r) for r in rows]
+            .join(
+                DocumentWorkspace,
+                DocumentWorkspace.document_id == Document.id,
+            )
+            .join(ProcessingRun, ProcessingRun.id == Document.active_processing_run_id)
+            .where(
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+                Document.deleted_at.is_(None),
+                Document.detected_media_type.in_(ROW_STORED_MEDIA_TYPES),
+                ProcessingRun.status == RUN_READY,
+            )
+            .order_by(DocumentWorkspace.filename, Document.id)
+        )
+        if pattern:
+            statement = statement.where(
+                DocumentWorkspace.filename.ilike(f"%{escape_like(pattern)}%", escape=LIKE_ESCAPE)
+            )
+
+        async with self._session_factory() as session:
+            rows = (await session.execute(statement)).all()
         entries = [
             CatalogueEntry(
                 document_id=row[0],
@@ -261,10 +263,12 @@ class CatalogueReader:
                 columns=columns,
                 sheet=sheet_name,
             )
-            for row in found
+            for row in (tuple(row) for row in rows)
             for sheet_name, columns, sheet_rows in catalogue_entries(row[5], int(row[4] or 0))
         ]
-        return Catalogue(entries=entries, hidden=0)
+        started = max(0, offset)
+        page = entries[started : started + max(1, min(limit, CATALOGUE_PAGE))]
+        return Catalogue(entries=page, hidden=max(0, len(entries) - len(page)))
 
     async def filenames(
         self, *, workspace_ids: tuple[UUID, ...], document_ids: set[UUID]
@@ -481,114 +485,8 @@ class RowQuery:
         _require_one_document(outcome)
         return outcome
 
-    async def queryable_files(
-        self,
-        *,
-        workspace_ids: tuple[UUID, ...],
-        offset: int = 0,
-        limit: int = CATALOGUE_PAGE,
-        pattern: str | None = None,
-    ) -> Catalogue:
-        """List the CSV files in scope, with the columns each one has.
-
-        Column names differ per file and Postgres has no schema to infer them
-        from, so without this the model has to guess a key. Guessing produced
-        a query against a misspelled column, which returned nothing, which
-        read as "no matching data" rather than "wrong key".
-
-        The scope comes from row-level security on both tables rather than a
-        predicate here: the model cannot ask for a file it may not see,
-        because the reader connection never receives that row.
-
-        The total comes back on every row as a window count rather than from
-        fetching one row past the limit: a page of two out of five cannot tell
-        three were hidden by looking at the three it fetched, and reporting
-        one would imply the list was nearly complete.
-        """
-        if not workspace_ids:
-            raise RowQueryError("No workspace scope was provided")
-        capped = max(1, min(limit, CATALOGUE_PAGE))
-        scope = "{" + ",".join(str(value) for value in workspace_ids) + "}"
-        async with self._engine.connect() as connection, connection.begin():
-            await connection.execute(
-                text("select set_config('retriv.workspace_scope', :s, true)"),
-                {"s": scope},
-            )
-            conditions = [
-                "d.deleted_at is null",
-                "dw.deleted_at is null",
-                "d.detected_media_type = ANY(:row_media_types)",
-                "pr.status = 'ready'",
-            ]
-            parameters: dict[str, object] = {"row_media_types": list(ROW_STORED_MEDIA_TYPES)}
-            if pattern:
-                conditions.append("d.original_filename ilike :pattern")
-                parameters["pattern"] = f"%{_escape_like(pattern)}%"
-            parameters["offset"] = max(0, offset)
-            parameters["limit"] = capped
-            result = await connection.execute(
-                text(catalogue_statement(conditions)),
-                parameters,
-            )
-            rows = result.fetchall()
-        total = int(rows[0][7]) if rows else 0
-        return Catalogue(
-            entries=[
-                CatalogueEntry(
-                    document_id=row[0],
-                    workspace_id=row[1],
-                    processing_run_id=row[2],
-                    filename=row[3],
-                    row_count=int(row[6] or 0),
-                    columns=list(row[5] or []),
-                    sheet=str(row[4] or ""),
-                )
-                for row in rows
-            ],
-            hidden=max(0, total - len(rows)),
-        )
-
     async def aclose(self) -> None:
         await self._engine.dispose()
-
-
-def catalogue_statement(conditions: list[str]) -> str:
-    """Assemble the catalogue query from a fixed set of literal fragments.
-
-    Every fragment here is a constant, and the values they bind to are
-    parameters, so nothing model-authored reaches this string. Kept out of
-    the caller so the one place that composes SQL reads as obviously literal.
-
-    The run's catalogue column is expanded to one row per sheet. Runs from
-    before workbooks hold a plain list of column names; those normalize to
-    one unnamed entry whose row count is the run's total, so old rows keep
-    showing up as they always did.
-    """
-    return (
-        "select d.id, dw.workspace_id, pr.id, dw.filename, "  # noqa: S608
-        "entry.col->>'sheet' as sheet, entry.col->'columns' as columns, "
-        "coalesce((entry.col->>'rows')::int, pr.row_count, 0) as rows, "
-        "count(*) over () as total "
-        "from documents d "
-        "join document_workspaces dw on dw.document_id = d.id "
-        "join processing_runs pr on pr.id = d.active_processing_run_id "
-        "cross join lateral ("
-        "  select case"
-        "    when jsonb_typeof(pr.csv_columns) = 'array'"
-        "         and (jsonb_array_length(pr.csv_columns) = 0"
-        "              or jsonb_typeof(pr.csv_columns -> 0) = 'string')"
-        "    then jsonb_build_array(jsonb_build_object("
-        "         'sheet', '', 'columns', coalesce(pr.csv_columns, '[]'::jsonb),"
-        "         'rows', pr.row_count))"
-        "    else pr.csv_columns"
-        "  end as entries"
-        ") as normed "
-        "cross join lateral jsonb_array_elements("
-        "  coalesce(normed.entries, '[]'::jsonb)) as entry(col) "
-        f"where {' and '.join(conditions)} "
-        "order by dw.filename, entry.col->>'sheet', d.id "
-        "limit :limit offset :offset"
-    )
 
 
 _UNDEFINED_COLUMN = re.compile(r'column "([^"]+)" does not exist', re.IGNORECASE)
@@ -652,18 +550,6 @@ def _explain(exc: DBAPIError) -> str:
         )
 
     return "The query could not be executed."
-
-
-def _escape_like(value: str) -> str:
-    """Stop a search term from acting as a wildcard.
-
-    The term reaches Postgres as a bind parameter, so it cannot inject SQL.
-    It could still match every file through ``%`` or ``_``, which turns a
-    lookup for one name into the whole catalogue.
-    """
-    for character in ("\\", "%", "_"):
-        value = value.replace(character, "\\" + character)
-    return value
 
 
 def _sorted_names() -> str:

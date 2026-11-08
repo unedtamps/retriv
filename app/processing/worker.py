@@ -30,7 +30,6 @@ from app.db.models import (
     EMBEDDING_PENDING,
     EMBEDDING_PROCESSING,
     EMBEDDING_RETRY_WAIT,
-    JOB_ACCESS,
     JOB_DELETE,
     JOB_EXTRACT,
     RUN_AWAITING_PARSER,
@@ -46,7 +45,6 @@ from app.db.models import (
     RUN_READY,
     RUN_RETRY_WAIT,
     RUN_STORING_ARTIFACT,
-    RUN_SYNCING,
     ChunkEmbedding,
     Document,
     DocumentChunk,
@@ -261,8 +259,6 @@ class ProcessingWorker:
             try:
                 if run.job_kind == JOB_DELETE:
                     await self._process_delete(run)
-                elif run.job_kind == JOB_ACCESS:
-                    await self._process_access_sync(run)
                 else:
                     await self._process_extract(run)
             except LeaseLostError as exc:
@@ -695,8 +691,6 @@ class ProcessingWorker:
                 return None
             if run.job_kind == JOB_DELETE:
                 run.status = RUN_DELETING
-            elif run.job_kind == JOB_ACCESS:
-                run.status = RUN_SYNCING
             elif run.chunk_count and run.artifact_key and run.manifest_key:
                 run.status = RUN_EMBEDDING
             else:
@@ -1489,29 +1483,6 @@ class ProcessingWorker:
         finally:
             stop_event.set()
             await heartbeat
-
-    async def _process_access_sync(self, claimed_run: ProcessingRun) -> None:
-        """Acknowledge a workspace-link change.
-
-        Retrieval reads the caller's scope from document_workspaces at query
-        time, so a link change needs no remote refresh. The run exists
-        because the membership flows enqueue one on every link change; it
-        completes here.
-        """
-        lease_token = self._require_lease_token(claimed_run)
-        document = await self._load_document(claimed_run)
-        if document.deleted_at is not None:
-            await self._cancel_run(claimed_run.id, lease_token)
-            return
-        async with self._session_factory() as session, session.begin():
-            run = await session.get(ProcessingRun, claimed_run.id)
-            if run is None or run.lease_token != lease_token:
-                raise LeaseLostError()
-            run.status = RUN_READY
-            run.lease_until = None
-            run.lease_token = None
-            run.completed_at = utcnow()
-            run.last_error = None
 
     async def _process_delete(self, claimed_run: ProcessingRun) -> None:
         """Remove one document from every store it occupies.

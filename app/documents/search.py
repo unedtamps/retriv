@@ -25,20 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Document, DocumentWorkspace, ProcessingRun, Workspace
 from app.processing.service import derived_document_status
-from app.retrieval.sql import ROW_STORED_MEDIA_TYPES
-
-
-def escape_like(value: str) -> str:
-    """Stop a search term acting as a wildcard.
-
-    The term is a bind parameter, so it cannot inject SQL; without this it
-    could still carry ``%`` and turn a lookup for one name into every document
-    in the workspace, which reads as a correct answer to a question nobody
-    asked.
-    """
-    for character in ("\\", "%", "_"):
-        value = value.replace(character, "\\" + character)
-    return value
+from app.retrieval.sql import ROW_STORED_MEDIA_TYPES, escape_like
 
 
 @dataclass(frozen=True)

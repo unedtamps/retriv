@@ -20,18 +20,9 @@ def format_documents(
     *,
     total: int,
     pattern: str | None,
+    queryable: bool = True,
 ) -> str:
-    """Render matches as text, one line per document.
-
-    Follows the shape of the CSV catalogue rather than JSON: these are already
-    small, a model reads a labelled line more reliably than it parses a blob,
-    and it matches what the other tools return.
-
-    Every line carries the workspace, size and date next to the name. Filenames
-    are not unique, and a canonical document may appear once per linked
-    workspace with that workspace's name. The document_id is what
-    download_document and query_rows need anyway.
-    """
+    """Render document matches as one labelled line per document."""
     if not summaries:
         if pattern:
             return f"No document whose name contains {pattern!r} is in scope for this API key.\n\n"
@@ -49,7 +40,11 @@ def format_documents(
         ]
         if summary.is_row_stored:
             details.append(f"{summary.row_count} rows")
-            details.append("queryable with query_rows")
+            details.append(
+                "queryable with query_rows"
+                if queryable
+                else "row queries are not enabled"
+            )
         lines.append("  " + "  ".join(details))
 
     if total > len(summaries):

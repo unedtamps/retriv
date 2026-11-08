@@ -256,8 +256,8 @@ thanks, "what can you do") are the only answers allowed without a tool.
 
 A turn has two possible doors into the documents. `search_context` retrieves prose by
 meaning; `query_rows` runs SQL over tabular rows. The client's model picks, which is
-why `list_queryable_files` exists and why the CSV catalogue is repeated inside the row
-tool's reply. Reading a document in order rather than by relevance is a third move,
+why `list_queryable_files` exists and why a rejected row query hands the catalogue back.
+Reading a document in order rather than by relevance is a third move,
 `read_document`, and it is described below.
 
 `find_documents` is the door in rather than the way out: it maps a name to a
@@ -497,8 +497,8 @@ developer on a fresh clone with a failure whose cause is a service they never na
 Point `RETRIV_SQL_DATABASE_URL` at that role, not at the application DSN: the tool works
 against a full-privilege connection, but then nothing above is doing any work. Leaving it
 unset is the safe default — the tool is never registered and the model cannot reach a
-table, while the catalogue still lists the files through the app's own session so it can
-tell the user the data exists but is not queryable.
+table, while the catalogue still lists the files through the app's own session, including
+paging and filename search, so it can tell the user the data exists but is not queryable.
 
 The password exists twice by necessity — the script creates the role with
 `RETRIV_SQL_READER_PASSWORD`, and asyncpg authenticates with the copy inside the DSN — and
@@ -557,7 +557,6 @@ sequenceDiagram
     alt canonical exists and this workspace has no link
         DB-->>A: document
         A->>DB: INSERT document_workspaces
-        A->>DB: INSERT processing_runs (job_kind=access)
         A-->>W: 200 with duplicate=true
         Note over A,DB: no object, chunk or vector is created again
     else canonical does not exist
@@ -609,9 +608,9 @@ rather than a chunk count.
 
 The search reads the caller's scope from `document_workspaces` at query time: the
 vector statement's join only serves chunks whose document has a live link to one of
-the caller's workspaces. Adding or removing a link queues a small `access` run that
-acknowledges the change; nothing is re-chunked, re-embedded, or rewritten, because
-there is no derived payload to fall behind.
+the caller's workspaces. Adding or removing a link is just that row changing; nothing
+is re-chunked, re-embedded, or rewritten, because there is no derived payload to fall
+behind.
 
 Vectors live in PostgreSQL (`chunk_embeddings.embedding`, a pgvector
 `vector(2000)` column with an HNSW cosine index, part of the baseline schema).
@@ -751,7 +750,6 @@ sequenceDiagram
     A->>DB: SELECT link and document FOR UPDATE
     A->>DB: UPDATE document_workspaces SET deleted_at
     alt other links remain
-        A->>DB: INSERT processing_runs (job_kind=access)
         A-->>U: 204 No Content
         Note over A,DB: the document, object and vectors stay alive
     else this was the last link
@@ -898,7 +896,7 @@ erDiagram
         uuid id PK
         uuid document_id FK
         uuid origin_workspace_id
-        text job_kind "extract, delete, or access sync"
+        text job_kind "extract or delete"
         text status "12 states"
         int attempts
         timestamptz lease_until

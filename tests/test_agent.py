@@ -20,7 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.agents.chat import ChatTurn
 from app.agents.harness import MAX_SEARCH_LIMIT, _execute_tool
 from app.agents.toolkit import ToolRejection
-from app.db.models import AgentModelSetting, Document, DocumentWorkspace
+from app.db.models import (
+    JOB_EXTRACT,
+    AgentModelSetting,
+    Document,
+    DocumentWorkspace,
+    ProcessingRun,
+)
 from app.mcp.runtime import McpRuntime
 from app.retrieval.context import ContextRetriever, RetrievalUnavailable
 from app.retrieval.navigation import DocumentNavigator
@@ -165,6 +171,45 @@ async def seed_retrieval_result(
     runtime_env.results.append([a_source(workspace_id)])
 
 
+async def seed_queryable_csv(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    workspace_id: Any,
+    *,
+    filename: str = "invoices.csv",
+) -> None:
+    async with db_session_factory() as session, session.begin():
+        document = Document(
+            origin_workspace_id=workspace_id,
+            original_filename=filename,
+            detected_media_type="text/csv",
+            size_bytes=20,
+            sha256=uuid4().hex * 2,
+            bucket="raw-documents",
+            object_key=f"raw-documents/{workspace_id}/{uuid4()}",
+        )
+        session.add(document)
+        await session.flush()
+        session.add(
+            DocumentWorkspace(
+                workspace_id=workspace_id,
+                document_id=document.id,
+                filename=filename,
+            )
+        )
+        run = ProcessingRun(
+            document_id=document.id,
+            origin_workspace_id=workspace_id,
+            job_kind=JOB_EXTRACT,
+            pipeline_version="2026.1",
+            status="ready",
+            row_count=2,
+            csv_columns=[{"sheet": "", "columns": ["name", "amount"], "rows": 2}],
+        )
+        session.add(run)
+        await session.flush()
+        document.active_processing_run_id = run.id
+
+
 async def test_chat_without_a_configured_model_is_refused(
     client: httpx.AsyncClient,
     entities: Any,
@@ -245,6 +290,52 @@ async def test_chat_streams_tool_calls_to_an_answer(
     )
     assert "untrusted_document_text" in tool_message["content"]
     assert scripted_model.closed
+
+
+async def test_chat_can_list_queryable_files_without_a_row_reader(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """The catalogue is metadata, so the chat agent can read it with no SQL reader."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_queryable_csv(db_session_factory, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="call-1",
+                    name="list_queryable_files",
+                    arguments={"pattern": "invoices"},
+                )
+            ],
+        ),
+        ChatTurn(content="Finance has invoices.csv.", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "Which invoice files can I query?"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    assert [event["type"] for event in events] == [
+        "turn_start",
+        "tool_call",
+        "tool_result",
+        "final",
+    ]
+    assert events[1]["name"] == "list_queryable_files"
+    assert "invoices.csv" in events[2]["preview"]
+    assert "name, amount" in events[2]["preview"]
+    assert events[3]["content"] == "Finance has invoices.csv."
 
 
 async def test_a_tool_rejection_is_fed_back_to_the_model(

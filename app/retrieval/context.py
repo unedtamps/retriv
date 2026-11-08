@@ -32,11 +32,11 @@ from app.db.models import (
     DocumentChunk,
     DocumentWorkspace,
 )
-from app.documents.search import escape_like
 from app.embeddings.base import EmbeddingProviderError
 from app.embeddings.openai_compatible import truncate_normalize
 from app.embeddings.pgvector import vector_literal
 from app.retrieval.schemas import ContextSource
+from app.retrieval.sql import escape_like
 from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
 
 logger = logging.getLogger(__name__)
