@@ -1,0 +1,59 @@
+{
+  "health/live": {
+    "n": 10,
+    "p50_ms": 0.99,
+    "p95_ms": 1.04,
+    "mean_ms": 0.96
+  },
+  "health/ready": {
+    "n": 10,
+    "p50_ms": 139.24,
+    "p95_ms": 150.81,
+    "mean_ms": 141.15
+  },
+  "workspaces": {
+    "n": 10,
+    "p50_ms": 4.16,
+    "p95_ms": 4.93,
+    "mean_ms": 4.14
+  },
+  "documents": {
+    "n": 10,
+    "p50_ms": 5.44,
+    "p95_ms": 6.68,
+    "mean_ms": 5.53
+  },
+  "document metadata": {
+    "n": 10,
+    "p50_ms": 4.76,
+    "p95_ms": 5.76,
+    "mean_ms": 4.94
+  },
+  "document search q=report": {
+    "n": 10,
+    "p50_ms": 3.56,
+    "p95_ms": 3.91,
+    "mean_ms": 3.59
+  },
+  "document search q=pdf": {
+    "n": 10,
+    "p50_ms": 5.03,
+    "p95_ms": 6.3,
+    "mean_ms": 5.09
+  },
+  "processing runs": {
+    "n": 10,
+    "p50_ms": 3.45,
+    "p95_ms": 4.49,
+    "mean_ms": 3.73
+  },
+  "agent model": {
+    "error": "HTTPStatusError: Client error '403 Forbidden' for url 'http://127.0.0.1:9000/v1/admin/agent-model'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+  },
+  "api keys": {
+    "n": 10,
+    "p50_ms": 2.59,
+    "p95_ms": 2.83,
+    "mean_ms": 2.61
+  }
+}

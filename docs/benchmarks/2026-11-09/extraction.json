@@ -1,0 +1,82 @@
+{
+  "corpus": {
+    "documents": 9,
+    "chunks": 2691,
+    "extracted_text_bytes": 4106437,
+    "document_rows": 2900,
+    "document_images": 79,
+    "workspaces": 1,
+    "embedding_profile": "qwen3-embedding-8b-2000-v1",
+    "embedding_dimensions": 2000,
+    "database_size": "80 MB",
+    "chunk_embeddings_total_size": "63 MB",
+    "hnsw_index_size": "40 MB",
+    "chunk_embeddings_toast_size": "21 MB"
+  },
+  "extraction": [
+    {
+      "label": "410 pages, 1 parser, 4-CPU cgroup",
+      "parallel": 1,
+      "wall_seconds": 167.3647,
+      "pages": 410,
+      "pages_per_second": 2.4497,
+      "cpu_seconds": 653.08,
+      "cpu_per_wall": 3.9,
+      "peak_rss_bytes": 1183338496
+    },
+    {
+      "label": "546 pages, 2 parsers, 4-CPU cgroup",
+      "parallel": 2,
+      "wall_seconds": 233.3764,
+      "pages": 546,
+      "pages_per_second": 2.3396,
+      "cpu_seconds": 919.09,
+      "cpu_per_wall": 3.94,
+      "peak_rss_bytes": 1877659648
+    }
+  ],
+  "warm_sandbox": {
+    "5_pages_ms": [
+      2992,
+      3492,
+      3007
+    ],
+    "30_pages_ms": [
+      10730,
+      10545,
+      10607
+    ]
+  },
+  "cold_vs_warm_tiktoken": {
+    "5_pages_cold_ms": 6357,
+    "5_pages_warm_ms": 3083,
+    "30_pages_cold_ms": 13104,
+    "30_pages_warm_ms": 10669,
+    "cache_file_bytes": 1700000
+  },
+  "cprofile_30_pages": {
+    "total_seconds": 22.233,
+    "onnxruntime_run_seconds": 11.017,
+    "pymupdf_page_get_textpage_seconds": 2.765,
+    "tiktoken_read_file_seconds": 2.398,
+    "ssl_read_seconds": 1.615,
+    "onnx_session_create_seconds": 0.371
+  },
+  "embedding_batches": {
+    "model": "text-embedding-qwen3-embedding-8b",
+    "dimensions": 4096,
+    "query_p50_ms": 39.8,
+    "batch_p50_per_text_ms": {
+      "1": 43.4,
+      "2": 81.0,
+      "3": 121.0,
+      "4": 155.1,
+      "6": 161.5,
+      "8": 174.6,
+      "16": 182.1,
+      "32": 209.8
+    },
+    "nomic_query_p50_ms": 4.4,
+    "nomic_batch18_total_ms": 40.0
+  }
+}
