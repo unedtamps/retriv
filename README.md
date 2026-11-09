@@ -34,6 +34,15 @@ screen recording. The same clip is committed at
 [`docs/media/retriv-promo.mp4`](docs/media/retriv-promo.mp4) with
 [`retriv-promo-poster.jpg`](docs/media/retriv-promo-poster.jpg) beside it.
 
+The chat surface answers across workspaces, shows the tool calls behind an
+answer, and keeps citations attached to the evidence:
+
+![Retriv chat answering a Microsoft 10-K question with a cited TL;DR](docs/images/retriv-chat-answer.png)
+
+*The in-browser agent answers a Microsoft FY2026 10-K question with cited
+headline numbers, and flags a filename trap in the same repository: the file
+named `10-K-2025-As-Filed.pdf` is Apple's filing, not Microsoft's.*
+
 ## Architecture
 
 There is one API process, one worker process, one database, and the external
