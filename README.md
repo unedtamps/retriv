@@ -73,7 +73,7 @@ with one of three roles:
 |---|---:|---:|---:|---:|---:|
 | `owner` | yes | yes | yes | yes | yes |
 | `editor` | yes | yes | yes | yes | no |
-| `viewer` | yes | no | yes | no | no |
+| `viewer` | yes | no | no | no | no |
 
 `admin` is a platform role for user and workspace administration. It does not
 grant access to workspace documents.

@@ -24,9 +24,7 @@ from app.db.models import ApiKey, User
 from app.security.auth import authentication_error
 
 KEY_SCHEME = "rk"
-KEY_ENTROPY_BYTES = 32
 PREFIX_LENGTH = 11
-HASH_ALGORITHM = "sha256"
 LAST_USED_GRANULARITY_SECONDS = 60
 
 _ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"

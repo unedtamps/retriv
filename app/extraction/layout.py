@@ -50,9 +50,6 @@ class LayoutRegion:
     x1: float
     y1: float
 
-    def as_rect(self) -> pymupdf.Rect:
-        return pymupdf.Rect(self.x0, self.y0, self.x1, self.y1)
-
 
 class FigureFinder(Protocol):
     """Whatever answers "where are the figures on this page"."""

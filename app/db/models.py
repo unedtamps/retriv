@@ -141,16 +141,11 @@ class Document(Base):
     __table_args__ = (
         UniqueConstraint("sha256", name="uq_documents_sha256"),
         Index("ix_documents_active_run", "active_processing_run_id"),
-        Index(
-            "ix_documents_origin_workspace_created",
-            "origin_workspace_id",
-            "created_at",
-        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     origin_workspace_id: Mapped[UUID] = mapped_column(
-        ForeignKey("workspaces.id", ondelete="RESTRICT"), index=True
+        ForeignKey("workspaces.id", ondelete="RESTRICT")
     )
     original_filename: Mapped[str] = mapped_column(String(255))
     detected_media_type: Mapped[str] = mapped_column(String(255))
@@ -327,7 +322,6 @@ class DocumentImage(Base):
     __tablename__ = "document_images"
     __table_args__ = (
         UniqueConstraint("document_id", "ref", name="uq_document_images_document_ref"),
-        Index("ix_document_images_document", "document_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -377,11 +371,6 @@ class DocumentRow(Base):
             "sheet",
             "row_number",
             name="uq_document_rows_run_sheet_row",
-        ),
-        Index(
-            "ix_document_rows_active_lookup",
-            "origin_workspace_id",
-            "processing_run_id",
         ),
         Index("ix_document_rows_document_sheet", "document_id", "sheet"),
         Index("ix_document_rows_data", "data", postgresql_using="gin"),
@@ -465,7 +454,7 @@ class ApiKey(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

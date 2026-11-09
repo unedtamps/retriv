@@ -24,7 +24,7 @@ Golden set: [`2026-11-09/golden-current.json`](2026-11-09/golden-current.json)
 
 ### Corpus and queries
 
-The existing `evals/retrieval_golden.json` is stale — its workspace and chunk IDs are not in the current database. I generated a fresh set:
+The old `evals/retrieval_golden.json` was stale — its workspace and chunk IDs were not in the current database. I generated a fresh set and replaced the committed copy with it:
 
 - 60 chunks sampled from the current 2,691 indexed chunks (`token_count >= 100`, seed `0.42`).
 - `qwen3.5-4b` wrote one specific question from each passage, with thinking disabled.

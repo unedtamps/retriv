@@ -126,21 +126,6 @@ class DocumentBlock:
     ref: str = ""
 
 
-
-
-
-def measure_pdf_text_layer(path: Path) -> tuple[int, int]:
-    """Return ``(total_text_chars, page_count)`` for a PDF's own text layer.
-
-    Reads the embedded text directly, without any parser, so the number stays
-    independent of whatever the extractor later does with the file. The
-    worker compares it against the extracted text to catch a parser that
-    silently drops half a document.
-    """
-    with pymupdf.open(path) as pdf:
-        return sum(len(page.get_text().strip()) for page in pdf), pdf.page_count
-
-
 def build_pdf_pages(
     path: Path,
     *,

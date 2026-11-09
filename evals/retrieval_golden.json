@@ -1,158 +1,367 @@
 {
-  "generated_at": "2026-10-17T05:05:20.988460+00:00",
-  "chat_model": "agent-composed",
+  "generated_at": "2026-11-09T07:08:18.319608+00:00",
+  "chat_model": "qwen3.5-4b",
   "embedding_model": "text-embedding-qwen3-embedding-8b",
   "queries": [
     {
-      "query": "When does the FASB's new consolidation guidance issued in early 2015 take effect, and has the company finished assessing its impact?",
-      "chunk_id": "219097b4-2b56-596f-a316-b25edca7da4d",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What valuation models are used to determine the fair value of stock-based payment awards and market-based restricted stock rights?",
+      "chunk_id": "c0c37c7b-e191-5672-b23c-8d3d28c7e22e",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "Why might internal controls over financial reporting fail to prevent or detect a misstatement?",
-      "chunk_id": "46cc03a1-c2f1-508b-928f-26ee1e2bab84",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "How might the launch of a new gaming system influence consumer spending on software for older systems?",
+      "chunk_id": "b3718261-7a4f-5681-95c2-0fc7f8ce7648",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "When did Vivendi stop being treated as a related party of the company?",
-      "chunk_id": "5b721b14-5bc2-514a-9cb2-dd2ac0651c6d",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "Which company is Sony's preferred distributor for PlayStation products in the United Kingdom?",
+      "chunk_id": "a61137f8-b0ba-57cf-a7ce-eff328464109",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "What is the notional amount of the foreign currency forward contracts the company had designated as cash-flow hedges at the end of 2015?",
-      "chunk_id": "064218d9-3e93-528a-879d-a3f286159932",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What specific equity award did Mr. Rao receive accelerated vesting for upon termination without cause or resignation for good reason?",
+      "chunk_id": "2dddad71-a2ae-5b2e-893a-cc4d0662ee2f",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
     },
     {
-      "query": "For 2014, what was the net effect of deferral of net revenues and related cost of sales on income from operations before income tax expense?",
-      "chunk_id": "df0168a0-3273-5a5b-aa21-df80083f13d7",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What is the potential business consequence if a game's rating is changed by an agency?",
+      "chunk_id": "cf21a1ee-0095-560f-bae9-5dac67886927",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "What interest rates and maturity dates apply to the unsecured senior notes the company issued in September 2013?",
-      "chunk_id": "557ed743-18a5-501f-9e97-93d396e57ab2",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "When do the registration rights contained in the IRA expire?",
+      "chunk_id": "5ea82154-e022-5c22-b33b-8773d748a2a2",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
     },
     {
-      "query": "How did the company's declared dividend per share change from 2011 through 2015?",
-      "chunk_id": "48d8d73c-2981-5cff-bf4c-77e2b0ea8284",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "Who must approve commitments made by UNDP for future periods?",
+      "chunk_id": "3c7b31b1-f268-5c62-9910-b3dba67f2efb",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "b2500c48-6a26-4b9d-b504-d0693316ac83"
     },
     {
-      "query": "What was the company's cash and cash equivalents balance at the end of 2013?",
-      "chunk_id": "cf5e8f2f-4928-575d-8bf1-56baca2e941d",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What was the amount of amortization of net actuarial gain or loss recognized for qualified pension benefits?",
+      "chunk_id": "85ca39c0-b09a-5143-8202-a5d9d360d697",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
     },
     {
-      "query": "What typically happens to downloadable content sales for a game that is not well received?",
-      "chunk_id": "41af28e0-c820-5568-ac18-1bc6ae2c2d56",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What percentage of net income was reported for the year ended December 31?",
+      "chunk_id": "a75d503a-0627-5e16-9930-00e3972d946c",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "What happens if the ESRB or another ratings agency re-rates one of the company's games after release?",
-      "chunk_id": "a15f2ed0-3ecc-597e-8060-418d5bc482e2",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What types of financial instruments does the company utilize to mitigate risks related to foreign exchange rates, interest rates, and commodity prices?",
+      "chunk_id": "514b09b8-d579-5758-848f-d045e42bc052",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
     },
     {
-      "query": "What factors does management weigh when estimating allowances for product returns and price protection?",
-      "chunk_id": "8ca4b3d5-ba8c-5c73-8b79-dab140e11ad6",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "How many million restricted stock units were excluded from the table because their performance condition was not considered probable for the six months ended June 30, 2026?",
+      "chunk_id": "9b025c72-c2e4-58f0-9abb-4173d23e1da0",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
     },
     {
-      "query": "What are the financial consequences if the company invests in a new technology or platform that does not become commercially successful?",
-      "chunk_id": "8a1aa0d1-bcf6-52e6-9183-f16d414bea03",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "Did the entity identified as 3M Little Rock receive a notice of a pattern of violations under Section 104(e)?",
+      "chunk_id": "5606f677-ed45-5619-9985-593816f7dd0c",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
     },
     {
-      "query": "Why is a delay in a game's launch date so damaging to the company's yearly results?",
-      "chunk_id": "d38cbb82-8507-5481-8380-1624b367366b",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What specific financial statements are included in the XBRL-formatted data from 3M Company's 2015 annual report?",
+      "chunk_id": "5dc90a2c-e22f-5148-aadf-aca4200a93e8",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
     },
     {
-      "query": "What were the main reasons cash used in investing activities jumped in 2015?",
-      "chunk_id": "2f844380-d3b5-5830-9bab-75e90c2d8601",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What potential consequences might arise if a company fails to comply with applicable laws regarding interactive entertainment software?",
+      "chunk_id": "710ab562-8c85-5ee7-b492-cc09782a214b",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "Why do console makers have so much leverage over how much the company earns on its games?",
-      "chunk_id": "a5c0e2bd-8bd7-5af3-b124-5127acaadc0f",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "Does the company have to register the shares with the SEC?",
+      "chunk_id": "473b62d2-328b-5a68-8c7d-2f11d5768d50",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "What debt repayment did the company make right after the end of 2015, and why wasn't it shown as a current liability on the 2015 balance sheet?",
-      "chunk_id": "bf3459d6-7973-5a70-a57c-8fd5bc2f2cf0",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "Who is eligible to purchase the Class A common stock in the Philippines?",
+      "chunk_id": "fe26ed88-8873-562b-b410-fba3d431fcac",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
     },
     {
-      "query": "What does the September 2015 accounting standard on measurement-period adjustments change about how acquisition adjustments are reported?",
-      "chunk_id": "cbd45072-cb4b-50c6-846e-c406c872f82c",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What specific risks could arise if natural disasters or severe weather events disrupt the areas where essential inputs are manufactured or where company facilities are situated?",
+      "chunk_id": "4c7d411f-1bc4-5fcf-8b11-f7e2c6841691",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
     },
     {
-      "query": "How does management estimate how much of its accounts receivable might be uncollectible?",
-      "chunk_id": "1b3b2e7c-d657-526d-8988-d3f617fa64be",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "How long does a participant have to exercise an option or stock appreciation right after retiring if they have not fully exercised it?",
+      "chunk_id": "5531312e-e2bd-5f37-8a74-0132bee84340",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
     },
     {
-      "query": "Why can retailers demand better terms when competition for shelf space intensifies?",
-      "chunk_id": "be7630b3-03ac-5d90-b23a-812d9d113919",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "Could the company's reported net income be negatively impacted by new rules regarding how revenues and taxes are recorded?",
+      "chunk_id": "4d00aea7-dc63-5746-9f34-0ffbc9e74148",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "Which filing first incorporated the company's 2014 Incentive Plan by reference?",
-      "chunk_id": "5765d0cd-e91e-5f29-9c94-d93f5f895b60",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What was the total stockholders' deficit as of December 31, 2022?",
+      "chunk_id": "5a638832-f569-5437-a571-8d5c41d067e0",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
     },
     {
-      "query": "How does the company recognize revenue from durable virtual goods sold inside its games?",
-      "chunk_id": "7b7fa52b-4672-5076-bd24-62d580f5553c",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What is the minimum length of time required for a time-based Restricted Period unless the Committee decides otherwise?",
+      "chunk_id": "09118f7b-25f6-5ec2-9944-3352782315a7",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
     },
     {
-      "query": "What percentage of the company's net revenues came from international sales in 2015?",
-      "chunk_id": "5b417568-750f-5761-a3b6-c376c7fdd518",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What currency is used for payments on the 2025 Notes if the euro is unavailable due to exchange controls or other circumstances beyond the Company's control?",
+      "chunk_id": "fd8e39dd-98b8-5022-9e21-61a0485406a5",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "88098a15-dab6-4a5e-89ce-f29d624bb93c"
     },
     {
-      "query": "How are arrangements that bundle software with hardware or services accounted for?",
-      "chunk_id": "4b39e051-cc9d-53d2-a9e6-308e9913b86f",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "What role does international expansion play in the company's future revenue growth?",
+      "chunk_id": "7e662396-79e9-5e34-b5ce-1f2c91409efe",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
     },
     {
-      "query": "Under what circumstances may a stock option holder transfer their award to someone else?",
-      "chunk_id": "284720b8-f6ea-5579-981c-a56687eaa4ec",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "How much cash and cash equivalents did the company hold outside of the United States as of December 31, 2015?",
+      "chunk_id": "0cf594e9-f16d-54cf-8030-c7d2fcc71317",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     },
     {
-      "query": "If the stock option terms created a tax liability under Section 409A, would the company cover the holder's taxes?",
-      "chunk_id": "a8ca4c4b-898b-507e-9e8b-8e1b8da995e6",
-      "workspace_id": "1f8aa607-b247-4c64-8d97-7b4833187f9e",
-      "document_id": "622de001-749f-400b-8d74-a1e580d043ed"
+      "query": "Did any non-executive officers receive private aviation for personal travel in 2025?",
+      "chunk_id": "f2101838-db6c-5eb3-a4bb-3c71a7287d84",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "What was the total adverse impact on after-tax earnings from foreign exchange rates in 2015?",
+      "chunk_id": "353f6f11-450a-5911-b90b-aedd72c0dd23",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "How many shares of Class F common stock will be issued to the Founder LLC before the offering concludes?",
+      "chunk_id": "65d44fd0-86d7-5387-b4dc-0a98d769d142",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "What specific documents are incorporated by reference for Item 10 regarding corporate governance?",
+      "chunk_id": "5e7af4a3-85bc-5c56-b3dd-0c972609b5bb",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "Which company's deferred compensation plan is listed as Exhibit 4.30?",
+      "chunk_id": "d2d3c01c-ebad-526e-8865-52dc5d64d674",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "88098a15-dab6-4a5e-89ce-f29d624bb93c"
+    },
+    {
+      "query": "What role do early adopters play in accelerating the deployment of a new technology within an organization?",
+      "chunk_id": "ff1e4b24-884c-542a-a00e-5d6634a87e9e",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "What specific company is cited as a potential target for state-sponsored cyberattacks due to its advanced vulnerability discovery capabilities?",
+      "chunk_id": "fb8c85d7-1b73-5ccd-a505-f85b9a348c0f",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "Can the company currently borrow money under its revolving credit facility?",
+      "chunk_id": "f77cd319-fdb3-5735-9305-8562ac399856",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "What is the minimum frequency required for auditing UNDP programme activities that are not part of sector budget support or pooled funds?",
+      "chunk_id": "d3c7c4b6-0425-59d8-aed6-58b79ffb1a86",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "b2500c48-6a26-4b9d-b504-d0693316ac83"
+    },
+    {
+      "query": "How much money has Anthropic invested in partnership studies regarding the potential misuse of their technology?",
+      "chunk_id": "417f516b-3b42-5839-9713-1e9b5b41d291",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "When will the performance-based vesting condition for restricted stock units be considered probable of being satisfied?",
+      "chunk_id": "d87bb13b-4a7d-5925-b49a-4a474c98b904",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "What date did management conclude that the company's internal controls were effective?",
+      "chunk_id": "4aff3de5-b891-58ef-84ad-7bc8ed8151cc",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "88098a15-dab6-4a5e-89ce-f29d624bb93c"
+    },
+    {
+      "query": "How might the higher compute intensity of agentic offerings impact the company's profitability if current pricing models do not adequately cover their costs?",
+      "chunk_id": "7d919b7a-5701-5e5e-ade2-9063c2376383",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "What types of intellectual property losses does the company agree to cover under its standard indemnification agreements?",
+      "chunk_id": "bf16e76f-c8ae-5d04-89c2-48cb2e802ea7",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "How many banks and financial institutions did 3M have ISDA agreements with as of December 31, 2015?",
+      "chunk_id": "eef38e4c-7773-5077-9adc-bb793f2d4784",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "How many jobs were added in 2014 due to acquisitions?",
+      "chunk_id": "7b68810e-ec87-57d4-87b2-a070e774e79b",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "Did the company experience any significant realized gains or losses from its cash equivalents and short-term investments during the six months ending June 30, 2026?",
+      "chunk_id": "f5fa267d-b813-5ace-a387-b2aa6ec57d86",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "What was the total increase or decrease in Activision's net revenues between the years ended December 31, 2014, and 2015?",
+      "chunk_id": "cc11702a-8dd0-5006-a212-d9c563210dbd",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "Who has the power to sign trust fund agreements and issue terms of reference?",
+      "chunk_id": "9705caf5-6c07-5999-bd15-0b15ec3c08f6",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "b2500c48-6a26-4b9d-b504-d0693316ac83"
+    },
+    {
+      "query": "When do the restrictions in Section 203 of the Delaware General Corporation Law begin to apply to the company?",
+      "chunk_id": "78410cc1-cc8a-50aa-b0ac-dda8faa66e18",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "How much was the stock-based compensation expense related to employee stock options and restricted stock rights for Addil?",
+      "chunk_id": "4f064f25-8088-5857-a5bc-fb583a7279fa",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "What was the percentage change in net sales for the Industrial business segment between 2014 and 2015?",
+      "chunk_id": "5f4832be-7c47-527c-9e30-822a047ba15d",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "How much did the company spend on share repurchases during 2025?",
+      "chunk_id": "af50b10a-f18b-5391-9c64-a63a4401c39c",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "88098a15-dab6-4a5e-89ce-f29d624bb93c"
+    },
+    {
+      "query": "When does the new stock compensation guidance become effective?",
+      "chunk_id": "a20fe5d9-c873-5aac-b30a-b16993622a34",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "How much cash did the company receive from stock option exercises in 2015?",
+      "chunk_id": "12af72dd-da15-56a3-8037-5eeed7110ab8",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "What factors cause the expense related to convertible notes, derivative liabilities, and SAFEs to increase?",
+      "chunk_id": "f40c8dcc-66ae-5d93-8d8b-336eca32dc65",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "How many times did the average daily volume of code contributed to the company's codebase per engineer increase between the year ended December 31, 2024, and the three months ended September 30, 2026?",
+      "chunk_id": "c34ae111-5db6-5528-9b5f-5cf4ff10b9dc",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "How much did currency effects decrease 3M's pre-tax income in 2015?",
+      "chunk_id": "9fbbc60d-0ca8-58de-a8cd-a3731e0ad974",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "What was the percentage of consolidated net revenues that product development represented in 2015?",
+      "chunk_id": "8cf0a1f0-6e5c-507c-ad8d-1c51a83e4d67",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "What is the expected range for the company's effective tax rate in 2016?",
+      "chunk_id": "7a3e7004-fd1a-5aa3-9164-d3b3c46cf65e",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "What potential conflict could arise between the company's long-term focus and the financial interests of its stockholders?",
+      "chunk_id": "ecde2592-5e4c-5e2c-9a6f-0e7607d57b65",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "Which companies are mentioned as integrated video game console hardware and software competitors?",
+      "chunk_id": "7c4d8659-498d-517c-a5ce-74df9d9a2c9b",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "How much did the company spend on product development for stock-based compensation in 2013?",
+      "chunk_id": "6beeb400-fd57-53a4-849e-b09ada356ff5",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
+    },
+    {
+      "query": "What factors can cause the company's judgment regarding future profitability to change?",
+      "chunk_id": "5a077049-c56b-52a6-9b8f-2aff9f924484",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327"
+    },
+    {
+      "query": "What was the estimated income tax benefit in 2014 resulting from reduced tax rates or exemptions on manufacturing activities in specific countries?",
+      "chunk_id": "ab44f72a-c695-5256-862f-204f2f8c24e1",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "29384d21-3afc-4733-a537-06c57dc25d46"
+    },
+    {
+      "query": "What is the page number listed for the section covering Quantitative and Qualitative Disclosures about Market Risk?",
+      "chunk_id": "cad4dacf-12ce-5176-99c8-64c804b3063d",
+      "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb",
+      "document_id": "ba3ab7e0-0b84-44f0-b386-74c663140f91"
     }
-  ],
-  "refreshed_at": "after the row-wise table chunking reindex"
+  ]
 }

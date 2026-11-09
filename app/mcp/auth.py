@@ -19,11 +19,10 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import User, Workspace
+from app.db.models import User
 from app.retrieval.scope import searchable_workspace_ids
 from app.security.api_keys import authenticate_api_key, bearer_api_key
 from app.security.auth import authentication_error
-from app.security.authorization import WorkspacePermission, load_workspace_access
 
 
 @dataclass(frozen=True)
@@ -48,22 +47,3 @@ async def principal_from_headers(
     user = await user_from_authorization(headers.get("authorization") if headers else None, session)
     workspace_ids = await searchable_workspace_ids(session, user.id)
     return McpPrincipal(user=user, workspace_ids=workspace_ids)
-
-
-async def require_workspace(
-    session: AsyncSession,
-    *,
-    user: User,
-    workspace_id: UUID,
-    permission: WorkspacePermission,
-) -> Workspace:
-    """Check one workspace the caller named, rather than the whole scope.
-
-    Reading uses the derived scope; writing takes an explicit workspace and
-    the role permission for it, so a viewer cannot upload by way of a key that
-    also happens to see other workspaces.
-    """
-    access = await load_workspace_access(
-        session, workspace_id=workspace_id, user=user, permission=permission
-    )
-    return access.workspace
