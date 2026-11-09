@@ -121,9 +121,11 @@ single requests took **2.140 s** (~1%, in favour of the batch). Request grouping
 LM Studio processes the inputs one by one.
 
 The per-input cost is input length: roughly **35 ms + 0.14 ms/char** (2,000 chars ≈ 288 ms;
-8,000 chars ≈ 1.18 s). The real lever is **model choice** — `nomic-embed-text-v1.5` embedded
-the same 16 medium chunks in **76.7 ms vs 2.12 s** (~28×) — or shorter chunks, with a
-retrieval-quality evaluation. Keep the batch at 16 to reduce HTTP requests.
+8,000 chars ≈ 1.18 s). The real lever is **model choice** — `nomic-embed-text-v1.5` is 24–36× faster but, in a
+60-query English comparison, reached only 75% recall@8 versus Qwen3’s 95%. Qwen3 truncated
+to 768 dimensions stayed at 93.3%, so that is the preferred storage/index optimisation.
+See [`2026-11-09-embedding-comparison.md`](2026-11-09-embedding-comparison.md). Keep the
+batch at 16 to reduce HTTP requests.
 
 **Effort:** — · **Impact:** none from batch tuning; model choice is a quality trade-off.
 

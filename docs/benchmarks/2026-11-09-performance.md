@@ -286,6 +286,11 @@ The fit is roughly **35 ms fixed + 0.14 ms/char**. The 16-text controlled set av
 
 The real lever is **model choice**, not batch size. `nomic-embed-text-v1.5` (768 dims) embedded the same 16 medium chunks in **76.7 ms (4.8 ms/text)** versus **2.12 s (132.6 ms/text)** for the 8B model — about **28×** on this set. That is a retrieval-quality trade-off, not a free win, but it is far larger than anything batch tuning can do. Shortening chunks reduces the per-char term linearly; the batch setting stays at 16 because it is marginally faster and uses 16× fewer requests.
 
+A full 60-query English retrieval comparison is in
+[`2026-11-09-embedding-comparison.md`](2026-11-09-embedding-comparison.md): nomic with its
+required prefixes reached 75% recall@8 versus Qwen3’s 95%, while Qwen3 truncated to 768
+dimensions stayed at 93.3% — the storage/index win without the model swap.
+
 ### 3.7 Row queries
 
 On 2,900 rows via the read-only role:
@@ -768,7 +773,9 @@ items (P1-10 to P1-15), and the P2 maintainability/observability work.
 | [`mcp.json`](2026-11-09/mcp.json) | MCP tools with tracing enabled (the `:9000` API) |
 | [`mcp-tracing-off.json`](2026-11-09/mcp-tracing-off.json) | MCP tools with `RETRIV_TRACING_ENABLED=false` (the `:9101` API) |
 | [`api.json`](2026-11-09/api.json) | HTTP route timings |
-| [`extraction.json`](2026-11-09/extraction.json) | extraction batches, warm/cold sandbox timings, cProfile summary, embedding batch table |
+| [`extraction.json`](2026-11-09/extraction.json) | extraction batches, warm/cold sandbox timings, cProfile summary, controlled embedding batch/length data |
+| [`embedding-model-comparison.json`](2026-11-09/embedding-model-comparison.json) | Qwen3 vs nomic retrieval metrics, per-query ranks, bootstrap intervals, speed |
+| [`golden-current.json`](2026-11-09/golden-current.json) | the 60 fresh English questions used for the embedding comparison |
 
 ### Trace used for the search breakdown
 
