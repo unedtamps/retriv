@@ -146,7 +146,7 @@ that held the picture.
   from “the document was never extracted”.
 - `query_rows` runs model-written SQL under a read-only role and PostgreSQL
   row-level security.
-- `download_document` returns a short-lived signed object-store link and a
+- `get_document_link` returns a short-lived signed object-store link and a
   permission-checked API URL; the bytes never pass through the model context.
 
 The search reads workspace scope from the `document_workspaces` table at query

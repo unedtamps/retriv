@@ -298,7 +298,7 @@ async def test_download_accepts_an_api_key(
     entities: SeededEntities,
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """The URL a download_document tool hands out is fetched with the same key.
+    """The URL a get_document_link tool hands out is fetched with the same key.
 
     This is the one route where an MCP credential is honoured, and it exists
     so the agent can retrieve the bytes the tool pointed it at without the

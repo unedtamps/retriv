@@ -9,7 +9,7 @@ and how the answer is shaped.
 There is no write tool here. Upload, status and deletion live in the HTTP API
 and the dashboard, because they are operations a person decides to take, not
 ones a model should reach for unprompted. An agent that needs the original
-file gets its address from ``download_document`` and fetches it itself.
+file gets its address from ``get_document_link`` and fetches it itself.
 
 Two rules shape every tool here:
 
@@ -90,7 +90,7 @@ def _instructions(*, row_queries: bool) -> str:
     )
     tail = (
         "\n\nWhen you need a document's original file rather than a passage "
-        "from it, call download_document. It returns two addresses: `link`, a "
+        "from it, call get_document_link. It returns two addresses: `link`, a "
         "signed URL at the file store that works for a few minutes with no "
         "header, and `url`, this API's own route, which needs the same "
         "Authorization header you use here. Offer `link` to the person who "
@@ -360,7 +360,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         are searchable, `processing` ones are not yet. A CSV or a workbook
         also shows its row count and is queryable with query_rows; any other
         file is read with search_context, or fetched whole with
-        download_document.
+        get_document_link.
 
         Filenames are not unique, and one canonical document can appear in
         several linked workspaces with a different name in each. Compare
@@ -416,7 +416,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
 
     @mcp.tool()
     @_guarded
-    async def download_document(
+    async def get_document_link(
         ctx: Context,
         document_id: UUID,
         workspace_id: UUID | None = None,
@@ -438,7 +438,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         Requires the download permission on the workspace, so a viewer is
         refused before either address is minted.
         """
-        return await (await _kit(box.runtime, ctx.headers)).download_document(
+        return await (await _kit(box.runtime, ctx.headers)).get_document_link(
             workspace_id=workspace_id, document_id=document_id
         )
 

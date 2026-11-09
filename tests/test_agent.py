@@ -511,7 +511,7 @@ async def test_download_refuses_a_role_without_the_permission(
             tool_calls=[
                 ToolCall(
                     id="call-1",
-                    name="download_document",
+                    name="get_document_link",
                     arguments={
                         "document_id": str(document_id),
                         "workspace_id": str(entities.legal.id),

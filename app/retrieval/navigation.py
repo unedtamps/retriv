@@ -131,7 +131,7 @@ class DocumentNavigator:
 
         Bounded twice: by ``limit`` from the caller and by
         ``navigation_token_budget`` from the server. The token bound is what
-        keeps the response from becoming the problem ``download_document`` refuses
+        keeps the response from becoming the problem ``get_document_link`` refuses
         to create, so it is applied while rows are accumulated rather than by
         trimming afterwards.
         """

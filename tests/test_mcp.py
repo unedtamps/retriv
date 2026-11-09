@@ -539,7 +539,7 @@ async def test_tools_are_the_documented_set(mcp: McpEnv) -> None:
         "describe_document",
         "query_rows",
         "list_queryable_files",
-        "download_document",
+        "get_document_link",
         "find_documents",
         "list_workspaces",
         "list_images",
@@ -759,7 +759,7 @@ async def test_find_documents_without_a_pattern_lists_everything(
     body = text_of(result)
     assert "one.pdf" in body
     assert "two.csv" in body
-    assert "download_document" in body
+    assert "get_document_link" in body
 
 
 async def test_find_documents_says_so_when_nothing_matches(
@@ -843,13 +843,13 @@ async def test_find_documents_reports_when_the_page_is_truncated(
     assert "and 2 more" in body
 
 
-async def test_download_document_returns_a_time_limited_signed_link(
+async def test_get_document_link_returns_a_time_limited_signed_link(
     mcp: McpEnv,
 ) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -869,7 +869,7 @@ async def test_the_link_window_is_the_configured_one(
     seeded = await _seed_document(mcp, filename="ledger.csv")
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -877,13 +877,13 @@ async def test_the_link_window_is_the_configured_one(
     assert mcp.storage.presigned[-1][2] == 45
 
 
-async def test_download_document_returns_the_api_url_and_metadata(
+async def test_get_document_link_returns_the_api_url_and_metadata(
     mcp: McpEnv,
 ) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -897,11 +897,11 @@ async def test_download_document_returns_the_api_url_and_metadata(
     assert "size_bytes=16" in body
 
 
-async def test_download_document_returns_no_bytes(mcp: McpEnv) -> None:
+async def test_get_document_link_returns_no_bytes(mcp: McpEnv) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -910,7 +910,7 @@ async def test_download_document_returns_no_bytes(mcp: McpEnv) -> None:
     assert body.count("name,amount") == 0
 
 
-async def test_download_document_falls_back_to_the_url_when_signing_fails(
+async def test_get_document_link_falls_back_to_the_url_when_signing_fails(
     mcp: McpEnv,
 ) -> None:
     """A store that cannot sign must not cost the caller the file.
@@ -922,7 +922,7 @@ async def test_download_document_falls_back_to_the_url_when_signing_fails(
     mcp.storage.presign_error = True
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -931,13 +931,13 @@ async def test_download_document_falls_back_to_the_url_when_signing_fails(
     assert "signed" in text_of(result)
 
 
-async def test_download_document_refuses_a_workspace_without_download_rights(
+async def test_get_document_link_refuses_a_workspace_without_download_rights(
     mcp: McpEnv,
 ) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
     result = await mcp.session.call(
         mcp.bob_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -946,13 +946,13 @@ async def test_download_document_refuses_a_workspace_without_download_rights(
     assert mcp.storage.presigned == []
 
 
-async def test_download_document_refuses_a_workspace_outside_the_key(
+async def test_get_document_link_refuses_a_workspace_outside_the_key(
     mcp: McpEnv,
 ) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
     result = await mcp.session.call(
         mcp.admin_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -961,7 +961,7 @@ async def test_download_document_refuses_a_workspace_outside_the_key(
     assert mcp.storage.presigned == []
 
 
-async def test_download_document_refuses_a_document_being_deleted(
+async def test_get_document_link_refuses_a_document_being_deleted(
     mcp: McpEnv,
 ) -> None:
     seeded = await _seed_document(mcp, filename="ledger.csv")
@@ -973,7 +973,7 @@ async def test_download_document_refuses_a_document_being_deleted(
 
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -982,10 +982,10 @@ async def test_download_document_refuses_a_document_being_deleted(
     assert mcp.storage.presigned == []
 
 
-async def test_download_document_refuses_an_unknown_document(mcp: McpEnv) -> None:
+async def test_get_document_link_refuses_an_unknown_document(mcp: McpEnv) -> None:
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(uuid4()),
     )
@@ -993,7 +993,7 @@ async def test_download_document_refuses_an_unknown_document(mcp: McpEnv) -> Non
     assert "No such document" in text_of(result)
 
 
-async def test_download_document_reports_a_document_whose_object_is_gone(
+async def test_get_document_link_reports_a_document_whose_object_is_gone(
     mcp: McpEnv,
 ) -> None:
     """Metadata can outlive the object it points at; that must be a message."""
@@ -1001,7 +1001,7 @@ async def test_download_document_reports_a_document_whose_object_is_gone(
     mcp.storage.objects.pop(("raw-documents", seeded.object_key))
     result = await mcp.session.call(
         mcp.alice_key,
-        "download_document",
+        "get_document_link",
         workspace_id=str(mcp.entities.legal.id),
         document_id=str(seeded.document_id),
     )
@@ -1031,7 +1031,7 @@ async def test_the_row_tool_is_absent_when_no_reader_is_configured(
         "get_document_outline",
         "describe_document",
         "list_queryable_files",
-        "download_document",
+        "get_document_link",
         "find_documents",
         "list_workspaces",
         "list_images",

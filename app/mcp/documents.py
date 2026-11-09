@@ -56,6 +56,6 @@ def format_documents(
     if pattern is None:
         body += (
             "\nUse this when you need a document_id: pass it to "
-            "download_document, or to query_rows for a CSV or workbook.\n"
+            "get_document_link, or to query_rows for a CSV or workbook.\n"
         )
     return body + "\n\n"

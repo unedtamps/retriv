@@ -224,7 +224,7 @@ through the same toolkit. Dashed arrows are response paths. An editable copy liv
 
 The tools are `list_workspaces`, `find_documents`, `search_context`,
 `search_text`, `read_document`, `get_document_outline`, `describe_document`,
-`list_queryable_files`, `query_rows`, `download_document`, `list_images` and
+`list_queryable_files`, `query_rows`, `get_document_link`, `list_images` and
 `get_image`. `query_rows` is registered only when `RETRIV_SQL_DATABASE_URL` is
 set: an absent tool is something a model stops trying, whereas a tool that
 always answers "not enabled" is one it keeps retrying.
@@ -268,7 +268,7 @@ because **filenames are not unique** and one document can be linked to several
 workspaces with a different name in each. Content is deduplicated globally; the
 workspace and filename on a result come from the link that made it visible.
 
-`download_document` is the way out to the file itself, and it is worth understanding what
+`get_document_link` is the way out to the file itself, and it is worth understanding what
 it deliberately does not do: it returns addresses and metadata, never the bytes. A tool
 result is what lands in the model's context, so a 566 KB PDF delivered as a result is
 roughly 189k tokens of base64 in the prompt. Instead it returns two ways to fetch the
@@ -326,7 +326,7 @@ sequenceDiagram
     A->>DB: allowlist, read-only, retriv_reader, RLS
     DB-->>A: rows, or values for an aggregate
     A-->>C: the evidence, or "no relevant sources"
-    Note over C,A: or download_document, which returns two addresses
+    Note over C,A: or get_document_link, which returns two addresses
     A->>DB: membership holding download, checked once
     A-->>C: link (signed, short-lived) and url (this API)
     C->>M: GET the signed link, no header
@@ -814,7 +814,7 @@ on the key: the workspaces it reaches are read from the owning user's membership
 request, so demoting the user, disabling them, or revoking the key each narrow the next
 tool call on their own.
 
-A key reaches exactly two things: `/mcp`, and the one HTTP route `download_document`
+A key reaches exactly two things: `/mcp`, and the one HTTP route `get_document_link`
 points at -- `GET /v1/workspaces/{id}/documents/{id}/download`, which is why that route
 accepts a key where every other route still requires the dashboard's JWT. It exists so an
 agent can fetch the bytes a tool pointed it at without the file passing through the model.

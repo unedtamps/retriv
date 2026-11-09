@@ -577,7 +577,7 @@ class AgentToolKit:
             )
         )
 
-    async def download_document(
+    async def get_document_link(
         self, *, document_id: UUID, workspace_id: UUID | None = None
     ) -> str:
         runtime = self._runtime

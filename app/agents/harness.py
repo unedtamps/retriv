@@ -270,7 +270,7 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "download_document",
+                "name": "get_document_link",
                 "description": (
                     "Get the address of a document's original file and its metadata. "
                     "The bytes never pass through the model; fetch the address's url "
@@ -486,13 +486,13 @@ async def _execute_tool(
             workspace_id=workspace_id, document_id=document_id, ref=ref[:100]
         )
         return ToolOutcome(text=payload.text)
-    if name == "download_document":
+    if name == "get_document_link":
         document_id = _uuid_argument(arguments, "document_id")
         workspace_id = _uuid_argument(arguments, "workspace_id")
         if document_id is None or workspace_id is None:
             raise ToolRejection("Both 'document_id' and 'workspace_id' are required.")
         return ToolOutcome(
-            text=await kit.download_document(
+            text=await kit.get_document_link(
                 workspace_id=workspace_id, document_id=document_id
             )
         )

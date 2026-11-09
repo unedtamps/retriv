@@ -218,7 +218,7 @@ Persistent streamable-HTTP session, 5 measured calls each after a warm-up. “In
 | `list_workspaces` | 5.90 ms | 0.81 ms | ~5 ms | 2 queries |
 | `query_rows` (count) | 4.99 ms | 0.71 ms | ~4.3 ms | row SQL + link lookup |
 | `get_image` | not measured | — | — | storage-bound |
-| `download_document` | not measured | — | — | S3 presign |
+| `get_document_link` | not measured | — | — | S3 presign |
 
 The fixed MCP overhead is **~4–7 ms per call**, of which ~1.1 ms is authentication (endpoint middleware 0.6 ms + per-tool re-auth 0.4–0.8 ms) and the rest is JSON-RPC/SSE, tracing, formatting and event-loop scheduling. For metadata tools whose actual work is ~1 ms, this overhead is larger than the work, but it is not a large absolute cost. Tracing adds roughly **1–4 ms** per call; with tracing disabled, cheap tools measured 3.8–8.8 ms.
 
