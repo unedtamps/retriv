@@ -42,7 +42,7 @@ from app.infrastructure.storage import get_object_storage
 from app.main import create_app
 from app.mcp.runtime import McpRuntime
 from app.mcp.server import _instructions
-from app.retrieval.context import ContextRetriever
+from app.retrieval.context import ContextRetriever, RetrievalUnavailable
 from app.retrieval.navigation import DocumentNavigator
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import (
@@ -81,6 +81,7 @@ class FakeRetriever(ContextRetriever):
         self.results: list[list[ContextSource]] = []
         self.text_calls: list[tuple[str, list[UUID], int, UUID | None]] = []
         self.text_results: list[list[ContextSource]] = []
+        self.error: Exception | None = None
 
     async def retrieve(
         self,
@@ -97,6 +98,8 @@ class FakeRetriever(ContextRetriever):
         self.budgets.append(budget)
         self.min_scores.append(min_score)
         self.document_ids.append(document_id)
+        if self.error is not None:
+            raise self.error
         return self.results.pop(0) if self.results else []
 
     async def search_text(
@@ -108,6 +111,8 @@ class FakeRetriever(ContextRetriever):
         document_id: UUID | None = None,
     ) -> list[ContextSource]:
         self.text_calls.append((query, list(workspace_ids), limit, document_id))
+        if self.error is not None:
+            raise self.error
         return self.text_results.pop(0) if self.text_results else []
 
 
@@ -502,6 +507,25 @@ async def test_search_context_reports_an_empty_scope(mcp: McpEnv) -> None:
     assert result["isError"] is False
     assert "No searchable workspace" in text_of(result)
     assert mcp.retriever.calls == []
+
+
+async def test_search_context_translates_a_retrieval_outage(mcp: McpEnv) -> None:
+    """An embedding/SQL outage is a tool error, not an MCP crash."""
+    mcp.retriever.error = RetrievalUnavailable("embedding endpoint is down")
+
+    result = await mcp.session.call(mcp.alice_key, "search_context", query="revenue")
+
+    assert result["isError"] is True
+    assert "temporarily unavailable" in text_of(result)
+
+
+async def test_search_text_translates_a_retrieval_outage(mcp: McpEnv) -> None:
+    mcp.retriever.error = RetrievalUnavailable("database is unavailable")
+
+    result = await mcp.session.call(mcp.alice_key, "search_text", query="revenue")
+
+    assert result["isError"] is True
+    assert "temporarily unavailable" in text_of(result)
 
 
 async def test_tools_are_the_documented_set(mcp: McpEnv) -> None:
@@ -1381,6 +1405,46 @@ async def test_get_document_outline_refuses_an_unknown_document(mcp: McpEnv) -> 
 
     assert result["isError"] is True
     assert "No readable document" in text_of(result)
+
+
+async def test_read_document_refuses_an_unknown_document(mcp: McpEnv) -> None:
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "read_document",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(uuid4()),
+    )
+
+    assert result["isError"] is True
+    assert "No readable document" in text_of(result)
+
+
+async def test_read_document_refuses_a_row_stored_document(mcp: McpEnv) -> None:
+    seeded = await _seed_document(mcp, filename="ledger.csv")
+
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "read_document",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(seeded.document_id),
+    )
+
+    assert result["isError"] is True
+    assert "stored as rows" in text_of(result)
+
+
+async def test_read_document_refuses_a_workbook(mcp: McpEnv) -> None:
+    seeded = await _seed_document(mcp, filename="ledger.xlsx")
+
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "read_document",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(seeded.document_id),
+    )
+
+    assert result["isError"] is True
+    assert "CSV or workbook" in text_of(result)
 
 
 async def _seed_processed_document(

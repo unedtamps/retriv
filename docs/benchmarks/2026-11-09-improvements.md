@@ -4,6 +4,11 @@
 **Scope:** backend (`app/`, `worker/`, `alembic/`, tests, deployment); the web app is mentioned only where it shares a contract.  
 **Basis:** the performance measurements in [`2026-11-09-performance.md`](2026-11-09-performance.md), plus a code review of the merged tip `2e2ab2f`.
 
+> **Status (2026-11-09):** P0-1, P0-2, P0-5, P1-1 and P1-2 are implemented in this branch,
+> and the workbook half of P2-8 was fixed alongside P0-1. See
+> [`2026-11-09-performance.md#9-applied-fixes-2026-11-09`](2026-11-09-performance.md#9-applied-fixes-2026-11-09)
+> for the post-change verification. The remaining items below are still open.
+
 This is a prioritized list, not a rewrite plan. The short version:
 
 - **P0** items are correctness, security, or user-facing error handling. Fix these before scaling.

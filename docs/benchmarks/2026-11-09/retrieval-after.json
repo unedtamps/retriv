@@ -1,0 +1,180 @@
+{
+  "settings": {
+    "max_context_chunks": 8,
+    "max_context_sources": 12,
+    "section_expand_chunks": 4,
+    "min_relevance_score": 0.25,
+    "embedding_model": "text-embedding-qwen3-embedding-8b",
+    "embedding_dimensions": 2000,
+    "embedding_url": "http://127.0.0.1:1234/v1"
+  },
+  "scope_workspaces": 1,
+  "document": "01731493-f2c8-4d75-bb9b-cbde17a3b327",
+  "results": [
+    {
+      "n": 10,
+      "min_ms": 39.427,
+      "p50_ms": 43.177,
+      "p95_ms": 64.143,
+      "max_ms": 67.307,
+      "mean_ms": 48.427,
+      "name": "embedding HTTP",
+      "sample": "2000 dims"
+    },
+    {
+      "n": 10,
+      "min_ms": 2.711,
+      "p50_ms": 3.38,
+      "p95_ms": 4.925,
+      "max_ms": 5.143,
+      "mean_ms": 3.585,
+      "name": "vector SQL",
+      "sample": "8 rows"
+    },
+    {
+      "n": 10,
+      "min_ms": 6.525,
+      "p50_ms": 7.076,
+      "p95_ms": 7.202,
+      "max_ms": 8.399,
+      "mean_ms": 7.108,
+      "name": "section completion SQL",
+      "sample": "8 added"
+    },
+    {
+      "n": 15,
+      "min_ms": 48.002,
+      "p50_ms": 57.976,
+      "p95_ms": 81.102,
+      "max_ms": 83.078,
+      "mean_ms": 62.495,
+      "name": "full retrieve",
+      "sample": "12 sources, top=0.499"
+    },
+    {
+      "n": 15,
+      "min_ms": 47.964,
+      "p50_ms": 52.503,
+      "p95_ms": 77.548,
+      "max_ms": 83.38,
+      "mean_ms": 59.487,
+      "name": "toolkit search_context",
+      "sample": "12 sources, 10356 chars"
+    },
+    {
+      "n": 7,
+      "min_ms": 24.403,
+      "p50_ms": 24.935,
+      "p95_ms": 26.16,
+      "max_ms": 27.038,
+      "mean_ms": 25.387,
+      "name": "toolkit search_text",
+      "sample": "ToolOutcome(text='[1] filename=\"3M_2015_10K (1).pdf\" section=[\"PART II\", \"_Earnings per share attributable to 3M common shareholders \\\\u2013 diluted:_\"] ordinal"
+    },
+    {
+      "n": 7,
+      "min_ms": 0.814,
+      "p50_ms": 1.356,
+      "p95_ms": 2.061,
+      "max_ms": 2.529,
+      "mean_ms": 1.562,
+      "name": "find_documents",
+      "sample": "Documents matching 'report':\n  [a4d14113-e5a7-4d35-ae3f-d0bd6b3caa24]  SP_Report_26Q1.pdf  workspace_id=1c0ea1b6-0325-43c3-9920-4ffd11180dbb  status=ready  1296"
+    },
+    {
+      "n": 7,
+      "min_ms": 0.619,
+      "p50_ms": 0.705,
+      "p95_ms": 0.783,
+      "max_ms": 0.829,
+      "mean_ms": 0.715,
+      "name": "list_queryable_files",
+      "sample": "CSV files:\n  Accounts-Receivable.xlsx \u203a sheet Sheet1  [4d42329c-d62f-48b2-9713-c6fb6ca1f542]  900 rows  columns: ARID, Customer, InvoiceDate, DueDate, Amount, C"
+    },
+    {
+      "n": 7,
+      "min_ms": 0.798,
+      "p50_ms": 0.931,
+      "p95_ms": 1.013,
+      "max_ms": 1.041,
+      "mean_ms": 0.946,
+      "name": "list_workspaces",
+      "sample": "Workspaces (1):\n  [1c0ea1b6-0325-43c3-9920-4ffd11180dbb] finance \u2014 Finance (owner)  9 document(s)"
+    },
+    {
+      "n": 7,
+      "min_ms": 4.224,
+      "p50_ms": 5.313,
+      "p95_ms": 5.931,
+      "max_ms": 29.095,
+      "mean_ms": 8.414,
+      "name": "get_document_outline",
+      "sample": "filename=\"Anthropic_IPO_Prospectus.pdf\" document_id=01731493-f2c8-4d75-bb9b-cbde17a3b327 chunks=1059 pages=421 sections=711\n  UNITED STATES SECURITIES AND EXCHA"
+    },
+    {
+      "n": 7,
+      "min_ms": 3.721,
+      "p50_ms": 3.833,
+      "p95_ms": 4.077,
+      "max_ms": 4.242,
+      "mean_ms": 3.92,
+      "name": "read_document window",
+      "sample": "ToolOutcome(text='[1] filename=\"Anthropic_IPO_Prospectus.pdf\" ordinal=0 workspace_id=1c0ea1b6-0325-43c3-9920-4ffd11180dbb document_id=01731493-f2c8-4d75-bb9b-cb"
+    },
+    {
+      "n": 7,
+      "min_ms": 5.405,
+      "p50_ms": 5.487,
+      "p95_ms": 6.414,
+      "max_ms": 6.891,
+      "mean_ms": 5.826,
+      "name": "describe_document",
+      "sample": "filename: Anthropic_IPO_Prospectus.pdf\ndocument_id: 01731493-f2c8-4d75-bb9b-cbde17a3b327\nworkspace: Finance [1c0ea1b6-0325-43c3-9920-4ffd11180dbb]\nmedia_type: a"
+    },
+    {
+      "n": 5,
+      "min_ms": 0.519,
+      "p50_ms": 0.543,
+      "p95_ms": 0.574,
+      "max_ms": 0.615,
+      "mean_ms": 0.556,
+      "name": "query_rows (count)",
+      "sample": "ToolOutcome(text='Result (computed, not citable):\\n  n\\n  900\\n\\n\\nThese values are computed from the rows, so there is no single row to cite. Give the number a"
+    }
+  ],
+  "section_completion_shape": {
+    "anchors": 8,
+    "rows_fetched_by_section_query": 21,
+    "rows_kept": 8
+  },
+  "concurrency": [
+    {
+      "workers": 1,
+      "calls": 24,
+      "wall_s": 1.461,
+      "calls_per_s": 16.43,
+      "mean_latency_ms": 60.88
+    },
+    {
+      "workers": 4,
+      "calls": 24,
+      "wall_s": 1.129,
+      "calls_per_s": 21.27,
+      "mean_latency_ms": 47.03
+    },
+    {
+      "workers": 8,
+      "calls": 24,
+      "wall_s": 1.136,
+      "calls_per_s": 21.12,
+      "mean_latency_ms": 47.35
+    },
+    {
+      "workers": 16,
+      "calls": 24,
+      "wall_s": 1.134,
+      "calls_per_s": 21.16,
+      "mean_latency_ms": 47.25
+    }
+  ]
+}

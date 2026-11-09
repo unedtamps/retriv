@@ -229,6 +229,17 @@ async def accept_document_reindex(
     if locked_document is None or locked_document.deleted_at is not None:
         await session.rollback()
         return None
+    locked_link = await session.scalar(
+        select(DocumentWorkspace)
+        .where(
+            DocumentWorkspace.workspace_id == workspace_id,
+            DocumentWorkspace.document_id == document_id,
+        )
+        .with_for_update()
+    )
+    if locked_link is None or locked_link.deleted_at is not None:
+        await session.rollback()
+        return None
     in_flight = await session.scalar(
         select(ProcessingRun.id).where(
             ProcessingRun.document_id == document_id,

@@ -152,6 +152,37 @@ async def delete_user(
     if user is None:
         raise user_not_found_error()
 
+    # Deleting a user removes their memberships by cascade. A workspace whose
+    # only owner is this user would be left with nobody who can manage it, so
+    # the same last-owner rule the member-removal routes enforce applies here.
+    # Lock the workspaces in id order before counting, matching the lock order
+    # of the other membership routes.
+    owner_workspace_ids = list(
+        await session.scalars(
+            select(WorkspaceMembership.workspace_id).where(
+                WorkspaceMembership.user_id == user_id,
+                WorkspaceMembership.role == "owner",
+            )
+        )
+    )
+    if owner_workspace_ids:
+        await session.execute(
+            select(Workspace)
+            .where(Workspace.id.in_(owner_workspace_ids))
+            .order_by(Workspace.id)
+            .with_for_update()
+        )
+        owner_memberships = (
+            await session.scalars(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.user_id == user_id,
+                    WorkspaceMembership.role == "owner",
+                )
+            )
+        ).all()
+        for membership in owner_memberships:
+            await ensure_not_last_owner(session, membership, None)
+
     await session.execute(
         update(WorkspaceMembership)
         .where(WorkspaceMembership.granted_by_user_id == user_id)

@@ -43,8 +43,30 @@ logger = logging.getLogger(__name__)
 
 SEARCH_VECTORS = (
     text("""
+    WITH nearest AS MATERIALIZED (
+        SELECT
+            embedding.chunk_id,
+            embedding.content_hash AS embedding_content_hash,
+            1 - (embedding.embedding <=> CAST(:query_vector AS vector)) AS score
+        FROM chunk_embeddings AS embedding
+        WHERE embedding.embedding_profile = :embedding_profile
+          AND embedding.model = :embedding_model
+          AND embedding.dimensions = :embedding_dimensions
+          AND embedding.status = 'indexed'
+          AND embedding.embedding IS NOT NULL
+          AND (:document_id IS NULL OR embedding.document_id = :document_id)
+          AND EXISTS (
+              SELECT 1
+              FROM document_workspaces AS link
+              WHERE link.document_id = embedding.document_id
+                AND link.workspace_id IN :workspace_ids
+                AND link.deleted_at IS NULL
+          )
+        ORDER BY embedding.embedding <=> CAST(:query_vector AS vector)
+        LIMIT :candidate_limit
+    )
     SELECT
-        1 - (embedding.embedding <=> CAST(:query_vector AS vector)) AS score,
+        nearest.score,
         chunk.id AS chunk_id,
         (
             SELECT link.workspace_id
@@ -75,19 +97,12 @@ SEARCH_VECTORS = (
             ORDER BY link.workspace_id
             LIMIT 1
         ) AS filename
-    FROM chunk_embeddings AS embedding
+    FROM nearest
     JOIN document_chunks AS chunk
-      ON chunk.id = embedding.chunk_id
-     AND chunk.origin_workspace_id = embedding.origin_workspace_id
-     AND chunk.document_id = embedding.document_id
-     AND chunk.processing_run_id = embedding.processing_run_id
+      ON chunk.id = nearest.chunk_id
     JOIN documents AS document
       ON document.id = chunk.document_id
-    WHERE embedding.embedding_profile = :embedding_profile
-      AND embedding.model = :embedding_model
-      AND embedding.dimensions = :embedding_dimensions
-      AND embedding.status = 'indexed'
-      AND embedding.content_hash = chunk.content_hash
+    WHERE chunk.content_hash = nearest.embedding_content_hash
       AND document.deleted_at IS NULL
       AND document.active_processing_run_id = chunk.processing_run_id
       AND (:document_id IS NULL OR chunk.document_id = :document_id)
@@ -98,7 +113,7 @@ SEARCH_VECTORS = (
             AND link.workspace_id IN :workspace_ids
             AND link.deleted_at IS NULL
       )
-    ORDER BY embedding.embedding <=> CAST(:query_vector AS vector)
+    ORDER BY nearest.score DESC
     LIMIT :limit
     """)
     .bindparams(
@@ -188,6 +203,7 @@ class ContextRetriever:
     ) -> None:
         self._settings = settings
         self._engine = engine
+        self._is_postgres = engine.dialect.name == "postgresql"
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._embedding_client = embedding_client or httpx.AsyncClient(
             base_url=f"{settings.embedding_base_url.rstrip('/')}/",
@@ -421,7 +437,29 @@ class ContextRetriever:
         *,
         document_id: UUID | None,
     ) -> list[RowMapping]:
+        candidate_limit = min(
+            max(limit * self._settings.retrieval_candidate_multiplier, 32),
+            1_000,
+        )
         async with self._sessions() as session:
+            if self._is_postgres:
+                # The nearest-first CTE only helps if the planner takes the
+                # HNSW path. On a small corpus it otherwise estimates a
+                # sequential scan plus sort as cheaper; forcing the ordered
+                # index path is what makes the candidate list the driving
+                # relation. These are transaction-local and this session runs
+                # one retrieval query.
+                await session.execute(
+                    text(
+                        "SELECT "
+                        "set_config('jit', 'off', true), "
+                        "set_config('enable_sort', 'off', true), "
+                        "set_config('enable_seqscan', 'off', true), "
+                        "set_config('enable_bitmapscan', 'off', true), "
+                        "set_config('hnsw.ef_search', :ef_search, true)"
+                    ),
+                    {"ef_search": str(candidate_limit)},
+                )
             result = await session.execute(
                 SEARCH_VECTORS,
                 {
@@ -431,6 +469,7 @@ class ContextRetriever:
                     "embedding_model": self._settings.embedding_model,
                     "embedding_dimensions": self._settings.embedding_dimensions,
                     "document_id": document_id,
+                    "candidate_limit": candidate_limit,
                     "limit": limit,
                 },
             )

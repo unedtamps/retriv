@@ -40,7 +40,9 @@ x-worker-environment: &worker-environment
   RETRIV_EMBEDDING_MODEL: ${RETRIV_EMBEDDING_MODEL:-text-embedding-qwen3-embedding-8b}
   RETRIV_EMBEDDING_PROFILE: ${RETRIV_EMBEDDING_PROFILE:-qwen3-embedding-8b-2000-v1}
   RETRIV_EMBEDDING_DIMENSIONS: ${RETRIV_EMBEDDING_DIMENSIONS:-2000}
-  RETRIV_EMBEDDING_BATCH_SIZE: ${RETRIV_EMBEDDING_BATCH_SIZE:-16}
+  # One is the safe default for the local LM Studio endpoint; raise it for a
+  # server that batches efficiently, after measuring that server.
+  RETRIV_EMBEDDING_BATCH_SIZE: ${RETRIV_EMBEDDING_BATCH_SIZE:-1}
   RETRIV_EMBEDDING_TIMEOUT_SECONDS: ${RETRIV_EMBEDDING_TIMEOUT_SECONDS:-120}
   RETRIV_EMBEDDING_RECONCILIATION_INTERVAL_SECONDS: ${RETRIV_EMBEDDING_RECONCILIATION_INTERVAL_SECONDS:-300}
   # The vision stage. The worker is the only component that holds this key:

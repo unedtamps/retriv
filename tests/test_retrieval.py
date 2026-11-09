@@ -1225,3 +1225,53 @@ async def test_text_search_refuses_an_empty_query_or_scope() -> None:
             await retriever.search_text("merger", [], 5)
     finally:
         await retriever.aclose()
+
+
+class _RecordingResult:
+    def mappings(self) -> list[object]:
+        return []
+
+
+class _RecordingSession:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object] | None]] = []
+
+    async def execute(
+        self, statement: object, parameters: dict[str, object] | None = None
+    ) -> _RecordingResult:
+        self.calls.append((str(statement), parameters))
+        return _RecordingResult()
+
+    async def __aenter__(self) -> "_RecordingSession":
+        return self
+
+    async def __aexit__(self, *_args: object) -> bool:
+        return False
+
+
+async def test_vector_fetch_oversamples_and_forces_the_hnsw_plan() -> None:
+    """The candidate list, not the whole embedding table, drives the search."""
+    engine = create_async_engine("sqlite+aiosqlite://")
+    retriever = ContextRetriever(make_settings(), engine)
+    session = _RecordingSession()
+    retriever._sessions = lambda: session  # type: ignore[assignment]
+    retriever._is_postgres = True
+    try:
+        rows = await retriever._fetch_vector_rows(
+            [0.1, 0.2], [uuid4()], 8, document_id=None
+        )
+    finally:
+        await retriever.aclose()
+
+    assert rows == []
+    assert len(session.calls) == 2
+    planner_sql, planner_params = session.calls[0]
+    assert "set_config('hnsw.ef_search'" in planner_sql
+    assert planner_params == {"ef_search": "64"}
+
+    query_sql, query_params = session.calls[1]
+    assert "MATERIALIZED" in query_sql
+    assert "candidate_limit" in query_sql
+    assert query_params is not None
+    assert query_params["candidate_limit"] == 64
+    assert query_params["limit"] == 8

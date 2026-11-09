@@ -347,6 +347,22 @@ async def test_admin_can_delete_user_and_memberships_repoint(
     )
     assert granted.status_code == 200
 
+    # Dave is the only owner. Deleting him would leave the workspace with no
+    # one who can manage it, so the delete is refused until another owner is
+    # assigned.
+    refused = await client.delete(f"/v1/admin/users/{dave_id}", headers=admin_headers)
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "last_owner_required"
+
+    # Only a platform admin can assign an owner; a workspace owner can add
+    # editors and viewers but not a peer owner.
+    promoted = await client.put(
+        f"/v1/admin/workspaces/{workspace_id}/members/{erin_id}",
+        headers=admin_headers,
+        json={"role": "owner"},
+    )
+    assert promoted.status_code == 200
+
     deleted = await client.delete(f"/v1/admin/users/{dave_id}", headers=admin_headers)
     assert deleted.status_code == 204
 
@@ -355,6 +371,7 @@ async def test_admin_can_delete_user_and_memberships_repoint(
     )
     by_username = {member["username"]: member for member in members.json()["items"]}
     assert "dave" not in by_username
+    assert by_username["erin"]["role"] == "owner"
     assert by_username["erin"]["granted_by_user_id"] == str(entities.admin_user.id)
 
     dave_login = await client.post(

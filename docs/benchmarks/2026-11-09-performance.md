@@ -7,6 +7,10 @@
 
 Raw measurements are in [`docs/benchmarks/2026-11-09/`](2026-11-09/) and linked at the end of this report.
 
+> **Implementation status (2026-11-09):** the P0-1, P0-2, P0-5, P1-1 and P1-2 items from the
+> [improvement backlog](2026-11-09-improvements.md) are implemented in this branch. See
+> [§9](#9-applied-fixes-2026-11-09) for the post-change verification.
+
 ---
 
 ## TL;DR
@@ -659,11 +663,89 @@ The optional extraction dependencies are required to collect the worker/extracti
 
 ---
 
+## 9. Applied fixes (2026-11-09)
+
+This section records what changed after the measurements above, so the report is not read as a
+list of untested recommendations.
+
+### 9.1 Vector search now uses HNSW
+
+`app/retrieval/context.py` now runs a **materialized nearest-first CTE**:
+
+- the candidate list is produced by the HNSW index before the scope/document joins;
+- the workspace `EXISTS` test is inside the CTE, so candidates are in scope;
+- `candidate_limit = max(limit * retrieval_candidate_multiplier, 32)` (default multiplier 8);
+- the retrieval transaction sets `jit=off`, `enable_sort=off`, `enable_seqscan=off`,
+  `enable_bitmapscan=off` and `hnsw.ef_search = candidate_limit`.
+
+The planner settings are transaction-local and affect only the one retrieval query. The
+`MATERIALIZED` fence is required: without it, PostgreSQL inlined the CTE and produced a
+~732 ms plan in the prototype instead of the ordered index path.
+
+Post-change measurement on the same corpus (see `retrieval-after.json`):
+
+| Stage | Before | After |
+|---|---:|---:|
+| Embedding HTTP | 45.72 ms | 43.18 ms |
+| Vector SQL | **17.66 ms** | **3.38 ms** |
+| Section completion SQL | 6.78 ms | 7.08 ms |
+| Full `retrieve()` | 69.33 ms | **57.98 ms** |
+| `AgentToolKit.search_context` | 67.87 ms | **52.50 ms** |
+
+The vector stage is ~5.2× faster; the end-to-end search improvement is smaller because the
+embedding model varies between runs and now dominates even more. Concurrency stayed at
+~21 searches/s for 4+ in flight, confirming the embedding server remains the ceiling.
+
+### 9.2 Embedding batch default is now 1
+
+`Settings.embedding_batch_size`, `compose.yaml` and `.env.example` now default to **1** for
+the local LM Studio qwen3-8B endpoint, with a comment explaining the measurement and that a
+server which batches efficiently can raise it. An existing `.env` that still says
+`RETRIV_EMBEDDING_BATCH_SIZE=16` overrides the new default; update it and restart the worker
+to take the measured 2.7–4.2× embedding-stage improvement.
+
+### 9.3 MCP error translation
+
+`app/mcp/server.py` `_guarded` now translates:
+
+- `RetrievalUnavailable` → `ToolError("Search is temporarily unavailable: …")`
+- `DocumentNotFound` / `DocumentNotNavigable` → `ToolError(str(exc))`
+
+so an unknown document, a CSV/workbook passed to `read_document`, or an embedding/SQL outage
+is a model-readable tool result instead of an MCP crash. Tests were added for all four paths.
+
+### 9.4 Admin deletion and reindex guards
+
+- `DELETE /v1/admin/users/{id}` now refuses to delete the only owner of any workspace
+  (`409 last_owner_required`) and locks the relevant workspace rows first. The existing test
+  was extended to prove the refusal and the successful path after a second owner is assigned.
+- `accept_document_reindex` now requires a live workspace link, so an owner of a workspace
+  that deleted its link cannot reindex the canonical document shared with other workspaces.
+
+### 9.5 Test status
+
+- `uv run pytest -q`: **595 passed, 18 skipped** (4 warnings).
+- `make test-postgres`: **16 passed** against `retriv_test` with pgvector and the baseline +
+  `0002` migrations.
+- `uv run ruff check .`: clean.
+- `uv run mypy app worker alembic tests`: clean (125 source files).
+
+### 9.6 Not done in this pass
+
+The rest of the [improvement backlog](2026-11-09-improvements.md) remains: the `query_rows`
+allowlist/cross-file fixes (P0-3/P0-4), plaintext model key (P0-6), trigram index (P1-3),
+section-completion limit (P1-4), catalogue paging (P1-5), XLSX/CSV memory fixes (P1-6/P1-7),
+backfill set-based rewrite (P1-8), tiktoken cache (P1-9), readiness/scope/rate-limit/JWT
+items (P1-10 to P1-15), and the P2 maintainability/observability work.
+
+---
+
 ## Appendix: raw data
 
 | File | Contents |
 |---|---|
-| [`retrieval.json`](2026-11-09/retrieval.json) | component p50/p95, per-tool in-process timings, section completion shape, concurrency |
+| [`retrieval.json`](2026-11-09/retrieval.json) | component p50/p95, per-tool in-process timings, section completion shape, concurrency (before the fixes) |
+| [`retrieval-after.json`](2026-11-09/retrieval-after.json) | the same harness after the nearest-first vector rewrite and batch-default change |
 | [`mcp.json`](2026-11-09/mcp.json) | MCP tools with tracing enabled (the `:9000` API) |
 | [`mcp-tracing-off.json`](2026-11-09/mcp-tracing-off.json) | MCP tools with `RETRIV_TRACING_ENABLED=false` (the `:9101` API) |
 | [`api.json`](2026-11-09/api.json) | HTTP route timings |

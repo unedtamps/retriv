@@ -113,11 +113,10 @@ two distinct leases at once -- `FOR UPDATE SKIP LOCKED` keeps them apart, so
   matching membership.
 - Identical bytes are one canonical document no matter which workspace uploads them. A
   second workspace gets a link, not a second object, chunk set, or vector set.
-- Uploads default to 50 MiB, 1,000 pages (or 1,000 slides for a deck); encrypted and macro-enabled documents are
-  rejected, and ClamAV scans before anything is stored.
-- `PDF` and `DOCX` are chunked and embedded. `CSV` is stored as rows and queried with
-  SQL; it is never embedded. `XLSX` is not accepted at all, because nothing could read
-  it.
+- Uploads default to 100 MiB, 1,000 pages (or 1,000 slides for a deck); encrypted and
+  macro-enabled documents are rejected, and ClamAV scans before anything is stored.
+- `PDF`, `DOCX` and `PPTX` are chunked and embedded. `CSV` and `XLSX` are stored as
+  rows and queried with SQL; neither is embedded.
 - A document's status is derived from its active processing run. There is no status
   column, so the document and the pipeline cannot disagree.
 
@@ -432,8 +431,9 @@ truncated window cannot be mistaken for the whole document. A single chunk over 
 still returned, because trimming it would return nothing and every retry from the same
 `start_ordinal` would trim it again -- a window that can never advance.
 
-CSV files are refused here rather than handled: a CSV is stored as rows, not chunks, so the
-failure names `list_queryable_files` and `query_rows` instead of reading as a fault.
+Row-stored files (CSV and workbooks) are refused here rather than handled: their content
+is stored as rows, not chunks, so the failure names `list_queryable_files` and
+`query_rows` instead of reading as a fault.
 
 ### Asking a spreadsheet question
 
@@ -730,8 +730,9 @@ Three settings decide what is worth describing:
 | `RETRIV_VLM_MAX_IMAGES_PER_DOCUMENT` | how many pictures of one document may cost an API call; 0 means no cap |
 
 The pictures are described in the worker, never in the extraction sandbox. The sandbox
-is a jail for a hostile parser: it has a scrubbed environment, no network, and no
-reason to hold an API key.
+is a resource-limited jail for a hostile parser: it gets an allowlisted environment and
+no reason to hold an API key. It is not a network namespace, so any network access the
+parser libraries make still reaches the host; the tiktoken cache is the known one.
 
 ## Deleting a document
 

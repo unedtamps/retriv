@@ -43,6 +43,8 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.mcp.auth import McpPrincipal, principal_from_headers
 from app.mcp.runtime import McpNotReadyError, McpRuntime, McpRuntimeBox
+from app.retrieval.context import RetrievalUnavailable
+from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 
 
 def _instructions(*, row_queries: bool) -> str:
@@ -124,6 +126,10 @@ def _guarded[**P, R](fn: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]
         except AppError as exc:
             raise ToolError(f"{exc.title}: {exc.detail}") from exc
         except McpNotReadyError as exc:
+            raise ToolError(str(exc)) from exc
+        except RetrievalUnavailable as exc:
+            raise ToolError(f"Search is temporarily unavailable: {exc}") from exc
+        except (DocumentNotFound, DocumentNotNavigable) as exc:
             raise ToolError(str(exc)) from exc
 
     return wrapped
@@ -247,8 +253,8 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         document has and where to resume, so a long document is read in
         successive calls rather than truncated silently.
 
-        CSV files are stored as rows, not text, and are not readable here; use
-        list_queryable_files and query_rows for those.
+        CSV files and workbooks are stored as rows, not text, and are not
+        readable here; use list_queryable_files and query_rows for those.
 
         Omit `workspace_id` to read the document from whichever workspace in
         scope holds it.

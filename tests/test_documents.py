@@ -477,6 +477,44 @@ async def test_reindex_refuses_an_unknown_document(
     assert response.status_code == 404
 
 
+async def test_reindex_refuses_a_workspace_whose_link_is_deleted(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A deleted link cannot re-run the canonical document for other workspaces."""
+    content = pdf_bytes()
+    finance = await upload(client, auth_headers, entities.finance.id, "report.pdf", content)
+    await upload(client, auth_headers, entities.legal.id, "laporan.pdf", content)
+    document_id = UUID(finance.json()["id"])
+    async with db_session_factory() as session, session.begin():
+        run = await session.scalar(
+            select(ProcessingRun).where(ProcessingRun.document_id == document_id)
+        )
+        assert run is not None
+        run.status = RUN_FAILED
+
+    deleted = await client.delete(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}",
+        headers=auth_headers,
+    )
+    assert deleted.status_code == 204
+
+    refused = await client.post(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}/reindex",
+        headers=auth_headers,
+    )
+    assert refused.status_code == 404
+
+    # The live link in the other workspace is still allowed to reindex it.
+    allowed = await client.post(
+        f"/v1/workspaces/{entities.legal.id}/documents/{document_id}/reindex",
+        headers=auth_headers,
+    )
+    assert allowed.status_code == 202
+
+
 async def test_delete_marks_the_document_and_queues_the_cleanup(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],

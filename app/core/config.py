@@ -133,7 +133,14 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-qwen3-embedding-8b"
     embedding_profile: str = "qwen3-embedding-8b-2000-v1"
     embedding_dimensions: int = Field(default=2000, ge=1, le=65_536)
-    embedding_batch_size: int = Field(default=16, ge=1, le=256)
+    embedding_batch_size: int = Field(default=1, ge=1, le=256)
+    """How many chunks one embedding request carries.
+
+    One is the safe default for the local LM Studio qwen3-8B endpoint: a
+    batch of 16 measured about 182 ms/chunk there versus 43-66 ms/chunk at
+    batch 1. A server that batches efficiently (vLLM, a hosted endpoint)
+    can raise this; verify it against the target server before doing so.
+    """
     embedding_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     embedding_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
 
@@ -178,6 +185,14 @@ class Settings(BaseSettings):
     min_relevance_score: float = Field(default=0.25, ge=-1.0, le=1.0)
     section_expand_chunks: int = Field(default=4, ge=0, le=20)
     max_context_sources: int = Field(default=12, ge=1, le=40)
+    retrieval_candidate_multiplier: int = Field(default=8, ge=1, le=32)
+    """How many HNSW candidates to request per desired match.
+
+    The nearest-first CTE over-samples because the scope, live-document and
+    active-run joins can discard candidates. Eight is deliberately generous
+    for a small corpus; it is capped by the caller's limit and the HNSW
+    ``ef_search`` setting in the retrieval transaction.
+    """
     navigation_token_budget: int = Field(default=8_000, ge=500, le=64_000)
     sql_database_url: str | None = None
     sql_statement_timeout_ms: int = Field(default=5_000, ge=100, le=60_000)
