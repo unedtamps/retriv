@@ -844,5 +844,45 @@
         0.0333
       ]
     }
+  },
+  "postgres_sizes": {
+    "rows": 2691,
+    "method": "Same vector values truncated with subvector(); benchmark tables contain chunk_id + vector only; built with the default HNSW index and rolled back.",
+    "per_row_vector_bytes": {
+      "2000": 8004,
+      "1024": 4100,
+      "768": 3076
+    },
+    "relations": {
+      "2000_existing": {
+        "heap": "968 kB",
+        "toast": "21 MB",
+        "hnsw": "40 MB",
+        "total": "63 MB"
+      },
+      "1024_bench": {
+        "heap": "184 kB",
+        "toast": "14 MB",
+        "hnsw": "20 MB",
+        "total": "35 MB"
+      },
+      "768_bench": {
+        "heap": "184 kB",
+        "toast": "11 MB",
+        "hnsw": "10 MB",
+        "total": "21 MB"
+      }
+    },
+    "ratios": {
+      "768_vs_2000_total": 3.0,
+      "768_vs_2000_vector_bytes": 2.6,
+      "1024_vs_2000_total": 1.8
+    },
+    "projection_1m_chunks": {
+      "2000_gb": 23.4,
+      "1024_gb": 13.0,
+      "768_gb": 7.8
+    },
+    "caveat": "The existing 2000-dim HNSW index may include bloat from updates; a fresh index could be smaller. The relative dimension difference remains."
   }
 }

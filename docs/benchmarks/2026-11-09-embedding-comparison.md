@@ -14,7 +14,7 @@ Golden set: [`2026-11-09/golden-current.json`](2026-11-09/golden-current.json)
 ## TL;DR
 
 - **Do not replace Qwen3-8B with nomic on this corpus if retrieval quality matters.** Nomic is 24–36× faster and 56× smaller, but it loses **20 percentage points of recall@8** (95% → 75%) and **0.17 MRR** (0.734 → 0.561).
-- **A free storage win exists with Qwen3:** truncating Qwen3’s vectors from 2,000 to 768 dimensions (Matryoshka) cost only **1.7 pp recall@8** (95% → 93.3%) and **0.01 MRR**, statistically indistinguishable on this set. That cuts vector/index size ~2.6×.
+- **A free storage win exists with Qwen3:** truncating Qwen3’s vectors from 2,000 to 768 dimensions (Matryoshka) cost only **1.7 pp recall@8** (95% → 93.3%) and **0.01 MRR**, statistically indistinguishable on this set. Measured Postgres size falls **63 MB → 21 MB (3×)** for this corpus, with the HNSW index **40 MB → 10 MB**.
 - Nomic’s required prefixes matter: without them it scored 70% recall@8; with `search_query:`/`search_document:` it scored 75%. Even best-practice nomic remains far behind Qwen3 here.
 - Batch size is neutral (confirmed separately); the model is the lever.
 
@@ -88,7 +88,7 @@ The recall@8 and MRR losses are statistically clear. The recall@1 interval touch
 | recall@8 | 95.0% | 93.3% | −1.7 pp | [−5.0, 0.0] |
 | MRR@8 | 0.734 | 0.724 | −0.010 | [−0.053, +0.033] |
 
-The 768-dimension Qwen3 model is **statistically indistinguishable** from the 2,000-dimension version on this set, while using ~2.6× less vector storage and index memory.
+The 768-dimension Qwen3 model is **statistically indistinguishable** from the 2,000-dimension version on this set, while using **3× less total Postgres storage** and a 4× smaller HNSW index.
 
 ---
 
@@ -106,18 +106,32 @@ Measured on the same `llama.cpp` GPU runtime, one model loaded at a time:
 
 CPU fallback for nomic (no GPU) was much slower: **462.6 s for 2,691 chunks, 171.9 ms/chunk**. Nomic’s speed win assumes GPU inference.
 
-### Storage / VRAM
+### Postgres storage (measured, not estimated)
+
+I built temporary tables from the current 2,691 vectors using `subvector(embedding, 1, N)`, created the same default HNSW index, measured the relations, and rolled everything back. The benchmark tables contain only `chunk_id` + `embedding`; the existing table also has the small non-vector columns, so its heap is larger.
+
+| Dimensions | Per-row vector | Heap | TOAST | HNSW index | Total |
+|---|---:|---:|---:|---:|---:|
+| **2,000 (current)** | **8,004 B** | 968 KB | 21 MB | **40 MB** | **63 MB** |
+| 1,024 | 4,100 B | 184 KB | 14 MB | 20 MB | 35 MB |
+| **768** | **3,076 B** | 184 KB | 11 MB | **10 MB** | **21 MB** |
+
+So for this corpus:
+
+- **768 vs 2,000:** total relation **63 MB → 21 MB (3.0× smaller)**; vector bytes **2.6× smaller**; HNSW index **40 MB → 10 MB (4× smaller)**.
+- **1,024 vs 2,000:** total **63 MB → 35 MB (1.8× smaller)**.
+- Linear projection at 1M chunks: **~23.4 GB → ~7.8 GB** (768 dims), or ~13 GB at 1,024 dims.
+
+Caveat: the existing 2,000-dim HNSW index may include bloat from updates; a freshly built index could be somewhat smaller. The dimension-to-dimension comparison above is still the right order of magnitude.
+
+### Model / VRAM
 
 | | Qwen3-8B | nomic-1.5 |
 |---|---:|---:|
 | Model file | 4.68 GB | **84 MB** |
-| Stored vector, 2,000 dims | 8 KB | — |
-| Stored vector, 768 dims | 3 KB | 3 KB |
-| HNSW index, 2,691 chunks | 40 MB | ~15 MB (est.) |
-| HNSW index, 1M chunks | ~15 GB | ~5.7 GB (est.) |
 | GPU footprint in this test | ~5.3 GB | **~0.4 GB** |
 
-Nomic frees roughly **6 GB of VRAM** and shrinks the vector index ~2.6×. Qwen3 at 768 dims gets the same storage/index saving without changing the model or the 8B query cost.
+Nomic frees roughly **6 GB of VRAM**. Qwen3 at 768 dims gets the **~3× Postgres storage/index saving** without changing the model or the 8B query cost.
 
 ---
 
@@ -140,7 +154,7 @@ Qwen3’s Matryoshka embedding can be truncated to 768 dims with no measurable q
 
 - recall@8: 95.0% → 93.3% (−1.7 pp, CI [−5, 0])
 - MRR@8: 0.734 → 0.724 (−0.01, CI [−0.05, +0.03])
-- storage/index: ~2.6× smaller
+- storage/index: ~3× smaller total; HNSW 40 MB → 10 MB for 2,691 chunks
 
 The query cost stays the same (8B forward pass), so this is a **storage/memory** optimisation, not a latency one. It needs a migration from `vector(2000)` to `vector(768)` (or a half-vector equivalent), a reindex, and a second evaluation on a larger/human-checked set before changing production.
 
@@ -153,7 +167,7 @@ If 36 ms per query is unacceptable and a 5% “top-1” / 20 pp “top-8” reca
 ## 5. Recommendation
 
 1. **Keep Qwen3-Embedding-8B for retrieval quality.** Nomic’s 20 pp recall@8 loss is too large for a citation-grounded document assistant on this English corpus.
-2. **Evaluate Qwen3 at 768 dims for storage.** The measured quality loss is within noise; the index/vector reduction is ~2.6×. This requires a schema migration and reindex.
+2. **Evaluate Qwen3 at 768 dims for storage.** The measured quality loss is within noise; Postgres total size falls ~3× (63 MB → 21 MB here) and the HNSW index 40 MB → 10 MB. This requires a schema migration and reindex.
 3. **Do not tune batch size.** The controlled same-text test showed 2.121 s as one batch vs 2.140 s as 16 single requests; grouping is neutral.
 4. **If nomic is revisited**, add its required prefixes, test on the actual multilingual/Indonesian corpus, and treat the recall drop as a product decision. The current evaluation is English-only by request.
 

@@ -366,6 +366,11 @@ The important part is **nearest-first**: the approximate index produces the cand
 
 **Index size:** 40 MB of HNSW for 2,691 vectors (~14.9 KB/vector), plus 21 MB of TOAST for the 2000-dimensional vectors and 1 MB of heap. The whole `chunk_embeddings` relation is 63 MB. At 1 million chunks that is ~**23 GB**, of which ~15 GB is the HNSW graph. A `halfvec(2000)` index would roughly halve it; a 1024-dimension `halfvec` index would roughly quarter it. That is a real deployment constraint, not a micro-optimization.
 
+A direct 768-dimension Qwen3 measurement (same vectors, truncated with `subvector`, same HNSW options) is in
+[`2026-11-09-embedding-comparison.md`](2026-11-09-embedding-comparison.md): the current corpus’s
+relation falls **63 MB → 21 MB** and the HNSW index **40 MB → 10 MB**, with a 1.7 pp
+recall@8 change on the 60-query set.
+
 ### 4.2 Section completion — fetches all descendants
 
 For the largest section in the corpus (54 chunks), `_complete_sections` fetched **54 rows and kept 4** (the configured `section_expand_chunks`), taking **4.43 ms in SQL** and **12.5 ms** through the Python method (including validation and hashing). The plan loops over all 2,691 chunks in the run:
