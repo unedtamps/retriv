@@ -133,13 +133,14 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-qwen3-embedding-8b"
     embedding_profile: str = "qwen3-embedding-8b-2000-v1"
     embedding_dimensions: int = Field(default=2000, ge=1, le=65_536)
-    embedding_batch_size: int = Field(default=1, ge=1, le=256)
+    embedding_batch_size: int = Field(default=16, ge=1, le=256)
     """How many chunks one embedding request carries.
 
-    One is the safe default for the local LM Studio qwen3-8B endpoint: a
-    batch of 16 measured about 182 ms/chunk there versus 43-66 ms/chunk at
-    batch 1. A server that batches efficiently (vLLM, a hosted endpoint)
-    can raise this; verify it against the target server before doing so.
+    Request grouping is neutral on the local LM Studio endpoint: the same 16
+    texts took ~2.12 s as one batch and ~2.14 s as 16 single requests. Keep a
+    larger batch to reduce HTTP overhead; the per-text cost is driven by input
+    length and the model, not by the batch size. A server that batches
+    efficiently can raise this; verify it against the target server.
     """
     embedding_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     embedding_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)

@@ -7,9 +7,11 @@
 
 Raw measurements are in [`docs/benchmarks/2026-11-09/`](2026-11-09/) and linked at the end of this report.
 
-> **Implementation status (2026-11-09):** the P0-1, P0-2, P0-5, P1-1 and P1-2 items from the
-> [improvement backlog](2026-11-09-improvements.md) are implemented in this branch. See
-> [§9](#9-applied-fixes-2026-11-09) for the post-change verification.
+> **Implementation status (2026-11-09):** P0-1, P0-2, P0-5 and P1-1 from the
+> [improvement backlog](2026-11-09-improvements.md) are implemented in this branch. The P1-2
+> embedding-batch recommendation was **withdrawn** after a controlled re-test showed the
+> original comparison was confounded by input length. See
+> [§9](#9-applied-fixes-2026-11-09) for the post-change verification and the correction.
 
 ---
 
@@ -28,7 +30,8 @@ The highest-value improvements are query shape, model/batch configuration, and a
 | # | Finding | Measured effect | Priority |
 |---|---|---|---|
 | 1 | Vector search scans all embeddings and sorts them; HNSW is not used | 15.9–19.5 ms → **0.55–2.8 ms** when made nearest-first (6–29×) | P0 |
-| 2 | Worker embeds 16 chunks per request; this embedding server is **slower** at batch 16 than at batch 1 | **182 ms/chunk → 43 ms/chunk** (2.7–4.2×); 2,691 chunks: ~8.2 min → ~1.9 min | P0 |
+| 2 | **Withdrawn:** the apparent batch-16 slowdown was an input-length confound, not batching | Same 16 texts: **2.121 s batched vs 2.140 s as 16 single calls** (~1%); keep batch 16 | — |
+| 2b | The 8B embedding model is the real ingestion cost | `nomic-embed-text-v1.5` embedded the same 16 chunks in **76.7 ms vs 2.12 s** (~28×), subject to retrieval-quality evaluation | P1 |
 | 3 | `search_text` uses `ILIKE '%…%'` with no trigram index | **21 ms** for 4.1 MB; grows linearly (~5 s/GB) | P1 |
 | 4 | Section completion fetches every chunk under each anchor, then keeps 4 | 54 fetched for 4 kept; rewrite with a SQL row limit | P1 |
 | 5 | The simplification moved catalogue paging from SQL to Python | 10,000 entries ≈ **10.9 ms of Python** plus the full DB transfer, on every page | P1 |
@@ -252,23 +255,36 @@ For the same 546 pages, serial extraction at the measured 2.45 pages/s would tak
 
 Per-document fixed cost: a 5-page sample takes **~3.0 s** warm, a 30-page sample **~10.6 s**, and a 410-page filing **167 s**. The first ~1.5–2.5 s is process/import/model startup; for small documents that is a large fraction of the total.
 
-### 3.6 Ingestion embedding
+### 3.6 Ingestion embedding — corrected
 
-The worker sends `RETRIV_EMBEDDING_BATCH_SIZE` chunks per request (default 16). On this LM Studio qwen3-embedding-8b endpoint, batch size has the opposite of the intended effect:
+The first batch measurement compared a single short query (batch 1) with 16 mixed-length chunks (batch 16). That compares different inputs, not different batching. A controlled test on the **same 16 texts**:
 
-| Batch size | p50 per request | Per text | Throughput |
-|---:|---:|---:|---:|
-| 1 | 43–66 ms | **43–66 ms** | **15–23 text/s** |
-| 2 | 162 ms | 81 ms | 12.4 text/s |
-| 3 | 363 ms | 121 ms | 8.3 text/s |
-| 4 | 620 ms | 155 ms | 6.4 text/s |
-| 8 | 1,397 ms | 175 ms | 5.7 text/s |
-| 16 | 2,914 ms | 182 ms | 5.5 text/s |
-| 32 | 6,713 ms | 210 ms | 4.8 text/s |
+| Grouping | Requests | Total p50 | Per text |
+|---|---:|---:|---:|
+| 16 in one request | 1 | 2.121 s | 132.6 ms |
+| 8 + 8 | 2 | 2.124 s | 132.8 ms |
+| 4 × 4 | 4 | 2.109 s | 131.8 ms |
+| 8 × 2 | 8 | 2.133 s | 133.3 ms |
+| 16 × 1 | 16 | 2.140 s | 133.7 ms |
 
-For the current 2,691 chunks: **~490 s (8.2 min) at batch 16 vs ~117 s (1.9 min) at batch 1**. This is a 4.2× reduction in the embedding stage by changing one setting. For the documented 410-page filing (~1,390 chunks), the same choice is ~253 s vs ~60 s.
+Request grouping is **neutral** (~1% difference, in favour of the larger batch). LM Studio logs one “Returning embeddings” line per input rather than one per request, and the server takes ~2.1 s for this text set either way. The earlier table’s “batch 1 = 43–66 ms” was the first (short) chunk, while “batch 16 = 182 ms/chunk” came from 16 longer chunks; it was not an apples-to-apples comparison.
 
-A smaller local model was also measured as a sanity check: `nomic-embed-text-v1.5` (768 dims) answered a single query in **4.4 ms** and embedded 18 texts in **40 ms** (2.2 ms/text), roughly **9× faster per query** than the 8B model. That is a quality trade-off, not a free win, but it shows how much of the search latency is model choice rather than Python.
+What actually drives the cost is **input length**:
+
+| Input characters | One-text p50 |
+|---:|---:|
+| 5 | 37.1 ms |
+| 100 | 44.2 ms |
+| 300 | 62.0 ms |
+| 665 | 118.3 ms |
+| 1,000 | 150.5 ms |
+| 2,000 | 288.3 ms |
+| 4,000 | 567.8 ms |
+| 8,000 | 1,179.0 ms |
+
+The fit is roughly **35 ms fixed + 0.14 ms/char**. The 16-text controlled set averaged 665 chars/text, which predicts ~128 ms/text and matches the measured 132.6 ms. The corpus average is ~1,526 chars/chunk, predicting ~250 ms/chunk and therefore roughly **11 minutes for 2,691 chunks** — not the 1.9 minutes the first comparison implied. The model’s loaded context is 2,048 tokens, so longer inputs are also subject to server-side truncation; validate that against the pipeline’s chunk sizes.
+
+The real lever is **model choice**, not batch size. `nomic-embed-text-v1.5` (768 dims) embedded the same 16 medium chunks in **76.7 ms (4.8 ms/text)** versus **2.12 s (132.6 ms/text)** for the 8B model — about **28×** on this set. That is a retrieval-quality trade-off, not a free win, but it is far larger than anything batch tuning can do. Shortening chunks reduces the per-char term linearly; the batch setting stays at 16 because it is marginally faster and uses 16× fewer requests.
 
 ### 3.7 Row queries
 
@@ -475,15 +491,15 @@ That is the cost of the deliberate “re-authenticate on every tool call” secu
 
 **Risk:** medium — filtered approximate search can miss the requested `limit` if too many nearest candidates are stale; over-sample and validate.
 
-#### 2. Set `RETRIV_EMBEDDING_BATCH_SIZE=1` (or 2) for this embedding server
+#### 2. Withdrawn: embedding batch size is not the lever
 
-**Evidence:** 43–66 ms/text at batch 1 vs 182 ms/text at batch 16; 2,691 chunks ~1.9 min vs ~8.2 min. The current `.env` and compose default are 16. The 8B model’s GPU is already at ~7.4/8 GB; batching appears to make the server’s per-input cost worse, not better.
+**Correction:** the original “batch 1 vs batch 16” comparison was confounded by input length — the batch-1 sample was one short chunk, while the batch-16 sample was 16 longer chunks. A controlled re-test on the **same 16 texts** shows **2.121 s as one batch vs 2.140 s as 16 single requests** (~1%, in favour of the batch). Request grouping is neutral; LM Studio processes the inputs one by one.
 
-**Action:** set `RETRIV_EMBEDDING_BATCH_SIZE=1` (test 2 as well), restart the worker, and measure a re-index. Keep the setting configurable because a production vLLM/OpenAI endpoint may batch efficiently. If the GPU memory pressure is the cause, lowering the batch may also reduce OOM/retry risk.
+**Evidence:** per-input cost scales with text length at roughly **35 ms + 0.14 ms/char** (5 chars 37 ms; 665 chars 118 ms; 2,000 chars 288 ms; 8,000 chars 1,179 ms). The corpus average is ~1,526 chars/chunk, which predicts ~250 ms/chunk and roughly **11 minutes for 2,691 chunks**, not 1.9 minutes.
 
-**Expected:** 2.7–4.2× faster embedding stage; 6+ minutes saved on the current corpus; more on larger documents.
+**Action:** keep `RETRIV_EMBEDDING_BATCH_SIZE=16` (fewer HTTP requests, marginally faster). If ingestion latency matters, evaluate a smaller embedding model — `nomic-embed-text-v1.5` embedded the same 16 medium chunks in **76.7 ms vs 2.12 s** (~28×) — or shorten chunks, and validate retrieval quality with `scripts/eval_retrieval.py`.
 
-**Risk:** low — configuration only; verify request count/HTTP overhead and server rate limits.
+**Risk:** model change is a quality trade-off; chunk-length changes affect retrieval granularity. Batch-size tuning has no meaningful upside here.
 
 ### P1 — high value, small/medium effort
 
@@ -696,13 +712,16 @@ The vector stage is ~5.2× faster; the end-to-end search improvement is smaller 
 embedding model varies between runs and now dominates even more. Concurrency stayed at
 ~21 searches/s for 4+ in flight, confirming the embedding server remains the ceiling.
 
-### 9.2 Embedding batch default is now 1
+### 9.2 Embedding-batch recommendation withdrawn
 
-`Settings.embedding_batch_size`, `compose.yaml` and `.env.example` now default to **1** for
-the local LM Studio qwen3-8B endpoint, with a comment explaining the measurement and that a
-server which batches efficiently can raise it. An existing `.env` that still says
-`RETRIV_EMBEDDING_BATCH_SIZE=16` overrides the new default; update it and restart the worker
-to take the measured 2.7–4.2× embedding-stage improvement.
+The original report compared a single short query with 16 mixed-length chunks. A controlled
+re-test on the same 16 texts measured **2.121 s as one batch vs 2.140 s as 16 single
+requests** (~1%, in favour of the batch). The apparent 2.7–4.2× win was an input-length
+confound, not batching. The code and compose default remain **16**.
+
+The actual cost driver is input length (~35 ms + 0.14 ms/char), and the real lever is model
+choice: the same 16 chunks took **76.7 ms** with `nomic-embed-text-v1.5` vs **2.12 s** with
+the 8B model (~28×), subject to a retrieval-quality evaluation.
 
 ### 9.3 MCP error translation
 

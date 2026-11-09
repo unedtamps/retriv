@@ -4,10 +4,12 @@
 **Scope:** backend (`app/`, `worker/`, `alembic/`, tests, deployment); the web app is mentioned only where it shares a contract.  
 **Basis:** the performance measurements in [`2026-11-09-performance.md`](2026-11-09-performance.md), plus a code review of the merged tip `2e2ab2f`.
 
-> **Status (2026-11-09):** P0-1, P0-2, P0-5, P1-1 and P1-2 are implemented in this branch,
-> and the workbook half of P2-8 was fixed alongside P0-1. See
+> **Status (2026-11-09):** P0-1, P0-2, P0-5 and P1-1 are implemented in this branch, and the
+> workbook half of P2-8 was fixed alongside P0-1. **P1-2 was withdrawn:** a controlled re-test
+> showed the original batch-1/batch-16 comparison was confounded by input length; batch size is
+> neutral. See
 > [`2026-11-09-performance.md#9-applied-fixes-2026-11-09`](2026-11-09-performance.md#9-applied-fixes-2026-11-09)
-> for the post-change verification. The remaining items below are still open.
+> for the post-change verification and the correction. The remaining items below are still open.
 
 This is a prioritized list, not a rewrite plan. The short version:
 
@@ -109,13 +111,21 @@ Current plan scans all 2,691 embeddings and top-N sorts them. Measured **15.9–
 
 **Effort:** M · **Impact:** 6–29× on the vector stage; the biggest scalability fix.
 
-### P1-2. Set the worker embedding batch to 1–2 on the current server
+### P1-2. Withdrawn — do not tune embedding batch size
 
 **Where:** `app/processing/worker.py:1673-1706`, `app/core/config.py:136`
 
-On the local LM Studio qwen3-8B endpoint, batch 16 measured **182 ms/text** vs **43–66 ms/text** at batch 1. For 2,691 chunks that is roughly **8.2 min → 1.9 min**. The setting is already configurable; change `.env`/compose default and benchmark on the production endpoint before locking it.
+The original claim (182 ms/text at batch 16 vs 43–66 ms/text at batch 1) compared one short
+chunk with 16 longer chunks. On the **same 16 texts**, one batch of 16 took **2.121 s** and 16
+single requests took **2.140 s** (~1%, in favour of the batch). Request grouping is neutral;
+LM Studio processes the inputs one by one.
 
-**Effort:** XS · **Impact:** 2.7–4.2× on the embedding stage.
+The per-input cost is input length: roughly **35 ms + 0.14 ms/char** (2,000 chars ≈ 288 ms;
+8,000 chars ≈ 1.18 s). The real lever is **model choice** — `nomic-embed-text-v1.5` embedded
+the same 16 medium chunks in **76.7 ms vs 2.12 s** (~28×) — or shorter chunks, with a
+retrieval-quality evaluation. Keep the batch at 16 to reduce HTTP requests.
+
+**Effort:** — · **Impact:** none from batch tuning; model choice is a quality trade-off.
 
 ### P1-3. `search_text` needs a trigram index
 
@@ -354,13 +364,14 @@ The query is capped at 200 rows, and the response returns `total=len(items)`. A 
 
 - **Do not rewrite the API or worker in Go/Rust to fix latency.** The measured search path is 67% embedding model, 18% vector SQL and ~6% Python/protocol. Extraction is ~50% ONNX and ~12% PyMuPDF. A rewrite would keep the model and native costs and add FFI/packaging complexity.
 - **Do not add in-container parser concurrency** expecting throughput. Two parsers measured 2.34 pages/s vs 2.45 pages/s serial, with +0.70 GB RSS on a 4-CPU container. Scale worker containers instead.
+- **Do not tune the embedding batch size expecting a win.** On the same 16 texts, one batch of 16 took 2.121 s and 16 single requests took 2.140 s. Input length and model choice dominate.
 - **Do not optimize the API routes first.** They are 3–5 ms; the search model and database query shape dominate.
 
 ## Suggested order
 
 1. P0-1, P0-2, P0-5 (small, user-visible correctness).
 2. P0-3, P0-4 (SQL boundary; add tests before exposing `query_rows` more widely).
-3. P1-1, P1-2 (largest measured latency wins).
+3. P1-1 (largest measured latency win); P1-2 is withdrawn.
 4. P1-6, P1-7, P1-8 (memory/DoS on user-controlled input).
 5. P1-3, P1-4, P1-5 (index/query shape).
 6. P1-9, P1-10, P1-11, P1-13 (deployment reliability).

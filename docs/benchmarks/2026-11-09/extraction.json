@@ -77,6 +77,28 @@
       "32": 209.8
     },
     "nomic_query_p50_ms": 4.4,
-    "nomic_batch18_total_ms": 40.0
+    "nomic_batch18_total_ms": 40.0,
+    "note": "The original per-batch table compared different text sets (batch 1 used one short chunk; batch 16 used 16 longer chunks), so it did not measure batch size. A controlled test on the same 16 texts found request grouping neutral."
+  },
+  "controlled_batch_test": {
+    "same_16_texts_total_ms": {
+      "one_request_of_16": 2121.0,
+      "two_requests_of_8": 2124.3,
+      "four_requests_of_4": 2109.1,
+      "eight_requests_of_2": 2132.7,
+      "sixteen_requests_of_1": 2139.7
+    },
+    "per_text_latency_by_chars_ms": {
+      "5": 37.1,
+      "100": 44.2,
+      "300": 62.0,
+      "665": 118.3,
+      "1000": 150.5,
+      "2000": 288.3,
+      "4000": 567.8,
+      "8000": 1179.0
+    },
+    "nomic_16_medium_texts_total_ms": 76.7,
+    "fit": "~35 ms fixed + ~0.14 ms/char"
   }
 }
