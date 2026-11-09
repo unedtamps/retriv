@@ -5,6 +5,7 @@ import { cachedDocument, loadDocument, type DocumentFile } from '../lib/document
 import type { DocumentUpload, Workspace } from '../types'
 import { Dialog } from './Dialog'
 import { DocumentDocxPreview } from './DocumentDocxPreview'
+import { DocumentJsonPreview } from './DocumentJsonPreview'
 import { DocumentSheetPreview } from './DocumentSheetPreview'
 
 interface DocumentViewerDrawerProps {
@@ -39,6 +40,7 @@ export function DocumentViewerDrawer({
   const file = loaded ?? cached
   const isPdf = document.detected_media_type === 'application/pdf'
   const isDocx = document.detected_media_type === DOCX_MEDIA_TYPE
+  const isJson = document.detected_media_type === 'application/json'
   const isSheet =
     document.detected_media_type === 'text/csv' ||
     document.detected_media_type === XLSX_MEDIA_TYPE
@@ -129,6 +131,12 @@ export function DocumentViewerDrawer({
           </p>
         ) : isDocx ? (
           <DocumentDocxPreview
+            document={document}
+            workspace={workspace}
+            onUnauthorized={onUnauthorized}
+          />
+        ) : isJson ? (
+          <DocumentJsonPreview
             document={document}
             workspace={workspace}
             onUnauthorized={onUnauthorized}

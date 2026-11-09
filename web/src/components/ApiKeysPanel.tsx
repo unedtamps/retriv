@@ -108,7 +108,7 @@ export function ApiKeysPanel({ onUnauthorized, onNotice }: ApiKeysPanelProps) {
         <EmptyState
           icon={<KeyRound aria-hidden="true" size={20} />}
           title="No API keys yet"
-          description="Create one to let an MCP client such as Claude Code or Codex search your workspaces and query CSV files on your behalf."
+          description="Create one to let an MCP client such as Claude Code or Codex search your workspaces and query row data on your behalf."
         />
       ) : (
         <div className="divide-y divide-line">

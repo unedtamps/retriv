@@ -1,13 +1,13 @@
 # Retriv
 
-Retriv is a workspace-scoped document backend. It accepts PDF, DOCX, PPTX, XLSX and
-CSV files,
-extracts and indexes their contents, and exposes the result to people through a
-dashboard API and to agents through an MCP server.
+Retriv is a workspace-scoped document backend. It accepts PDF, DOCX, PPTX, XLSX,
+CSV and JSON files, extracts and indexes their contents, and exposes the result
+to people through a dashboard API and to agents through an MCP server.
 
 ```
 PDF / DOCX  ->  chunks + embeddings  ->  semantic search and in-order reading
-CSV         ->  SQL rows             ->  aggregation and filtered queries
+CSV / XLSX  ->  SQL rows             ->  aggregation and filtered queries
+JSON        ->  declared tables      ->  SQL over typed records
 any file    ->  object storage       ->  signed download addresses
 ```
 
@@ -26,8 +26,8 @@ https://github.com/user-attachments/assets/c53184dc-f194-43c2-8a77-1cc1083f8834
 
 An administrator creates a workspace and hands it to an owner, the owner drops
 in a financial report, the pipeline forks — PDF, DOCX and PPTX become embedded
-chunks, CSV becomes SQL rows — and an agent connected over MCP asks a question
-and answers it with a citation.
+chunks, CSV, XLSX and JSON become SQL rows — and an agent connected over MCP asks
+a question and answers it with a citation.
 
 Rendered with Remotion. The video is a motion recreation of the dashboard, not a
 screen recording. The same clip is committed at
@@ -65,7 +65,7 @@ capacity; there is no direct HTTP call between the two processes.
 | Dashboard | Workspace catalogue, uploads, members, inline PDF and Word preview. |
 | MCP client | Claude Code, Codex or a custom agent using read-only tools. |
 | `app/` | Auth, document intake, scoped retrieval, and the MCP server on `/mcp`. |
-| PostgreSQL | Canonical documents, workspace links, runs, chunks, CSV rows, embedding vectors, refresh tokens. |
+| PostgreSQL | Canonical documents, workspace links, runs, chunks, CSV/XLSX/JSON rows, embedding vectors, refresh tokens. |
 | S3 / R2 | Two buckets: `raw-documents` (content-addressed uploads) and `context-documents` (per-run artifacts and image previews). |
 | `worker/` | Sandboxed native extraction, chunking and embedding writes. |
 | ClamAV | Scans the staged bytes before anything is stored. |
@@ -132,10 +132,13 @@ it, and marks the run ready. Failures are retried with backoff; a lease that
 expires is reclaimed by the next worker. The run is the only source of document
 status.
 
-PDF and DOCX become chunks and vectors. CSV becomes rows in PostgreSQL and is
-queried with SQL; it is never embedded. Pictures inside documents are described
-by an optional multimodal model and the description is folded into the chunk
-that held the picture.
+PDF and DOCX become chunks and vectors. CSV, XLSX and `retriv-json` files become
+rows in PostgreSQL and are queried with SQL; they are never embedded. JSON is
+accepted only as the versioned protocol described in
+[`docs/json-data-protocol.md`](docs/json-data-protocol.md), so its tables and
+columns are explicit rather than inferred. Pictures inside documents are
+described by an optional multimodal model and the description is folded into the
+chunk that held the picture.
 
 ### Retrieval
 
@@ -153,8 +156,9 @@ that held the picture.
 - `describe_document` reports what extraction produced (pages, chunks, images,
   rows) and the pipeline's last error, separating “the document does not say”
   from “the document was never extracted”.
-- `query_rows` runs model-written SQL under a read-only role and PostgreSQL
-  row-level security.
+- `query_rows` runs model-written SQL over CSV, XLSX and JSON rows under a
+  read-only role and PostgreSQL row-level security. JSON data keeps its declared
+  native types and can be queried with JSONB operators.
 - `get_document_link` returns a short-lived signed object-store link and a
   permission-checked API URL; the bytes never pass through the model context.
 
@@ -167,9 +171,9 @@ just acknowledges it.
 1. **Upload.** The file is staged, scanned, validated and hashed.
 2. **Link or store.** If the hash already exists, the target workspace gets a
    link. Otherwise the raw object is stored once and a processing run is queued.
-3. **Process.** The worker extracts, chunks and embeds PDF/DOCX, or stores CSV
-   rows for SQL. One run per canonical document.
-4. **Use.** Search, read in order, query CSV rows, or mint a download address.
+3. **Process.** The worker extracts, chunks and embeds PDF/DOCX, or stores CSV,
+   XLSX and JSON rows for SQL. One run per canonical document.
+4. **Use.** Search, read in order, query rows, or mint a download address.
    Every result is checked against the caller's live workspace access.
 5. **Delete.** Removing a workspace link hides it only there. The last unlink
    queues cleanup of the object, chunks and vectors.
@@ -249,6 +253,10 @@ MinIO service runs locally.
   index is an ordering over the same rows the ledger vouches for.
 - PDF/DOCX extraction runs in a sandboxed subprocess with memory, process,
   file-size and time limits.
+- JSON is parsed strictly: duplicate keys, `NaN`/`Infinity`, excessive depth,
+  row/column/table caps and oversized values are rejected before storage.
+  JSON uploads must follow the versioned
+  [`retriv-json` protocol](docs/json-data-protocol.md).
 
 ## Repository map
 

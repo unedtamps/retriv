@@ -24,7 +24,7 @@ interface UploadConfirmation {
   workspaceName: string
 }
 
-const supportedFile = /\.(pdf|docx|pptx|xlsx|csv)$/i
+const supportedFile = /\.(pdf|docx|pptx|xlsx|csv|json)$/i
 
 export function UploadForm({
   workspaces,
@@ -60,7 +60,7 @@ export function UploadForm({
     setConfirmation(null)
     setError(
       chosen !== null && !supportedFile.test(chosen.name)
-        ? 'Only PDF, DOCX, PPTX, XLSX and CSV files can be processed as context.'
+        ? 'Only PDF, DOCX, PPTX, XLSX, CSV and JSON files can be processed as context.'
         : chosen !== null && chosen.size === 0
           ? 'Choose a non-empty file to upload.'
           : null,
@@ -85,11 +85,11 @@ export function UploadForm({
       return
     }
     if (file === null) {
-      setError('Choose a PDF, DOCX or CSV file to upload.')
+      setError('Choose a PDF, DOCX, CSV or JSON file to upload.')
       return
     }
     if (!supportedFile.test(file.name)) {
-      setError('Only PDF, DOCX, PPTX, XLSX and CSV files can be processed as context.')
+      setError('Only PDF, DOCX, PPTX, XLSX, CSV and JSON files can be processed as context.')
       return
     }
     if (file.size === 0) {
@@ -206,24 +206,26 @@ export function UploadForm({
               <span className="stamp">PPTX</span>
               <span className="stamp">XLSX</span>
               <span className="stamp">CSV</span>
+              <span className="stamp">JSON</span>
             </div>
             <input
               id={fileFieldId}
               ref={fileInput}
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               type="file"
-              accept=".pdf,.docx,.pptx,.xlsx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+              accept=".pdf,.docx,.pptx,.xlsx,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/json"
               aria-describedby={helpId}
               disabled={uploading}
               onChange={chooseFile}
             />
           </div>
           <p id={helpId} className="mt-2 text-xs leading-5 text-ink-muted">
-            PDF, DOCX, PPTX, XLSX or CSV. The server validates the file and enforces its size
-            limit. A CSV or a workbook is stored as rows and queried with SQL rather than indexed
-            for meaning, so the agent can count, total and group its lines but not search their
-            wording; a workbook keeps each sheet as its own table, and the pictures and charts it
-            holds are described so they can be found too.
+            PDF, DOCX, PPTX, XLSX, CSV or JSON. The server validates the file and enforces its
+            size limit. CSV, workbook and JSON data files are stored as rows and queried with SQL
+            rather than indexed for meaning, so the agent can count, total and group their lines
+            but not search their wording; a workbook keeps each sheet as its own table, and JSON
+            must follow the retriv-json v1 protocol. The pictures and charts a workbook holds are
+            described so they can be found too.
           </p>
           {file === null ? null : (
             <div className="mt-3 flex items-center gap-3 rounded-control border border-line bg-surface px-3.5 py-2.5 text-sm">

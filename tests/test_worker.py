@@ -1007,6 +1007,121 @@ async def test_worker_stores_csv_rows_and_never_embeds_them(
     }
 
 
+def retriv_json_bytes() -> bytes:
+    return json.dumps(
+        {
+            "protocol": "retriv-json",
+            "version": 1,
+            "tables": [
+                {
+                    "name": "orders",
+                    "columns": [
+                        {"name": "id", "type": "integer", "nullable": False},
+                        {"name": "total", "type": "number"},
+                        {"name": "customer", "type": "object"},
+                    ],
+                    "records": [
+                        {"id": 1001, "total": 42.5, "customer": {"name": "A"}},
+                        {"id": 1002, "total": 17, "customer": None},
+                    ],
+                }
+            ],
+        }
+    ).encode()
+
+
+async def test_worker_stores_json_rows_and_never_embeds_them(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    storage = FakeStorage()
+    document, run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=retriv_json_bytes(),
+        media_type="application/json",
+        filename="orders.json",
+    )
+    embeddings = FakeEmbeddingProvider()
+    vectors = FakeVectorSink()
+    worker = build_worker(
+        db_session_factory,
+        settings,
+        storage=storage,
+        embeddings=embeddings,
+        vectors=vectors,
+    )
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        stored = await session.get(ProcessingRun, run.id)
+        rows = (
+            (
+                await session.execute(
+                    select(DocumentRow).where(DocumentRow.document_id == document.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert stored is not None
+    assert stored.status == RUN_READY
+    assert stored.row_count == 2
+    assert stored.chunk_count == 0
+    assert stored.embedded_chunk_count == 0
+    assert stored.csv_columns == [
+        {
+            "sheet": "orders",
+            "columns": ["id", "total", "customer"],
+            "rows": 2,
+        }
+    ]
+    assert embeddings.embedded == []
+    assert vectors.vectors == {}
+    assert sorted(row.row_number for row in rows) == [1, 2]
+    assert next(row for row in rows if row.row_number == 1).data == {
+        "id": 1001,
+        "total": 42.5,
+        "customer": {"name": "A"},
+    }
+    assert stored.manifest_key is not None
+    manifest = json.loads(
+        storage.objects[("context-documents", stored.manifest_key)]
+    )
+    assert manifest["artifact_type"] == "retriv-json"
+    assert manifest["protocol"] == "retriv-json"
+    assert manifest["protocol_version"] == 1
+
+
+async def test_worker_rejects_a_json_payload_that_does_not_follow_the_protocol(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    storage = FakeStorage()
+    _, run = await seed_document(
+        db_session_factory,
+        entities.finance.id,
+        storage=storage,
+        content=b'[{"id": 1}]',
+        media_type="application/json",
+        filename="raw.json",
+    )
+    worker = build_worker(db_session_factory, settings, storage=storage)
+
+    assert await worker.run_once() is True
+
+    async with db_session_factory() as session:
+        failed = await session.get(ProcessingRun, run.id)
+    assert failed is not None
+    assert failed.status == RUN_FAILED
+    assert "retriv-json v1 protocol" in (failed.last_error or "")
+
+
 async def test_a_csv_run_completes_while_the_activation_gate_would_have_failed_it(
     db_session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,

@@ -85,7 +85,7 @@ export interface DocumentUpload {
   created_by_user_id: string | null
   created_at: string
   duplicate: boolean
-  /** Zero unless this is a CSV, whose content is rows rather than chunks. */
+  /** Zero unless this is a row-stored file (CSV, XLSX or JSON). */
   row_count: number
 }
 

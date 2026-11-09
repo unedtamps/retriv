@@ -10,7 +10,7 @@ import { RefreshButton } from './ui/RefreshButton'
 
 type StatusFilter = 'all' | 'ready' | 'active' | 'failed'
 
-const TYPE_CHIPS = ['PDF', 'DOCX', 'XLSX', 'CSV', 'PPTX'] as const
+const TYPE_CHIPS = ['PDF', 'DOCX', 'XLSX', 'CSV', 'JSON', 'PPTX'] as const
 
 interface WorkspaceDocumentsPageProps {
   workspace: Workspace

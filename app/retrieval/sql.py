@@ -1,4 +1,4 @@
-"""Read-only SQL over CSV rows, scoped by the database rather than by the query.
+"""Read-only SQL over row-stored files, scoped by the database rather than by the query.
 
 The agent writes SQL, so the isolation cannot live in the statement. It lives
 in four places, and this module is where three of them are applied:
@@ -23,6 +23,7 @@ not accepted in a SET statement, and the scope value has to be an array
 literal for the policy's ``uuid[]`` cast.
 """
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -53,11 +54,27 @@ _ALLOWED_TABLES = frozenset({"document_rows", "documents"})
 ROW_STORED_MEDIA_TYPES = (
     "text/csv",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/json",
 )
 """Media types whose content is stored as rows, not chunks."""
 
 
 CATALOGUE_PAGE = 100
+
+
+def _render_cell(value: object) -> str:
+    """Render a cell as text without losing structured JSON values.
+
+    CSV and workbook cells are strings. A retriv-json cell may be an object or
+    an array, and Python's default repr is neither valid JSON nor pleasant to
+    read in a citation.
+    """
+
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return str(value)
 
 
 def escape_like(value: str) -> str:
@@ -99,7 +116,9 @@ class RowResult:
         """
         from app.retrieval.schemas import ContextSource
 
-        rendered = " | ".join(f"{column}={self.data.get(column, '')}" for column in self.columns)
+        rendered = " | ".join(
+            f"{column}={_render_cell(self.data.get(column))}" for column in self.columns
+        )
         return ContextSource(
             workspace_id=self.workspace_id,
             document_id=self.document_id,

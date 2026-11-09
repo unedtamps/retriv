@@ -19,6 +19,7 @@ from fastapi import UploadFile
 
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.documents.json_protocol import JsonLimits, JsonProtocolError, validate_json_protocol
 
 PDF_MEDIA_TYPE = "application/pdf"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -27,7 +28,8 @@ PPTX_MEDIA_TYPE = (
 )
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSV_MEDIA_TYPE = "text/csv"
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".csv"}
+JSON_MEDIA_TYPE = "application/json"
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".csv", ".json"}
 OFFICE_CFB_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 CSV_ENCODINGS = ("utf-8-sig", "utf-8")
 CSV_DELIMITERS = (",", ";", "\t", "|")
@@ -50,12 +52,14 @@ class ValidationResult:
 
 async def stage_upload(upload: UploadFile, settings: Settings) -> StagedUpload:
     filename = sanitize_filename(upload.filename)
-    check_size_hint(upload.size, settings.max_upload_bytes)
+    extension = supported_extension(filename)
+    max_bytes = max_bytes_for_extension(extension, settings)
+    check_size_hint(upload.size, max_bytes)
     return await stage_chunks(
         filename,
         upload_chunks(upload),
         settings=settings,
-        max_bytes=settings.max_upload_bytes,
+        max_bytes=max_bytes,
     )
 
 
@@ -114,9 +118,22 @@ def supported_extension(filename: str) -> str:
             status_code=415,
             code="unsupported_file_type",
             title="Unsupported file type",
-            detail="Only PDF, DOCX, PPTX, XLSX, and CSV files are accepted.",
+            detail="Only PDF, DOCX, PPTX, XLSX, CSV, and JSON files are accepted.",
         )
     return extension
+
+
+def max_bytes_for_extension(extension: str, settings: Settings) -> int:
+    """The staged size cap for one extension.
+
+    JSON has a lower cap than the general upload because the stdlib parser
+    builds the whole tree in memory. Taking the minimum also keeps the test
+    settings' smaller ``max_upload_bytes`` authoritative.
+    """
+
+    if extension == ".json":
+        return min(settings.max_upload_bytes, settings.max_json_bytes)
+    return settings.max_upload_bytes
 
 
 def check_size_hint(declared: int | None, max_bytes: int) -> None:
@@ -154,7 +171,36 @@ def validate_document(staged: StagedUpload, settings: Settings) -> ValidationRes
         return validate_pdf(staged.path, settings.max_pdf_pages)
     if staged.extension == ".csv":
         return validate_csv(staged.path, settings)
+    if staged.extension == ".json":
+        return validate_json(staged.path, settings)
     return validate_ooxml(staged.path, staged.extension, settings)
+
+
+def validate_json(path: Path, settings: Settings) -> ValidationResult:
+    """Accept only the retriv-json v1 protocol, not arbitrary JSON.
+
+    The worker re-reads and re-validates the object it downloads; this pass is
+    the upload-time refusal so an unusable file is rejected before it reaches
+    storage and the queue.
+    """
+
+    data = path.read_bytes()
+    if len(data) > settings.max_json_bytes:
+        raise file_too_large_error(settings.max_json_bytes)
+    try:
+        validate_json_protocol(data, JsonLimits.from_settings(settings))
+    except JsonProtocolError as exc:
+        raise json_protocol_error(exc) from exc
+    return ValidationResult(media_type=JSON_MEDIA_TYPE)
+
+
+def json_protocol_error(exc: JsonProtocolError) -> AppError:
+    return AppError(
+        status_code=422,
+        code=exc.code,
+        title="Invalid JSON data",
+        detail=exc.detail,
+    )
 
 
 def validate_csv(path: Path, settings: Settings) -> ValidationResult:

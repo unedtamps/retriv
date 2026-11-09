@@ -330,14 +330,14 @@ class AgentToolKit:
         if not scope:
             return format_catalogue(
                 Catalogue(entries=[], hidden=0),
-                header="CSV files:",
+                header="Queryable files:",
                 queryable=runtime.row_query is not None,
             )
         catalogue = await self._catalogue_for(
             scope, offset=offset, limit=limit, pattern=pattern
         )
         body = format_catalogue(
-            catalogue, header="CSV files:", queryable=runtime.row_query is not None
+            catalogue, header="Queryable files:", queryable=runtime.row_query is not None
         )
         if offset:
             body = f"{body}\n(showing from offset {offset})"
@@ -487,10 +487,10 @@ class AgentToolKit:
             sections = outline.section_count
 
         columns: list[str] = []
+        tables: list[tuple[str, list[str], int]] = []
         if run is not None and run.csv_columns:
-            for _sheet, sheet_columns, _rows in catalogue_entries(
-                run.csv_columns, run.row_count
-            ):
+            tables = catalogue_entries(run.csv_columns, run.row_count)
+            for _sheet, sheet_columns, _rows in tables:
                 for column in sheet_columns:
                     if column not in columns:
                         columns.append(column)
@@ -519,6 +519,7 @@ class AgentToolKit:
                 last_error=run.last_error if run is not None else None,
                 queryable=self.row_queries,
                 row_stored=row_stored,
+                tables=tables,
             )
         )
 

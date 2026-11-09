@@ -2,7 +2,7 @@
 
 Retrieval answers "what does this workspace say about X". This answers the
 question before it: "which file is that in". Without it a model can only
-learn a document_id from a search result or the CSV catalogue, so naming a
+learn a document_id from a search result or the row catalogue, so naming a
 file in a question is not something it can act on.
 
 The query itself lives in app/documents/search.py, shared with the dashboard's
@@ -56,6 +56,6 @@ def format_documents(
     if pattern is None:
         body += (
             "\nUse this when you need a document_id: pass it to "
-            "get_document_link, or to query_rows for a CSV or workbook.\n"
+            "get_document_link, or to query_rows for a CSV, workbook or JSON data file.\n"
         )
     return body + "\n\n"

@@ -188,6 +188,7 @@ export function documentType(filename: string, mediaType: string): string {
   if (extension !== undefined && extension !== filename) return extension.toUpperCase()
   if (mediaType.includes('pdf')) return 'PDF'
   if (mediaType.includes('csv')) return 'CSV'
+  if (mediaType.includes('json')) return 'JSON'
   if (mediaType.includes('wordprocessingml')) return 'DOCX'
   if (mediaType.includes('presentationml')) return 'PPTX'
   if (mediaType.includes('spreadsheetml')) return 'XLSX'

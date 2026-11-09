@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "JsonColumnSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "default": "any",
+          "enum": [
+            "any",
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "object",
+            "array",
+            "null"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "nullable": {
+          "default": true,
+          "title": "Nullable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "JsonColumnSchema",
+      "type": "object"
+    },
+    "JsonTableSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/JsonColumnSchema"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "records": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Records",
+          "type": "array"
+        }
+      },
+      "required": [
+        "columns",
+        "records"
+      ],
+      "title": "JsonTableSchema",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "retriv-json",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "tables": {
+      "items": {
+        "$ref": "#/$defs/JsonTableSchema"
+      },
+      "title": "Tables",
+      "type": "array"
+    }
+  },
+  "required": [
+    "protocol",
+    "version",
+    "tables"
+  ],
+  "title": "retriv-json v1",
+  "type": "object"
+}

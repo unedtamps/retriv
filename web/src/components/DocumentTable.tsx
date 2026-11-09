@@ -91,7 +91,7 @@ export function DocumentTable({
           </p>
           <p className="mt-1 max-w-sm text-sm leading-6 text-ink-muted">
             {total === 0
-              ? 'Upload a PDF, DOCX or CSV to make its content available to this workspace.'
+              ? 'Upload a PDF, DOCX, CSV or JSON to make its content available to this workspace.'
               : 'Try a different filter to find the file you need.'}
           </p>
         </div>

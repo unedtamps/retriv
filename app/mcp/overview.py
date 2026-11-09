@@ -7,7 +7,7 @@ so they are rendered as labelled lines rather than JSON -- the same shape the
 catalogue and the document list use, and the one a model reads most reliably.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -70,6 +70,7 @@ class DocumentReport:
     last_error: str | None
     queryable: bool
     row_stored: bool
+    tables: list[tuple[str, list[str], int]] = field(default_factory=list)
 
 
 def format_document_report(report: DocumentReport) -> str:
@@ -96,8 +97,14 @@ def format_document_report(report: DocumentReport) -> str:
 
     if report.row_stored:
         lines.append(f"rows: {report.rows}")
-        columns = ", ".join(report.columns) if report.columns else "unknown"
-        lines.append(f"columns: {columns}")
+        if report.tables:
+            for name, table_columns, table_rows in report.tables:
+                label = name or "(root)"
+                columns = ", ".join(table_columns) if table_columns else "unknown"
+                lines.append(f"table {label}: {table_rows} rows; columns: {columns}")
+        else:
+            columns = ", ".join(report.columns) if report.columns else "unknown"
+            lines.append(f"columns: {columns}")
         lines.append(
             "queryable with query_rows"
             if report.queryable

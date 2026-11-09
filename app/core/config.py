@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     max_csv_rows: int = Field(default=1_000_000, gt=0)
     max_csv_columns: int = Field(default=512, ge=1, le=4096)
     max_csv_field_bytes: int = Field(default=64 * 1024, gt=0)
+    max_json_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    """The JSON file or request-body cap.
+
+    Kept below the general upload cap because stdlib JSON is parsed into a
+    whole Python tree. A larger payload needs a streaming reader, not just a
+    larger number."""
+    max_json_depth: int = Field(default=64, ge=1, le=256)
+    max_json_nodes: int = Field(default=2_000_000, gt=0)
+    max_json_rows: int = Field(default=1_000_000, gt=0)
+    max_json_tables: int = Field(default=20, ge=1, le=100)
+    max_json_value_bytes: int = Field(default=64 * 1024, gt=0)
+    max_json_row_bytes: int = Field(default=1024 * 1024, gt=0)
     max_xlsx_sheets: int = Field(default=64, gt=0)
     """Sheets one workbook may carry.
 
@@ -368,6 +380,10 @@ class Settings(BaseSettings):
         if self.max_total_image_bytes < self.max_image_bytes:
             raise ValueError(
                 "RETRIV_MAX_TOTAL_IMAGE_BYTES must not be below RETRIV_MAX_IMAGE_BYTES"
+            )
+        if self.max_json_value_bytes > self.max_json_row_bytes:
+            raise ValueError(
+                "RETRIV_MAX_JSON_VALUE_BYTES must not exceed RETRIV_MAX_JSON_ROW_BYTES"
             )
         if self.model_wait_max_seconds < self.model_wait_base_seconds:
             raise ValueError(

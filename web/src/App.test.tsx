@@ -1278,6 +1278,42 @@ describe('dashboard application', () => {
     expect((body.get('file') as File).name).toBe('sales.csv')
   })
 
+  it('accepts a retriv-json payload for upload, which is stored as declared tables', async () => {
+    const user = userEvent.setup()
+    const fetchMock = installApi(owner, [workspace])
+
+    window.history.pushState({}, '', '/upload-context')
+    render(<App />)
+    await user.type(screen.getByLabelText('Username'), 'maya')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
+
+    const payload = {
+      protocol: 'retriv-json',
+      version: 1,
+      tables: [
+        {
+          name: 'orders',
+          columns: [{ name: 'id', type: 'integer' }],
+          records: [{ id: 1 }],
+        },
+      ],
+    }
+    const file = new File([JSON.stringify(payload)], 'orders.json', { type: 'application/json' })
+    await user.upload(screen.getByLabelText('Document'), file)
+    expect(screen.getByRole('button', { name: 'Upload document' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+    expect(await screen.findByRole('heading', { name: 'Document accepted' })).toBeInTheDocument()
+    const uploadCall = fetchMock.mock.calls.find(([input]) => String(input) === '/v1/workspaces/workspace-1/documents')
+    if (uploadCall === undefined) throw new Error('Expected an upload request')
+    const body = uploadCall[1]?.body
+    if (!(body instanceof FormData)) throw new Error('Expected multipart form data')
+    expect((body.get('file') as File).name).toBe('orders.json')
+  })
+
   it('accepts a workbook, which is stored as one table per sheet', async () => {
     const user = userEvent.setup()
     const fetchMock = installApi(owner, [workspace])
@@ -1340,7 +1376,7 @@ describe('dashboard application', () => {
       target: { files: [new File(['x'], 'budget.xls', { type: 'application/vnd.ms-excel' })] },
     })
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Only PDF, DOCX, PPTX, XLSX and CSV')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only PDF, DOCX, PPTX, XLSX, CSV and JSON')
     expect(screen.getByRole('button', { name: 'Upload document' })).toBeDisabled()
   })
 
@@ -1389,7 +1425,7 @@ describe('dashboard application', () => {
     expect(
       await screen.findByRole('heading', { name: 'Upload context', level: 1 })
     ).toBeInTheDocument()
-    const help = screen.getByText(/PDF, DOCX, PPTX, XLSX or CSV/)
+    const help = screen.getByText(/PDF, DOCX, PPTX, XLSX, CSV or JSON/)
     expect(help).toBeInTheDocument()
     expect(help).toHaveTextContent(/queried with SQL/)
     expect(help).toHaveTextContent(/each sheet as its own table/)
@@ -1694,6 +1730,63 @@ describe('dashboard application', () => {
     await waitFor(() =>
       expect(preview.shadowRoot?.textContent).toContain('Business Case Answer Sheet'),
     )
+  })
+
+  it('renders a retriv-json document as its declared table', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=documents')
+    writeSessionToken('member-token')
+    const payload = {
+      protocol: 'retriv-json',
+      version: 1,
+      tables: [
+        {
+          name: 'orders',
+          columns: [
+            { name: 'id', type: 'integer', nullable: false },
+            { name: 'total', type: 'number' },
+          ],
+          records: [
+            { id: 1001, total: 42.5 },
+            { id: 1002, total: 17 },
+          ],
+        },
+      ],
+    }
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+    installApi(owner, [workspace], undefined, {}, {
+      list: {
+        items: [
+          {
+            id: 'document-json-1',
+            workspace_id: workspace.id,
+            original_filename: 'orders.json',
+            detected_media_type: 'application/json',
+            size_bytes: blob.size,
+            sha256: 'e'.repeat(64),
+            status: 'ready',
+            created_by_user_id: 'user-owner',
+            created_at: '2026-09-24T08:00:00Z',
+            duplicate: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+      downloadBlob: blob,
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByText('orders.json')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'View orders.json' }))
+
+    const viewer = await screen.findByRole('dialog', { name: 'orders.json' })
+    expect(await within(viewer).findByText('orders')).toBeInTheDocument()
+    expect(within(viewer).getByText('1001')).toBeInTheDocument()
+    expect(within(viewer).getByRole('button', { name: 'Raw' })).toBeInTheDocument()
+    expect(within(viewer).queryByText('No inline preview for this file type')).not.toBeInTheDocument()
   })
 
   it('fetches a Word document once across repeated previews', async () => {
