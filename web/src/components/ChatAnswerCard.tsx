@@ -1,5 +1,5 @@
 import { lazy, Suspense, useId, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, FileText } from 'lucide-react'
 import type { ToolStep } from '../hooks/useAgentConversation'
 import type { AgentChatSource } from '../types'
 
@@ -117,6 +117,7 @@ export function ChatAnswerCard({
   errors,
 }: ChatAnswerCardProps) {
   const [trailOpen, setTrailOpen] = useState(false)
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const citationPrefix = `citation-${useId().replaceAll(':', '')}`
   const answer = texts.join('\n\n')
   const hasAnswer = answer.trim() !== ''
@@ -137,6 +138,21 @@ export function ChatAnswerCard({
   const running = busy && lastCall !== undefined && lastCall.preview === ''
   const totalMs = calls.reduce((total, call) => total + (call.durationMs ?? 0), 0)
   const totalDuration = totalMs > 0 ? `${(totalMs / 1000).toFixed(1)}s` : ''
+
+  // A citation marker is both a jump and a disclosure: the footer opens so
+  // the reference it points at is on screen before the scroll begins.
+  const revealCitation = (index: number) => {
+    setSourcesOpen(true)
+    window.setTimeout(() => {
+      const chip = document.getElementById(`${citationPrefix}-${index}`)
+      if (chip === null) return
+      chip.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+      chip.classList.remove('chat-citation-flash')
+      void chip.offsetWidth
+      chip.classList.add('chat-citation-flash')
+      window.setTimeout(() => chip.classList.remove('chat-citation-flash'), 1200)
+    }, 0)
+  }
 
   return (
     <article className="chat-answer-card" aria-label="Answer">
@@ -162,6 +178,7 @@ export function ChatAnswerCard({
                   text={answer}
                   citations={sources.map((source) => source.index)}
                   citationPrefix={citationPrefix}
+                  onCitationClick={revealCitation}
                 />
               </Suspense>
             </div>
@@ -236,17 +253,38 @@ export function ChatAnswerCard({
       )}
 
       {sources.length === 0 ? null : (
-        <div className="chat-citations" aria-label="Sources">
-          {sources.map((source) => (
-            <span
-              className="chat-citation"
-              id={`${citationPrefix}-${source.index}`}
-              key={`${source.documentId ?? source.filename}-${source.ordinal ?? source.index}`}
-            >
-              <span className="chat-citation-index">[{source.index}]</span>
-              {source.filename} · {citationLocation(source)}
+        <div className="chat-sources" aria-label="Sources">
+          <button
+            type="button"
+            className="chat-sources-summary"
+            aria-expanded={sourcesOpen}
+            onClick={() => setSourcesOpen((open) => !open)}
+          >
+            <FileText aria-hidden="true" size={12} className="chat-sources-icon" />
+            <span className="chat-tool-name">
+              {sources.length} source{sources.length === 1 ? '' : 's'}
             </span>
-          ))}
+            <ChevronDown
+              aria-hidden="true"
+              size={12}
+              className={`chat-tool-chevron${sourcesOpen ? ' chat-tool-chevron-open' : ''}`}
+            />
+          </button>
+
+          {sourcesOpen ? (
+            <div className="chat-citations" aria-label="Cited sources">
+              {sources.map((source) => (
+                <span
+                  className="chat-citation"
+                  id={`${citationPrefix}-${source.index}`}
+                  key={`${source.documentId ?? source.filename}-${source.ordinal ?? source.index}`}
+                >
+                  <span className="chat-citation-index">[{source.index}]</span>
+                  {source.filename} · {citationLocation(source)}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       )}
     </article>

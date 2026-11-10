@@ -1160,7 +1160,8 @@
   background: var(--color-chat-surface);
 }
 
-.chat-tool-summary {
+.chat-tool-summary,
+.chat-sources-summary {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -1177,11 +1178,13 @@
   transition: background-color 150ms;
 }
 
-.chat-tool-summary:hover {
+.chat-tool-summary:hover,
+.chat-sources-summary:hover {
   background: var(--color-chat-soft);
 }
 
-.chat-tool-summary:focus-visible {
+.chat-tool-summary:focus-visible,
+.chat-sources-summary:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
@@ -1243,6 +1246,23 @@
   flex: none;
   color: var(--color-chat-faint);
   font-variant-numeric: tabular-nums;
+}
+
+.chat-sources {
+  margin: 0 18px 16px;
+  border: 1px solid var(--color-chat-line);
+  border-radius: 2px;
+  background: var(--color-chat-surface);
+}
+
+.chat-sources-icon {
+  flex: none;
+  color: var(--color-chat-faint);
+}
+
+.chat-sources .chat-citations {
+  border-top: 1px solid var(--color-chat-line);
+  padding: 10px 11px;
 }
 
 .chat-citations {
@@ -1674,6 +1694,10 @@
   }
 
   .chat-tool-trail {
+    margin: 0 12px 12px;
+  }
+
+  .chat-sources {
     margin: 0 12px 12px;
   }
 
