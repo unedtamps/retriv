@@ -989,7 +989,6 @@
 }
 
 .chat-answer-stream {
-  max-width: 74ch;
   margin: 0;
   font-family: var(--font-sans);
   font-size: 1.06rem;
@@ -1004,11 +1003,6 @@
   font-size: 1.06rem;
   line-height: 1.58;
   color: var(--color-chat-ink);
-}
-
-.chat-answer-md .retriv-md p,
-.chat-answer-md .retriv-md li {
-  max-width: 74ch;
 }
 
 .chat-answer-md .retriv-md p {
