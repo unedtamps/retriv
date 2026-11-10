@@ -1441,6 +1441,7 @@
   min-width: 84px;
   align-items: center;
   justify-content: center;
+  gap: 7px;
   border: 0;
   border-radius: 1px;
   padding: 0 16px;
@@ -1449,7 +1450,12 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  transition: filter 150ms, opacity 150ms;
+  transition: filter 150ms, opacity 150ms, background-color 150ms;
+}
+
+.chat-send svg,
+.chat-stop svg {
+  flex: none;
 }
 
 .chat-send {
@@ -1466,13 +1472,13 @@
 }
 
 .chat-stop {
-  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
-  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 50%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 9%, transparent);
   color: var(--color-danger);
 }
 
 .chat-stop:hover {
-  background: var(--color-danger-soft);
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
 }
 
 .chat-history-scrim {
