@@ -1,12 +1,14 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useId, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import type { ToolStep } from '../hooks/useAgentConversation'
+import type { AgentChatSource } from '../types'
 
 const MarkdownText = lazy(() => import('./MarkdownText').then((m) => ({ default: m.MarkdownText })))
 
 interface ChatAnswerCardProps {
   calls: ToolStep[]
   texts: string[]
+  sources?: AgentChatSource[]
   streaming: boolean
   busy: boolean
   errors: string[]
@@ -54,6 +56,18 @@ function parseSources(calls: ToolStep[]): SourceRef[] {
   return sources.sort((left, right) => left.index - right.index)
 }
 
+function serverSources(sources: AgentChatSource[]): SourceRef[] {
+  return sources
+    .map((source) => ({
+      index: source.index,
+      filename: source.filename ?? 'unknown',
+      ordinal: source.ordinal,
+      page: source.page_numbers?.[0],
+      documentId: source.document_id,
+    }))
+    .sort((left, right) => left.index - right.index)
+}
+
 function documentRef(source: SourceRef | undefined): string | null {
   if (source?.documentId === undefined) return null
   return `DOC-${source.documentId.replaceAll('-', '').slice(-4).toUpperCase()}`
@@ -94,11 +108,20 @@ function formatDuration(call: ToolStep, running: boolean): string {
  * an answer plate with its source reference, the prose, the calls that
  * produced it, and the citations that make it checkable.
  */
-export function ChatAnswerCard({ calls, texts, streaming, busy, errors }: ChatAnswerCardProps) {
+export function ChatAnswerCard({
+  calls,
+  texts,
+  sources: citedSources,
+  streaming,
+  busy,
+  errors,
+}: ChatAnswerCardProps) {
   const [trailOpen, setTrailOpen] = useState(false)
+  const citationPrefix = `citation-${useId().replaceAll(':', '')}`
   const answer = texts.join('\n\n')
   const hasAnswer = answer.trim() !== ''
-  const sources = parseSources(calls)
+  const sources =
+    citedSources === undefined ? parseSources(calls) : serverSources(citedSources)
   const firstSource = sources[0]
   const reference = documentRef(firstSource)
   const location =
@@ -135,7 +158,11 @@ export function ChatAnswerCard({ calls, texts, streaming, busy, errors }: ChatAn
           ) : (
             <div className="chat-answer-md">
               <Suspense fallback={<p className="whitespace-pre-wrap">{answer}</p>}>
-                <MarkdownText text={answer} />
+                <MarkdownText
+                  text={answer}
+                  citations={sources.map((source) => source.index)}
+                  citationPrefix={citationPrefix}
+                />
               </Suspense>
             </div>
           )
@@ -211,7 +238,12 @@ export function ChatAnswerCard({ calls, texts, streaming, busy, errors }: ChatAn
       {sources.length === 0 ? null : (
         <div className="chat-citations" aria-label="Sources">
           {sources.map((source) => (
-            <span className="chat-citation" key={`${source.documentId ?? source.filename}-${source.ordinal ?? source.index}`}>
+            <span
+              className="chat-citation"
+              id={`${citationPrefix}-${source.index}`}
+              key={`${source.documentId ?? source.filename}-${source.ordinal ?? source.index}`}
+            >
+              <span className="chat-citation-index">[{source.index}]</span>
               {source.filename} · {citationLocation(source)}
             </span>
           ))}

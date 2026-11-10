@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CirclePlus, PanelLeft, Square } from 'lucide-react'
 import type { AgentConversation, ChatItem, ToolStep } from '../hooks/useAgentConversation'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
-import type { ProcessingRun, Workspace } from '../types'
+import type { AgentChatSource, ProcessingRun, Workspace } from '../types'
 import { ChatAnswerCard } from './ChatAnswerCard'
 import { ChatHistoryDrawer } from './ChatHistoryDrawer'
 import { ChatProcessingBanner } from './ChatProcessingBanner'
@@ -18,6 +18,7 @@ interface TurnGroup {
   question: string | null
   calls: ToolStep[]
   texts: string[]
+  sources: AgentChatSource[]
   streaming: boolean
   errors: string[]
 }
@@ -39,6 +40,7 @@ function groupTurns(items: ChatItem[]): TurnGroup[] {
       question,
       calls: [],
       texts: [],
+      sources: [],
       streaming: false,
       errors: [],
     }
@@ -59,6 +61,7 @@ function groupTurns(items: ChatItem[]): TurnGroup[] {
     }
     if (item.kind === 'assistant') {
       turn.texts.push(item.text)
+      if (item.sources !== undefined) turn.sources = item.sources
       turn.streaming = item.streaming === true
       continue
     }
@@ -214,6 +217,7 @@ export function AgentChatPage({
                     <ChatAnswerCard
                       calls={turn.calls}
                       texts={turn.texts}
+                      sources={turn.sources}
                       streaming={turn.streaming}
                       busy={isLiveTurn}
                       errors={turn.errors}

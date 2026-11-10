@@ -7,7 +7,7 @@ import {
   type StoredChatHistory,
   type StoredConversation,
 } from '../lib/chatHistoryStore'
-import type { AgentChatEvent, AgentChatHistoryMessage } from '../types'
+import type { AgentChatEvent, AgentChatHistoryMessage, AgentChatSource } from '../types'
 
 export interface ToolStep {
   name: string
@@ -21,7 +21,7 @@ export interface ToolStep {
 
 export type ChatItem =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string; streaming?: boolean }
+  | { kind: 'assistant'; text: string; streaming?: boolean; sources?: AgentChatSource[] }
   | { kind: 'activity'; id?: string; calls: ToolStep[] }
   | { kind: 'error'; text: string }
 
@@ -262,15 +262,16 @@ export function useAgentConversation(onUnauthorized: () => void) {
       }
       if (event.type === 'message' || event.type === 'final') {
         streamingRef.current = false
+        const sources = event.type === 'final' ? event.sources : undefined
         setItems((current) => {
           const last = current[current.length - 1]
           if (last !== undefined && last.kind === 'assistant' && last.streaming === true) {
             return [
               ...current.slice(0, -1),
-              { kind: 'assistant', text: event.content ?? last.text },
+              { kind: 'assistant', text: event.content ?? last.text, sources },
             ]
           }
-          return [...current, { kind: 'assistant', text: event.content ?? '' }]
+          return [...current, { kind: 'assistant', text: event.content ?? '', sources }]
         })
         return
       }

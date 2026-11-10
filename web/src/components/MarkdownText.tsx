@@ -23,6 +23,29 @@ const remarkGfm =
  * bundle: the chart, spreadsheet and Word renderers set that precedent, and a
  * user who never opens the chat never parses prose.
  */
+function linkCitations(
+  markdown: string,
+  citations: number[],
+  prefix: string,
+): string {
+  if (citations.length === 0) return markdown
+  const allowed = new Set(citations)
+  // Split on fenced and inline code first: a snippet is data, not prose, and
+  // rewriting its brackets would corrupt it.
+  return markdown
+    .split(/(```[\s\S]*?```|`[^`]*`)/g)
+    .map((part, index) =>
+      index % 2 === 1
+        ? part
+        : part.replace(/\[(\d+)\]/g, (whole, raw: string) =>
+            allowed.has(Number.parseInt(raw, 10))
+              ? `[[${raw}]](#${prefix}-${raw})`
+              : whole,
+          ),
+    )
+    .join('')
+}
+
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (Array.isArray(node)) return node.map(textOf).join('')
@@ -30,13 +53,51 @@ function textOf(node: ReactNode): string {
   return ''
 }
 
-export function MarkdownText({ text }: { text: string }) {
+export function MarkdownText({
+  text,
+  citations = [],
+  citationPrefix = 'citation',
+}: {
+  text: string
+  citations?: number[]
+  citationPrefix?: string
+}) {
   return (
     <div className="retriv-md">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+          a: ({ href, children, node: _node, ...props }) => {
+            if (href?.startsWith('#citation-')) {
+              return (
+                <a
+                  {...props}
+                  href={href}
+                  className="retriv-cite"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    const chip = document.getElementById(href.slice(1))
+                    if (chip === null) return
+                    chip.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+                    chip.classList.remove('chat-citation-flash')
+                    void chip.offsetWidth
+                    chip.classList.add('chat-citation-flash')
+                    window.setTimeout(
+                      () => chip.classList.remove('chat-citation-flash'),
+                      1200,
+                    )
+                  }}
+                >
+                  {children}
+                </a>
+              )
+            }
+            return (
+              <a {...props} href={href} target="_blank" rel="noreferrer">
+                {children}
+              </a>
+            )
+          },
           td: ({ children, node: _node, ...props }) => {
             const label = textOf(children).trim().toUpperCase()
             const tone = label.startsWith('OVER')
@@ -52,7 +113,7 @@ export function MarkdownText({ text }: { text: string }) {
           },
         }}
       >
-        {text}
+        {linkCitations(text, citations, citationPrefix)}
       </ReactMarkdown>
     </div>
   )

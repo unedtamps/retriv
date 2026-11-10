@@ -5,7 +5,7 @@ import App from './App'
 import { readSession, readSessionToken, writeSession, writeSessionToken } from './session'
 import { buildDocx, DOCX_MEDIA_TYPE } from './test/docxFixture'
 import { loadChatHistory } from './lib/chatHistoryStore'
-import type { CurrentUser, Workspace } from './types'
+import type { AgentChatSource, CurrentUser, Workspace } from './types'
 
 const admin: CurrentUser = {
   id: 'user-admin',
@@ -78,6 +78,8 @@ function installApi(
     holdBeforeFinalMs?: number
     preToolDeltas?: string[]
     toolCalls?: { name: string; arguments: Record<string, unknown>; preview: string }[]
+    final?: string
+    sources?: AgentChatSource[]
   } = {},
 ) {
   const refreshes: string[] = []
@@ -161,7 +163,10 @@ function installApi(
           }
           const final = {
             type: 'final',
-            content: 'The workspace holds one report.\n\n## Findings\n\n- Revenue rose by a tenth.',
+            content:
+              chat.final ??
+              'The workspace holds one report.\n\n## Findings\n\n- Revenue rose by a tenth.',
+            sources: chat.sources,
           }
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(final)}\n\n`))
           controller.close()
@@ -854,6 +859,39 @@ describe('dashboard application', () => {
     const headers = chatCall[1]?.headers
     if (!(headers instanceof Headers)) throw new Error('Expected request headers')
     expect(headers.get('Authorization')).toBe('Bearer member-token')
+  })
+
+  it('numbers the sources an answer cites and links its markers to them', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi(admin, [workspace], undefined, {}, {}, {}, {}, {
+      final: 'Net revenue rose by a tenth [1].',
+      sources: [
+        {
+          index: 1,
+          document_id: '11111111-1111-1111-1111-111111111111',
+          filename: 'report.pdf',
+          ordinal: 3,
+          page_numbers: [2],
+          section_path: ['Revenue'],
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    writeSessionToken('member-token')
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'How did revenue move?')
+    await user.keyboard('{Enter}')
+
+    const marker = await screen.findByRole('link', { name: '[1]' })
+    expect(marker).toHaveClass('retriv-cite')
+
+    const chip = screen.getByText(/report\.pdf · p\.2/)
+    expect(chip).toHaveTextContent('[1]')
+
+    await user.click(marker)
+    expect(chip).toHaveClass('chat-citation-flash')
   })
 
   it('shows every tool call, not only the first', async () => {

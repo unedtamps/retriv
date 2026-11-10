@@ -262,8 +262,20 @@ export interface AgentChatHistoryMessage {
   content: string
 }
 
+/** One source an answer actually cites, labelled with its inline `[n]`. */
+export interface AgentChatSource {
+  index: number
+  document_id: string
+  workspace_id?: string
+  filename: string | null
+  ordinal: number
+  section_path?: string[]
+  page_numbers?: number[]
+}
+
 export interface AgentChatEvent {
   type: 'turn_start' | 'message_delta' | 'tool_call' | 'tool_result' | 'message' | 'final' | 'error'
+  sources?: AgentChatSource[]
   name?: string
   arguments?: Record<string, unknown>
   length?: number

@@ -280,6 +280,12 @@ async def test_chat_streams_tool_calls_to_an_answer(
     assert events[1]["name"] == "search_context"
     assert "Net revenue rose by a tenth." in events[2]["preview"]
     assert events[3]["content"].startswith("Net revenue rose")
+    # The labels in the prose are the ones the payload names; the client must
+    # not have to reconstruct them from a possibly-truncated preview.
+    assert [source["index"] for source in events[3]["sources"]] == [1]
+    assert events[3]["sources"][0]["filename"] == "report.pdf"
+    assert events[3]["sources"][0]["ordinal"] == 3
+    assert events[3]["sources"][0]["page_numbers"] == [2]
 
     assert len(runtime_env.scopes) == 1
     assert set(runtime_env.scopes[0]) == {entities.finance.id, entities.legal.id}

@@ -512,6 +512,30 @@ def _result_for_model(text: str) -> str:
     )
 
 
+def _cited_sources(content: str, served: list[ServedSource]) -> list[dict[str, Any]]:
+    """The sources an answer actually cites, keyed by the labels it used.
+
+    Labels are assigned across the whole turn, so this list is exactly what
+    the inline markers refer to. Sending it with the final answer is what
+    lets a client show the same references instead of guessing them back
+    from truncated tool previews.
+    """
+    cited = {int(match) for match in _CITATION.findall(content)}
+    return [
+        {
+            "index": source.index,
+            "document_id": str(source.document_id),
+            "workspace_id": str(source.workspace_id),
+            "filename": source.filename,
+            "ordinal": source.ordinal,
+            "section_path": source.section_path,
+            "page_numbers": source.page_numbers,
+        }
+        for source in served
+        if source.index in cited
+    ]
+
+
 def _system_prompt() -> str:
     return (
         "You answer questions about the documents across every workspace the "
@@ -699,11 +723,16 @@ async def run_agent(
                     "content": _REFUSAL_NO_TOOL
                     if failure == "no_tool"
                     else _REFUSAL_UNGROUNDED,
+                    "sources": [],
                     "replaced": True,
                     "reason": failure,
                 }
                 return
-            yield {"type": "final", "content": content}
+            yield {
+                "type": "final",
+                "content": content,
+                "sources": _cited_sources(content, served),
+            }
             return
 
         messages.append(_assistant_message(turn))
