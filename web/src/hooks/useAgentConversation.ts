@@ -14,6 +14,9 @@ export interface ToolStep {
   arguments: Record<string, unknown>
   preview: string
   truncated: boolean
+  /** Client-side timing, shown only while the turn is on screen. */
+  startedAt?: number
+  durationMs?: number
 }
 
 export type ChatItem =
@@ -233,6 +236,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
             arguments: event.arguments ?? {},
             preview: '',
             truncated: false,
+            startedAt: performance.now(),
           },
         ])
         return
@@ -241,7 +245,16 @@ export function useAgentConversation(onUnauthorized: () => void) {
         patchActivity((calls) =>
           calls.map((call, index) =>
             index === calls.length - 1
-              ? { ...call, preview: event.preview ?? '', truncated: event.truncated ?? false }
+              ? {
+                  ...call,
+                  preview: event.preview ?? '',
+                  truncated: event.truncated ?? false,
+                  durationMs:
+                    call.startedAt === undefined
+                      ? undefined
+                      : performance.now() - call.startedAt,
+                  startedAt: undefined,
+                }
               : call,
           ),
         )

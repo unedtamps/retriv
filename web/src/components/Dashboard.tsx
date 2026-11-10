@@ -280,7 +280,7 @@ export function Dashboard({
       ) : selectedWorkspace === null ? (
         <EmptyWorkspace onCreate={isAdmin ? () => setCreateWorkspaceOpen(true) : undefined} />
       ) : activeView === 'chat' && !adminMode && hasMembership ? (
-        <AgentChatPage conversation={conversation} />
+        <AgentChatPage conversation={conversation} runs={runs} workspace={selectedWorkspace} />
       ) : activeView === 'documents' ? (
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}

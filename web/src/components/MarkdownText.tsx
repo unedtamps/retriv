@@ -1,3 +1,4 @@
+import { isValidElement, type ReactNode } from 'react'
 import remarkGfmModule from 'remark-gfm'
 import ReactMarkdown from 'react-markdown'
 
@@ -22,6 +23,13 @@ const remarkGfm =
  * bundle: the chart, spreadsheet and Word renderers set that precedent, and a
  * user who never opens the chat never parses prose.
  */
+function textOf(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join('')
+  if (isValidElement<{ children?: ReactNode }>(node)) return textOf(node.props.children)
+  return ''
+}
+
 export function MarkdownText({ text }: { text: string }) {
   return (
     <div className="retriv-md">
@@ -29,6 +37,19 @@ export function MarkdownText({ text }: { text: string }) {
         remarkPlugins={[remarkGfm]}
         components={{
           a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+          td: ({ children, node: _node, ...props }) => {
+            const label = textOf(children).trim().toUpperCase()
+            const tone = label.startsWith('OVER')
+              ? 'chat-status-over'
+              : label === 'WITHIN'
+                ? 'chat-status-within'
+                : undefined
+            return (
+              <td {...props} className={tone}>
+                {children}
+              </td>
+            )
+          },
         }}
       >
         {text}

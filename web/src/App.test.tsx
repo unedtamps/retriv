@@ -495,7 +495,7 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await screen.findByPlaceholderText('Ask across your workspaces…')
+    await screen.findByPlaceholderText('Ask this workspace…')
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     await user.click(within(navigation).getByRole('button', { name: 'Help' }))
@@ -828,13 +828,14 @@ describe('dashboard application', () => {
     writeSessionToken('member-token')
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
 
     expect(await screen.findByText('What is in this workspace?')).toBeInTheDocument()
-    const pinned = screen.getByPlaceholderText('Ask across your workspaces…')
-    expect(pinned).not.toBe(input)
+    const pinned = screen.getByPlaceholderText('Ask this workspace…')
+    expect(pinned).toBeInTheDocument()
+    expect((pinned as HTMLTextAreaElement).value).toBe('')
     expect(await screen.findByText('search_context')).toBeInTheDocument()
     expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
@@ -869,15 +870,11 @@ describe('dashboard application', () => {
     writeSessionToken('member-token')
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'who is the executive officer of 3M?')
     await user.keyboard('{Enter}')
 
     expect(await screen.findByText('read_document')).toBeInTheDocument()
-    expect(screen.getByText('2 tool calls')).toBeInTheDocument()
-    expect(screen.queryByText('find_documents')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /2 tool calls/ }))
     expect(await screen.findByText('find_documents')).toBeInTheDocument()
   })
 
@@ -893,7 +890,7 @@ describe('dashboard application', () => {
     writeSessionToken('member-token')
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What are the risk factors?')
     await user.keyboard('{Enter}')
 
@@ -915,7 +912,7 @@ describe('dashboard application', () => {
     writeSessionToken('member-token')
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
 
@@ -937,7 +934,7 @@ describe('dashboard application', () => {
     writeSessionToken('member-token')
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
@@ -974,7 +971,7 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
@@ -1012,7 +1009,7 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     const view = render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
@@ -1040,7 +1037,7 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
@@ -1048,9 +1045,9 @@ describe('dashboard application', () => {
     await user.click(screen.getByRole('button', { name: 'Start a new conversation' }))
 
     expect(
-      await screen.findByPlaceholderText('Ask across your workspaces…'),
+      await screen.findByPlaceholderText('Ask this workspace…'),
     ).toBeInTheDocument()
-    const heading = screen.getByText('Ask across your workspaces')
+    const heading = screen.getByText('Ask this workspace')
     expect(heading).toBeInTheDocument()
     expect(screen.queryByText('The workspace holds one report.')).not.toBeInTheDocument()
   })
@@ -1062,13 +1059,30 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
 
     localStorage.removeItem('retriv.chat.conversations.v2')
     expect(loadChatHistory().conversations).toEqual([])
+  })
+
+  it('keeps chat history hidden until the left history control is used', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi()
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByPlaceholderText('Ask this workspace…')
+    expect(screen.queryByRole('dialog', { name: 'Chat history' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'History' }))
+    expect(await screen.findByRole('dialog', { name: 'Chat history' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Close chat history' }))
+    expect(screen.queryByRole('dialog', { name: 'Chat history' })).not.toBeInTheDocument()
   })
 
   it('lists past sessions in the sidebar and restores the one picked', async () => {
@@ -1078,13 +1092,13 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'first conversation question')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
 
     await user.click(screen.getByRole('button', { name: 'Start a new conversation' }))
-    const fresh = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const fresh = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(fresh, 'second conversation question')
     await user.keyboard('{Enter}')
     expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
@@ -1092,6 +1106,7 @@ describe('dashboard application', () => {
       await new Promise((resolve) => setTimeout(resolve, 450))
     })
 
+    await user.click(screen.getByRole('button', { name: 'History' }))
     const sidebar = screen.getByRole('list', { name: 'Chat sessions' })
     expect(within(sidebar).getByText('first conversation question')).toBeInTheDocument()
     expect(within(sidebar).getByText('second conversation question')).toBeInTheDocument()
@@ -1108,7 +1123,7 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const input = await screen.findByPlaceholderText('Ask across your workspaces…')
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(input, 'first conversation question')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
@@ -1116,11 +1131,12 @@ describe('dashboard application', () => {
       await new Promise((resolve) => setTimeout(resolve, 450))
     })
 
+    await user.click(screen.getByRole('button', { name: 'History' }))
     await user.click(
       screen.getByRole('button', { name: 'Delete conversation: first conversation question' }),
     )
 
-    expect(await screen.findByText('Ask across your workspaces')).toBeInTheDocument()
+    expect(await screen.findByText('Ask this workspace')).toBeInTheDocument()
     expect(screen.queryByText('The workspace holds one report.')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Delete conversation: first conversation question' }),
