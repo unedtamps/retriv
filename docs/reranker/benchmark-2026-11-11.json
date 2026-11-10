@@ -1,0 +1,1831 @@
+{
+  "ran_at": "2026-11-10T20:25:46.787907+00:00",
+  "config": {
+    "embedding_model": "text-embedding-qwen3-embedding-8b",
+    "rerank_model": "laya",
+    "candidates": 30,
+    "top_n": 12,
+    "concurrency": 8,
+    "min_score": null,
+    "timeout_ms": 10000
+  },
+  "summary": {
+    "all": {
+      "queries": 64,
+      "candidate_misses": 2,
+      "fallbacks": 0,
+      "baseline": {
+        "recall@1": 0.5625,
+        "recall@5": 0.84375,
+        "recall@10": 0.953125,
+        "recall@12": 0.953125,
+        "mrr": 0.7062251984126984,
+        "ndcg@10": 0.7520544089994639,
+        "mean_first_rank": 2.0655737704918034,
+        "p50_ms": 70.97810000414029,
+        "p95_ms": 124.49436799943214
+      },
+      "rerank": {
+        "recall@1": 0.078125,
+        "recall@5": 0.375,
+        "recall@10": 0.625,
+        "recall@12": 0.671875,
+        "mrr": 0.20499188311688313,
+        "ndcg@10": 0.2925643955385216,
+        "mean_first_rank": 5.837209302325581,
+        "p50_ms": 677.5782240001718,
+        "p95_ms": 881.857284999569,
+        "calls_per_query": 30.0,
+        "tokens_per_query": 10049.203125
+      }
+    },
+    "chat": {
+      "queries": 4,
+      "candidate_misses": 1,
+      "fallbacks": 0,
+      "baseline": {
+        "recall@1": 0.25,
+        "recall@5": 0.75,
+        "recall@10": 0.75,
+        "recall@12": 0.75,
+        "mrr": 0.5,
+        "ndcg@10": 0.33275820339656703,
+        "mean_first_rank": 1.6666666666666667,
+        "p50_ms": 101.7597329991986,
+        "p95_ms": 105.42377199453767
+      },
+      "rerank": {
+        "recall@1": 0.0,
+        "recall@5": 0.5,
+        "recall@10": 0.75,
+        "recall@12": 0.75,
+        "mrr": 0.15,
+        "ndcg@10": 0.2028012506285862,
+        "mean_first_rank": 6.0,
+        "p50_ms": 580.1790270015772,
+        "p95_ms": 764.7681609960273,
+        "calls_per_query": 30.0,
+        "tokens_per_query": 8749.0
+      }
+    },
+    "golden": {
+      "queries": 60,
+      "candidate_misses": 1,
+      "fallbacks": 0,
+      "baseline": {
+        "recall@1": 0.5833333333333334,
+        "recall@5": 0.85,
+        "recall@10": 0.9666666666666667,
+        "recall@12": 0.9666666666666667,
+        "mrr": 0.7199735449735449,
+        "ndcg@10": 0.7800074893729902,
+        "mean_first_rank": 2.086206896551724,
+        "p50_ms": 69.67379299749155,
+        "p95_ms": 124.49436799943214
+      },
+      "rerank": {
+        "recall@1": 0.08333333333333333,
+        "recall@5": 0.36666666666666664,
+        "recall@10": 0.6166666666666667,
+        "recall@12": 0.6666666666666666,
+        "mrr": 0.20865800865800865,
+        "ndcg@10": 0.29854860519918397,
+        "mean_first_rank": 5.825,
+        "p50_ms": 677.5782240001718,
+        "p95_ms": 881.857284999569,
+        "calls_per_query": 30.0,
+        "tokens_per_query": 10135.883333333333
+      }
+    }
+  },
+  "queries": [
+    {
+      "source": "chat",
+      "query": "i wanna know list of revenue of microsoft in our finance file",
+      "relevant": 4,
+      "baseline_rank": 2,
+      "rerank_rank": 4,
+      "baseline_ndcg": 0.35914753008966527,
+      "rerank_ndcg": 0.431992295847858,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 102.01407299609855,
+      "rerank_ms": 475.3206559980754,
+      "calls": 30,
+      "input_tokens": 6738
+    },
+    {
+      "source": "chat",
+      "query": "where is the field that microsoft lost the most",
+      "relevant": 4,
+      "baseline_rank": 2,
+      "rerank_rank": 10,
+      "baseline_ndcg": 0.3853585682515056,
+      "rerank_ndcg": 0.11284514134893527,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 101.50539300229866,
+      "rerank_ms": 468.26603900262853,
+      "calls": 30,
+      "input_tokens": 7191
+    },
+    {
+      "source": "chat",
+      "query": "is the FY2026 revenue after new CEO take over ?",
+      "relevant": 6,
+      "baseline_rank": null,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": true,
+      "fallback": false,
+      "baseline_ms": 105.42377199453767,
+      "rerank_ms": 685.037398005079,
+      "calls": 30,
+      "input_tokens": 10127
+    },
+    {
+      "source": "chat",
+      "query": "i mean the new CEO of Xbox, is the lost of revenue already in the new CEO term",
+      "relevant": 8,
+      "baseline_rank": 1,
+      "rerank_rank": 4,
+      "baseline_ndcg": 0.5865267152450974,
+      "rerank_ndcg": 0.26636756531755157,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 71.48955600132467,
+      "rerank_ms": 764.7681609960273,
+      "calls": 30,
+      "input_tokens": 10940
+    },
+    {
+      "source": "golden",
+      "query": "What valuation models are used to determine the fair value of stock-based payment awards and market-based restricted stock rights?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 115.18830899876775,
+      "rerank_ms": 753.6260839988245,
+      "calls": 30,
+      "input_tokens": 11137
+    },
+    {
+      "source": "golden",
+      "query": "How might the launch of a new gaming system influence consumer spending on software for older systems?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 11,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 100.47687499900348,
+      "rerank_ms": 675.3633849948528,
+      "calls": 30,
+      "input_tokens": 10179
+    },
+    {
+      "source": "golden",
+      "query": "Which company is Sony's preferred distributor for PlayStation products in the United Kingdom?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 1,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 1.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 83.10982900002273,
+      "rerank_ms": 609.5463309975457,
+      "calls": 30,
+      "input_tokens": 9284
+    },
+    {
+      "source": "golden",
+      "query": "What specific equity award did Mr. Rao receive accelerated vesting for upon termination without cause or resignation for good reason?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": 9,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.3010299956639812,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 68.89133200456854,
+      "rerank_ms": 789.6217309971689,
+      "calls": 30,
+      "input_tokens": 11422
+    },
+    {
+      "source": "golden",
+      "query": "What is the potential business consequence if a game's rating is changed by an agency?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 93.12126499571605,
+      "rerank_ms": 649.1971099967486,
+      "calls": 30,
+      "input_tokens": 9835
+    },
+    {
+      "source": "golden",
+      "query": "When do the registration rights contained in the IRA expire?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 3,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.5,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 91.23098000418395,
+      "rerank_ms": 639.5844760045293,
+      "calls": 30,
+      "input_tokens": 9672
+    },
+    {
+      "source": "golden",
+      "query": "Who must approve commitments made by UNDP for future periods?",
+      "relevant": 1,
+      "baseline_rank": 6,
+      "rerank_rank": 9,
+      "baseline_ndcg": 0.3562071871080222,
+      "rerank_ndcg": 0.3010299956639812,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 89.6775709989015,
+      "rerank_ms": 454.33059399510967,
+      "calls": 30,
+      "input_tokens": 6841
+    },
+    {
+      "source": "golden",
+      "query": "What was the amount of amortization of net actuarial gain or loss recognized for qualified pension benefits?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 100.61551700346172,
+      "rerank_ms": 937.7024959976552,
+      "calls": 30,
+      "input_tokens": 13283
+    },
+    {
+      "source": "golden",
+      "query": "What percentage of net income was reported for the year ended December 31?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 7,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.3333333333333333,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 84.67979000124615,
+      "rerank_ms": 856.2967190009658,
+      "calls": 30,
+      "input_tokens": 12247
+    },
+    {
+      "source": "golden",
+      "query": "What types of financial instruments does the company utilize to mitigate risks related to foreign exchange rates, interest rates, and commodity prices?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": 8,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.31546487678572877,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 82.28996300022118,
+      "rerank_ms": 600.5281399993692,
+      "calls": 30,
+      "input_tokens": 8989
+    },
+    {
+      "source": "golden",
+      "query": "How many million restricted stock units were excluded from the table because their performance condition was not considered probable for the six months ended June 30, 2026?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 66.87478999810992,
+      "rerank_ms": 789.8554539933684,
+      "calls": 30,
+      "input_tokens": 11482
+    },
+    {
+      "source": "golden",
+      "query": "Did the entity identified as 3M Little Rock receive a notice of a pattern of violations under Section 104(e)?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 12,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 92.27534599631326,
+      "rerank_ms": 637.6340619972325,
+      "calls": 30,
+      "input_tokens": 9411
+    },
+    {
+      "source": "golden",
+      "query": "What specific financial statements are included in the XBRL-formatted data from 3M Company's 2015 annual report?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 4,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.43067655807339306,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 71.31471700267866,
+      "rerank_ms": 755.9977909986628,
+      "calls": 30,
+      "input_tokens": 11027
+    },
+    {
+      "source": "golden",
+      "query": "What potential consequences might arise if a company fails to comply with applicable laws regarding interactive entertainment software?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": 10,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.2890648263178879,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 69.36478999705287,
+      "rerank_ms": 677.3494129956816,
+      "calls": 30,
+      "input_tokens": 10076
+    },
+    {
+      "source": "golden",
+      "query": "Does the company have to register the shares with the SEC?",
+      "relevant": 1,
+      "baseline_rank": 7,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.3333333333333333,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 75.39236500451807,
+      "rerank_ms": 526.5592220021063,
+      "calls": 30,
+      "input_tokens": 7939
+    },
+    {
+      "source": "golden",
+      "query": "Who is eligible to purchase the Class A common stock in the Philippines?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 12,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 68.92681700264802,
+      "rerank_ms": 641.2563460035017,
+      "calls": 30,
+      "input_tokens": 9454
+    },
+    {
+      "source": "golden",
+      "query": "What specific risks could arise if natural disasters or severe weather events disrupt the areas where essential inputs are manufactured or where company facilities are situated?",
+      "relevant": 1,
+      "baseline_rank": 6,
+      "rerank_rank": 10,
+      "baseline_ndcg": 0.3562071871080222,
+      "rerank_ndcg": 0.2890648263178879,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 67.06641399796354,
+      "rerank_ms": 662.301935000869,
+      "calls": 30,
+      "input_tokens": 9908
+    },
+    {
+      "source": "golden",
+      "query": "How long does a participant have to exercise an option or stock appreciation right after retiring if they have not fully exercised it?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 57.82369499502238,
+      "rerank_ms": 723.5287119983695,
+      "calls": 30,
+      "input_tokens": 10579
+    },
+    {
+      "source": "golden",
+      "query": "Could the company's reported net income be negatively impacted by new rules regarding how revenues and taxes are recorded?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 60.51441699673887,
+      "rerank_ms": 617.9105400005938,
+      "calls": 30,
+      "input_tokens": 9388
+    },
+    {
+      "source": "golden",
+      "query": "What was the total stockholders' deficit as of December 31, 2022?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 8,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.31546487678572877,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 58.45909200434107,
+      "rerank_ms": 874.1231439998955,
+      "calls": 30,
+      "input_tokens": 12357
+    },
+    {
+      "source": "golden",
+      "query": "What is the minimum length of time required for a time-based Restricted Period unless the Committee decides otherwise?",
+      "relevant": 1,
+      "baseline_rank": 3,
+      "rerank_rank": 2,
+      "baseline_ndcg": 0.5,
+      "rerank_ndcg": 0.6309297535714575,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 68.40426300186664,
+      "rerank_ms": 630.9683709987439,
+      "calls": 30,
+      "input_tokens": 9516
+    },
+    {
+      "source": "golden",
+      "query": "What currency is used for payments on the 2025 Notes if the euro is unavailable due to exchange controls or other circumstances beyond the Company's control?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 4,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.43067655807339306,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 71.75049999932526,
+      "rerank_ms": 628.9576350027346,
+      "calls": 30,
+      "input_tokens": 9453
+    },
+    {
+      "source": "golden",
+      "query": "What role does international expansion play in the company's future revenue growth?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 2,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.6309297535714575,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 65.5029480039957,
+      "rerank_ms": 661.7530429939507,
+      "calls": 30,
+      "input_tokens": 9870
+    },
+    {
+      "source": "golden",
+      "query": "How much cash and cash equivalents did the company hold outside of the United States as of December 31, 2015?",
+      "relevant": 1,
+      "baseline_rank": 3,
+      "rerank_rank": 4,
+      "baseline_ndcg": 0.5,
+      "rerank_ndcg": 0.43067655807339306,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 61.198651004815474,
+      "rerank_ms": 865.6994849952753,
+      "calls": 30,
+      "input_tokens": 12242
+    },
+    {
+      "source": "golden",
+      "query": "Did any non-executive officers receive private aviation for personal travel in 2025?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 5,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.38685280723454163,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 56.59680999815464,
+      "rerank_ms": 607.864735997282,
+      "calls": 30,
+      "input_tokens": 9151
+    },
+    {
+      "source": "golden",
+      "query": "What was the total adverse impact on after-tax earnings from foreign exchange rates in 2015?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 55.02462499862304,
+      "rerank_ms": 762.7263809990836,
+      "calls": 30,
+      "input_tokens": 11145
+    },
+    {
+      "source": "golden",
+      "query": "How many shares of Class F common stock will be issued to the Founder LLC before the offering concludes?",
+      "relevant": 1,
+      "baseline_rank": null,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 65.22432500059949,
+      "rerank_ms": 718.3849939974607,
+      "calls": 30,
+      "input_tokens": 10502
+    },
+    {
+      "source": "golden",
+      "query": "What specific documents are incorporated by reference for Item 10 regarding corporate governance?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 3,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.5,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 243.60860999877332,
+      "rerank_ms": 514.3778809942887,
+      "calls": 30,
+      "input_tokens": 7701
+    },
+    {
+      "source": "golden",
+      "query": "Which company's deferred compensation plan is listed as Exhibit 4.30?",
+      "relevant": 1,
+      "baseline_rank": 3,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.5,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 67.09038299595704,
+      "rerank_ms": 687.0416970050428,
+      "calls": 30,
+      "input_tokens": 9929
+    },
+    {
+      "source": "golden",
+      "query": "What role do early adopters play in accelerating the deployment of a new technology within an organization?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 10,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.2890648263178879,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 74.24442899355199,
+      "rerank_ms": 664.0620149992174,
+      "calls": 30,
+      "input_tokens": 9657
+    },
+    {
+      "source": "golden",
+      "query": "What specific company is cited as a potential target for state-sponsored cyberattacks due to its advanced vulnerability discovery capabilities?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 69.22079100331757,
+      "rerank_ms": 677.8070350046619,
+      "calls": 30,
+      "input_tokens": 9942
+    },
+    {
+      "source": "golden",
+      "query": "Can the company currently borrow money under its revolving credit facility?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 75.03765799629036,
+      "rerank_ms": 610.2881960032391,
+      "calls": 30,
+      "input_tokens": 9141
+    },
+    {
+      "source": "golden",
+      "query": "What is the minimum frequency required for auditing UNDP programme activities that are not part of sector budget support or pooled funds?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 9,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.3010299956639812,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 60.63454400282353,
+      "rerank_ms": 467.99624600680545,
+      "calls": 30,
+      "input_tokens": 6990
+    },
+    {
+      "source": "golden",
+      "query": "How much money has Anthropic invested in partnership studies regarding the potential misuse of their technology?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 4,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.43067655807339306,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 69.98279599793022,
+      "rerank_ms": 609.0737539998372,
+      "calls": 30,
+      "input_tokens": 8687
+    },
+    {
+      "source": "golden",
+      "query": "When will the performance-based vesting condition for restricted stock units be considered probable of being satisfied?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 61.73845199373318,
+      "rerank_ms": 760.8340490041883,
+      "calls": 30,
+      "input_tokens": 10889
+    },
+    {
+      "source": "golden",
+      "query": "What date did management conclude that the company's internal controls were effective?",
+      "relevant": 1,
+      "baseline_rank": 3,
+      "rerank_rank": 2,
+      "baseline_ndcg": 0.5,
+      "rerank_ndcg": 0.6309297535714575,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 71.02512900019065,
+      "rerank_ms": 569.4808580010431,
+      "calls": 30,
+      "input_tokens": 8557
+    },
+    {
+      "source": "golden",
+      "query": "How might the higher compute intensity of agentic offerings impact the company's profitability if current pricing models do not adequately cover their costs?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 10,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.2890648263178879,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 202.84948399785208,
+      "rerank_ms": 696.2372039997717,
+      "calls": 30,
+      "input_tokens": 10278
+    },
+    {
+      "source": "golden",
+      "query": "What types of intellectual property losses does the company agree to cover under its standard indemnification agreements?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 1,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 1.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 66.12985199899413,
+      "rerank_ms": 636.5063410048606,
+      "calls": 30,
+      "input_tokens": 9479
+    },
+    {
+      "source": "golden",
+      "query": "How many banks and financial institutions did 3M have ISDA agreements with as of December 31, 2015?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 63.13185799808707,
+      "rerank_ms": 683.0105029948754,
+      "calls": 30,
+      "input_tokens": 10059
+    },
+    {
+      "source": "golden",
+      "query": "How many jobs were added in 2014 due to acquisitions?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 2,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.6309297535714575,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 60.76400799793191,
+      "rerank_ms": 597.0353390002856,
+      "calls": 30,
+      "input_tokens": 8964
+    },
+    {
+      "source": "golden",
+      "query": "Did the company experience any significant realized gains or losses from its cash equivalents and short-term investments during the six months ending June 30, 2026?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": 10,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.2890648263178879,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 71.01566200435627,
+      "rerank_ms": 878.4398950010655,
+      "calls": 30,
+      "input_tokens": 12473
+    },
+    {
+      "source": "golden",
+      "query": "What was the total increase or decrease in Activision's net revenues between the years ended December 31, 2014, and 2015?",
+      "relevant": 1,
+      "baseline_rank": 9,
+      "rerank_rank": 10,
+      "baseline_ndcg": 0.3010299956639812,
+      "rerank_ndcg": 0.2890648263178879,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 76.66168300056597,
+      "rerank_ms": 881.2872400012566,
+      "calls": 30,
+      "input_tokens": 12393
+    },
+    {
+      "source": "golden",
+      "query": "Who has the power to sign trust fund agreements and issue terms of reference?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 65.29991699790116,
+      "rerank_ms": 457.033214996045,
+      "calls": 30,
+      "input_tokens": 6859
+    },
+    {
+      "source": "golden",
+      "query": "When do the restrictions in Section 203 of the Delaware General Corporation Law begin to apply to the company?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 4,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.43067655807339306,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 159.85416599869495,
+      "rerank_ms": 618.0741770003806,
+      "calls": 30,
+      "input_tokens": 9212
+    },
+    {
+      "source": "golden",
+      "query": "How much was the stock-based compensation expense related to employee stock options and restricted stock rights for Addil?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": null,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 68.01226000243332,
+      "rerank_ms": 846.7724149959395,
+      "calls": 30,
+      "input_tokens": 11979
+    },
+    {
+      "source": "golden",
+      "query": "What was the percentage change in net sales for the Industrial business segment between 2014 and 2015?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 7,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.3333333333333333,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 111.97742900549201,
+      "rerank_ms": 881.857284999569,
+      "calls": 30,
+      "input_tokens": 12637
+    },
+    {
+      "source": "golden",
+      "query": "How much did the company spend on share repurchases during 2025?",
+      "relevant": 1,
+      "baseline_rank": 6,
+      "rerank_rank": 1,
+      "baseline_ndcg": 0.3562071871080222,
+      "rerank_ndcg": 1.0,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 102.50594700482907,
+      "rerank_ms": 757.2719719973975,
+      "calls": 30,
+      "input_tokens": 10846
+    },
+    {
+      "source": "golden",
+      "query": "When does the new stock compensation guidance become effective?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 5,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.38685280723454163,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 123.36446900008013,
+      "rerank_ms": 482.35713000030955,
+      "calls": 30,
+      "input_tokens": 7376
+    },
+    {
+      "source": "golden",
+      "query": "How much cash did the company receive from stock option exercises in 2015?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": 2,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.6309297535714575,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 56.272747002367396,
+      "rerank_ms": 858.1955840054434,
+      "calls": 30,
+      "input_tokens": 12148
+    },
+    {
+      "source": "golden",
+      "query": "What factors cause the expense related to convertible notes, derivative liabilities, and SAFEs to increase?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 1,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 1.0,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 124.49436799943214,
+      "rerank_ms": 794.4183589934255,
+      "calls": 30,
+      "input_tokens": 11460
+    },
+    {
+      "source": "golden",
+      "query": "How many times did the average daily volume of code contributed to the company's codebase per engineer increase between the year ended December 31, 2024, and the three months ended September 30, 2026?",
+      "relevant": 1,
+      "baseline_rank": 3,
+      "rerank_rank": 1,
+      "baseline_ndcg": 0.5,
+      "rerank_ndcg": 1.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 75.93237499531824,
+      "rerank_ms": 971.264058003726,
+      "calls": 30,
+      "input_tokens": 13452
+    },
+    {
+      "source": "golden",
+      "query": "How much did currency effects decrease 3M's pre-tax income in 2015?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 3,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.5,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 54.85384100029478,
+      "rerank_ms": 764.4180100032827,
+      "calls": 30,
+      "input_tokens": 11057
+    },
+    {
+      "source": "golden",
+      "query": "What was the percentage of consolidated net revenues that product development represented in 2015?",
+      "relevant": 1,
+      "baseline_rank": 6,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.3562071871080222,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 63.524623998091556,
+      "rerank_ms": 912.8133330013952,
+      "calls": 30,
+      "input_tokens": 12792
+    },
+    {
+      "source": "golden",
+      "query": "What is the expected range for the company's effective tax rate in 2016?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 5,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.38685280723454163,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 72.02511699870229,
+      "rerank_ms": 685.3773370021372,
+      "calls": 30,
+      "input_tokens": 10061
+    },
+    {
+      "source": "golden",
+      "query": "What potential conflict could arise between the company's long-term focus and the financial interests of its stockholders?",
+      "relevant": 1,
+      "baseline_rank": 2,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.6309297535714575,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 70.9405380039243,
+      "rerank_ms": 701.0692800031393,
+      "calls": 30,
+      "input_tokens": 10256
+    },
+    {
+      "source": "golden",
+      "query": "Which companies are mentioned as integrated video game console hardware and software competitors?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 10,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.2890648263178879,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 59.03284400119446,
+      "rerank_ms": 600.9044040038134,
+      "calls": 30,
+      "input_tokens": 9022
+    },
+    {
+      "source": "golden",
+      "query": "How much did the company spend on product development for stock-based compensation in 2013?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 7,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.3333333333333333,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 73.87372200173559,
+      "rerank_ms": 770.3134469993529,
+      "calls": 30,
+      "input_tokens": 11317
+    },
+    {
+      "source": "golden",
+      "query": "What factors can cause the company's judgment regarding future profitability to change?",
+      "relevant": 1,
+      "baseline_rank": null,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.0,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": true,
+      "fallback": false,
+      "baseline_ms": 60.11964900244493,
+      "rerank_ms": 587.9043570021167,
+      "calls": 30,
+      "input_tokens": 8793
+    },
+    {
+      "source": "golden",
+      "query": "What was the estimated income tax benefit in 2014 resulting from reduced tax rates or exemptions on manufacturing activities in specific countries?",
+      "relevant": 1,
+      "baseline_rank": 1,
+      "rerank_rank": 5,
+      "baseline_ndcg": 1.0,
+      "rerank_ndcg": 0.38685280723454163,
+      "baseline_recall": {
+        "1": true,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": true,
+        "10": true,
+        "12": true
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 67.30674800201086,
+      "rerank_ms": 770.841236000706,
+      "calls": 30,
+      "input_tokens": 11117
+    },
+    {
+      "source": "golden",
+      "query": "What is the page number listed for the section covering Quantitative and Qualitative Disclosures about Market Risk?",
+      "relevant": 1,
+      "baseline_rank": 9,
+      "rerank_rank": null,
+      "baseline_ndcg": 0.3010299956639812,
+      "rerank_ndcg": 0.0,
+      "baseline_recall": {
+        "1": false,
+        "5": false,
+        "10": true,
+        "12": true
+      },
+      "rerank_recall": {
+        "1": false,
+        "5": false,
+        "10": false,
+        "12": false
+      },
+      "candidate_miss": false,
+      "fallback": false,
+      "baseline_ms": 66.70912700064946,
+      "rerank_ms": 415.7266059992253,
+      "calls": 30,
+      "input_tokens": 6241
+    }
+  ]
+}

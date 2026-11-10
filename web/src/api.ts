@@ -8,6 +8,9 @@ import type {
   AgentModelUpdate,
   ProcessingActivity,
   ApiKeyList,
+  RetrievalSettings,
+  RetrievalTestResult,
+  RetrievalUpdate,
   CreatedApiKey,
   CreatedUser,
   CurrentUser,
@@ -582,6 +585,30 @@ export async function streamAgentChat(input: {
 
 function adminAgentPath(suffix = ''): string {
   return `/v1/admin/agent-model${suffix}`
+}
+
+function adminRetrievalPath(suffix = ''): string {
+  return `/v1/admin/retrieval${suffix}`
+}
+
+export const retrievalAdmin = {
+  get(signal?: AbortSignal): Promise<RetrievalSettings> {
+    return request<RetrievalSettings>(adminRetrievalPath(), { signal })
+  },
+
+  set(update: RetrievalUpdate): Promise<RetrievalSettings> {
+    return request<RetrievalSettings>(adminRetrievalPath(), {
+      method: 'PUT',
+      ...jsonOptions(update),
+    })
+  },
+
+  test(update: RetrievalUpdate): Promise<RetrievalTestResult> {
+    return request<RetrievalTestResult>(adminRetrievalPath('/test'), {
+      method: 'POST',
+      ...jsonOptions(update),
+    })
+  },
 }
 
 export const agentAdmin = {

@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -522,6 +523,51 @@ class AgentModelSetting(Base):
     model: Mapped[str] = mapped_column(String(200), nullable=False)
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_test_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class RetrievalSetting(Base):
+    """The deployment-wide retrieval knobs an admin can change at runtime.
+
+    Reranking is optional and off by default, so the existing cosine path is
+    the baseline every deployment starts from. The endpoint and key are the
+    existing embedding endpoint's: one local LM Studio instance serves both
+    Qwen for embeddings and Laya for decisions.
+    """
+
+    __tablename__ = "retrieval_settings"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="retrieval_settings_singleton"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    rerank_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    rerank_model: Mapped[str] = mapped_column(
+        String(200), default="laya", server_default="laya", nullable=False
+    )
+    rerank_candidates: Mapped[int] = mapped_column(
+        Integer, default=30, server_default="30", nullable=False
+    )
+    rerank_concurrency: Mapped[int] = mapped_column(
+        Integer, default=8, server_default="8", nullable=False
+    )
+    rerank_min_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rerank_timeout_ms: Mapped[int] = mapped_column(
+        Integer, default=10_000, server_default="10000", nullable=False
+    )
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_test_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_test_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_tested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -13,3 +13,7 @@ data
 
 # local model/tessdata caches used by offline diagnostics
 .cache/
+
+# Laya reranker experiment artifacts (large checkpoints; passages derived from the corpus)
+docs/reranker/checkpoints/
+docs/reranker/training/*.jsonl

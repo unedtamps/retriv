@@ -1,0 +1,28 @@
+{
+  "model": "jev-1.13-free",
+  "base_url": "https://opencode.ai/zen/v1",
+  "auth": "RETRIV_VLM_API_KEY (oc_...)",
+  "availability": {
+    "models_status": 200,
+    "systemone_status": 200,
+    "billing_source": "free",
+    "list_cost": 0,
+    "approx_latency_ms": [529, 413]
+  },
+  "benchmark": {
+    "status": "blocked",
+    "reason": "FreeUsageLimitError after about 210 candidate requests",
+    "queries_completed": 7,
+    "queries_total": 16,
+    "paid_model_used": false,
+    "partial_first_ranks": [
+      {"source": "chat", "cosine": 2, "jev_free": 3},
+      {"source": "chat", "cosine": 2, "jev_free": 1},
+      {"source": "chat", "cosine": null, "jev_free": null},
+      {"source": "chat", "cosine": 1, "jev_free": 1},
+      {"source": "golden", "cosine": 7, "jev_free": 30},
+      {"source": "golden", "cosine": 1, "jev_free": 1},
+      {"source": "golden", "cosine": 3, "jev_free": 20}
+    ]
+  }
+}

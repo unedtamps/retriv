@@ -31,10 +31,12 @@ from app.db.models import (
     Document,
     DocumentChunk,
     DocumentWorkspace,
+    RetrievalSetting,
 )
 from app.embeddings.base import EmbeddingProviderError
 from app.embeddings.openai_compatible import truncate_normalize
 from app.embeddings.pgvector import vector_literal
+from app.retrieval.rerank import LayaReranker, RerankConfig
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import escape_like
 from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
@@ -211,6 +213,42 @@ class ContextRetriever:
             timeout=settings.embedding_timeout_seconds,
         )
 
+    async def _rerank_config(self) -> RerankConfig | None:
+        """The admin's optional rerank setting, or None when it is off.
+
+        The row is read per search so an admin's change applies to the next
+        tool call. A missing row is the normal default; a database error is
+        treated as "off" rather than turning a retrieval into a failure.
+        """
+        try:
+            async with self._sessions() as session:
+                row = await session.get(RetrievalSetting, 1)
+        except SQLAlchemyError:
+            logger.warning("retrieval settings could not be read; reranking stays off")
+            return None
+        if row is None or not row.rerank_enabled:
+            return None
+        return RerankConfig(
+            model=row.rerank_model,
+            candidates=max(1, min(row.rerank_candidates, 100)),
+            concurrency=max(1, min(row.rerank_concurrency, 16)),
+            min_score=row.rerank_min_score,
+            timeout_ms=max(100, min(row.rerank_timeout_ms, 60_000)),
+        )
+
+    async def _rerank(
+        self,
+        query: str,
+        sources: list[ContextSource],
+        *,
+        limit: int,
+        config: RerankConfig,
+    ) -> list[ContextSource]:
+        result = await LayaReranker(self._embedding_client, config).rerank(
+            query, sources, limit=limit
+        )
+        return result.sources
+
     async def retrieve(
         self,
         query: str,
@@ -245,13 +283,15 @@ class ContextRetriever:
         width = self._settings.section_expand_chunks
         cap = limit if budget is None else min(limit + width, budget)
         floor = self._settings.min_relevance_score if min_score is None else min_score
+        rerank = await self._rerank_config()
+        pool = max(limit, rerank.candidates) if rerank is not None else limit
 
         try:
             vector = await self._embed_query(query)
             sources = await self._search_vectors(
                 vector,
                 workspace_ids,
-                limit,
+                pool,
                 min_score=floor,
                 document_id=document_id,
             )
@@ -261,8 +301,11 @@ class ContextRetriever:
                 min_score=floor,
                 document_id=document_id,
             )
-            room = max(0, cap - len(sources))
-            return sources + completed[:room]
+            if rerank is None:
+                room = max(0, cap - len(sources))
+                return sources + completed[:room]
+            candidates = sources + completed[: max(0, pool - len(sources))]
+            return await self._rerank(query, candidates, limit=cap, config=rerank)
         except (
             EmbeddingProviderError,
             httpx.HTTPError,
@@ -302,6 +345,8 @@ class ContextRetriever:
         if not query.strip():
             raise RetrievalUnavailable("A non-empty text query is required")
 
+        rerank = await self._rerank_config()
+        pool = max(limit, min(rerank.candidates, 20)) if rerank is not None else limit
         pattern = f"%{escape_like(query)}%"
         link_workspace = (
             select(DocumentWorkspace.workspace_id)
@@ -357,7 +402,7 @@ class ContextRetriever:
                 DocumentChunk.document_id,
                 DocumentChunk.ordinal,
             )
-            .limit(limit)
+            .limit(pool)
         )
         if document_id is not None:
             statement = statement.where(DocumentChunk.document_id == document_id)
@@ -367,7 +412,10 @@ class ContextRetriever:
                 rows = (await session.execute(statement)).all()
         except (SQLAlchemyError, IndexError, KeyError, TypeError, ValueError) as exc:
             raise RetrievalUnavailable("Scoped text search failed validation") from exc
-        return self._text_sources(rows)
+        sources = self._text_sources(rows)
+        if rerank is None:
+            return sources
+        return await self._rerank(query, sources, limit=limit, config=rerank)
 
     async def _embed_query(self, query: str) -> list[float]:
         response = await self._embedding_client.post(

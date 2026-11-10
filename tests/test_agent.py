@@ -1246,3 +1246,52 @@ async def test_a_meta_message_is_answered_without_a_tool(
     assert final["type"] == "final"
     assert "replaced" not in final
     assert final["content"].startswith("Halo!")
+
+
+async def test_retrieval_settings_default_off_and_save_tests_laya(
+    client: httpx.AsyncClient,
+    entities: Any,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reranking is opt-in, and the save records the live decision test."""
+    from app.api.schemas import RetrievalTestResult
+    from app.db.models import RetrievalSetting as Row
+
+    async def fake_test(settings: Any, model: str) -> RetrievalTestResult:
+        del settings
+        return RetrievalTestResult(ok=True, model=model, latency_ms=7, score=1.5)
+
+    monkeypatch.setattr("app.routes.admin._test_laya", fake_test)
+    headers = await _admin_headers(client)
+
+    before = await client.get("/v1/admin/retrieval", headers=headers)
+    assert before.status_code == 200, before.text
+    assert before.json()["rerank_enabled"] is False
+    assert before.json()["rerank_model"] == "laya"
+    assert before.json()["rerank_candidates"] == 30
+
+    response = await client.put(
+        "/v1/admin/retrieval",
+        json={
+            "rerank_enabled": True,
+            "rerank_model": "laya",
+            "rerank_candidates": 30,
+            "rerank_concurrency": 8,
+            "rerank_min_score": None,
+            "rerank_timeout_ms": 10_000,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["rerank_enabled"] is True
+    assert body["last_test_ok"] is True
+    assert body["last_test_ms"] == 7
+    assert body["last_test_error"] is None
+
+    async with db_session_factory() as session:
+        row = await session.get(Row, 1)
+    assert row is not None
+    assert row.rerank_enabled is True
+    assert row.rerank_concurrency == 8

@@ -1,0 +1,180 @@
+[
+  {
+    "query": "i wanna know list of revenue of microsoft in our finance file",
+    "relevant": [
+      "3491e5dd-d70f-57d7-8609-e1d2bd973928",
+      "7155005c-3903-57ca-97cb-852fe1c10aee",
+      "cea28541-1759-5d47-b285-4beaed5bca8e",
+      "e155080e-aa27-5c5b-993e-ddc352b5823f"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "chat"
+  },
+  {
+    "query": "where is the field that microsoft lost the most",
+    "relevant": [
+      "3491e5dd-d70f-57d7-8609-e1d2bd973928",
+      "40d1380a-cd7f-5b4a-9dc5-a17910c09649",
+      "e155080e-aa27-5c5b-993e-ddc352b5823f",
+      "f4b9428f-04f4-5b41-99f4-6b28e77cc879"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "chat"
+  },
+  {
+    "query": "is the FY2026 revenue after new CEO take over ?",
+    "relevant": [
+      "00e1bff1-6030-59ec-ae1e-d5e83bbf7d35",
+      "2ed5d4fe-78f9-5319-bcb7-9ee414ecdb32",
+      "4cabc227-c70d-5d55-938d-2339437f7540",
+      "a2099f38-2c1c-5f86-b46b-83ab93eae977",
+      "a8a77e8c-5976-5da0-a81b-aa9d3b94e7e9",
+      "e51c2df6-a864-556b-a31e-dd3ae14b6664"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "chat"
+  },
+  {
+    "query": "i mean the new CEO of Xbox, is the lost of revenue already in the new CEO term",
+    "relevant": [
+      "3491e5dd-d70f-57d7-8609-e1d2bd973928",
+      "40d1380a-cd7f-5b4a-9dc5-a17910c09649",
+      "686a1db5-8100-5da1-a3ba-34bc2e556c1e",
+      "a2099f38-2c1c-5f86-b46b-83ab93eae977",
+      "c8ce41dc-3170-5821-afb7-979907fd77c3",
+      "e155080e-aa27-5c5b-993e-ddc352b5823f",
+      "e51c2df6-a864-556b-a31e-dd3ae14b6664",
+      "f4b9428f-04f4-5b41-99f4-6b28e77cc879"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "chat"
+  },
+  {
+    "query": "Does the company have to register the shares with the SEC?",
+    "relevant": [
+      "473b62d2-328b-5a68-8c7d-2f11d5768d50"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "What specific documents are incorporated by reference for Item 10 regarding corporate governance?",
+    "relevant": [
+      "5e7af4a3-85bc-5c56-b3dd-0c972609b5bb"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "Which company's deferred compensation plan is listed as Exhibit 4.30?",
+    "relevant": [
+      "d2d3c01c-ebad-526e-8865-52dc5d64d674"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "What role do early adopters play in accelerating the deployment of a new technology within an organization?",
+    "relevant": [
+      "ff1e4b24-884c-542a-a00e-5d6634a87e9e"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "When do the restrictions in Section 203 of the Delaware General Corporation Law begin to apply to the company?",
+    "relevant": [
+      "78410cc1-cc8a-50aa-b0ac-dda8faa66e18"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "How much did the company spend on share repurchases during 2025?",
+    "relevant": [
+      "af50b10a-f18b-5391-9c64-a63a4401c39c"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "How much cash did the company receive from stock option exercises in 2015?",
+    "relevant": [
+      "12af72dd-da15-56a3-8037-5eeed7110ab8"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "How many times did the average daily volume of code contributed to the company's codebase per engineer increase between the year ended December 31, 2024, and the three months ended September 30, 2026?",
+    "relevant": [
+      "c34ae111-5db6-5528-9b5f-5cf4ff10b9dc"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "What was the percentage of consolidated net revenues that product development represented in 2015?",
+    "relevant": [
+      "8cf0a1f0-6e5c-507c-ad8d-1c51a83e4d67"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "What is the expected range for the company's effective tax rate in 2016?",
+    "relevant": [
+      "7a3e7004-fd1a-5aa3-9164-d3b3c46cf65e"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "What potential conflict could arise between the company's long-term focus and the financial interests of its stockholders?",
+    "relevant": [
+      "ecde2592-5e4c-5e2c-9a6f-0e7607d57b65"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  },
+  {
+    "query": "What is the page number listed for the section covering Quantitative and Qualitative Disclosures about Market Risk?",
+    "relevant": [
+      "cad4dacf-12ce-5176-99c8-64c804b3063d"
+    ],
+    "workspaces": [
+      "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+    ],
+    "source": "golden"
+  }
+]
