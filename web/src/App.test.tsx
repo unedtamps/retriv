@@ -994,6 +994,7 @@ describe('dashboard application', () => {
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
+    expect(document.body).toHaveClass('chat-viewport')
 
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(
@@ -1002,6 +1003,7 @@ describe('dashboard application', () => {
       }),
     )
     expect(screen.queryByText('The workspace holds one report.')).not.toBeInTheDocument()
+    expect(document.body).not.toHaveClass('chat-viewport')
 
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     await user.click(
@@ -1011,6 +1013,7 @@ describe('dashboard application', () => {
     )
     expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
     expect(screen.getByText('What is in this workspace?')).toBeInTheDocument()
+    expect(document.body).toHaveClass('chat-viewport')
   })
 
   it('keeps the conversation when the workspace changes', async () => {

@@ -772,6 +772,12 @@
   }
 }
 
+/* While the chat is mounted the page itself does not scroll; the transcript
+ * and the history rail own their scroll areas. */
+body.chat-viewport {
+  overflow: hidden;
+}
+
 /* Chat surface: a document room rather than a dashboard card. The room has
  * its own light-paper palette so the transcript reads like evidence, while
  * the rest of the application keeps its existing token layer. */

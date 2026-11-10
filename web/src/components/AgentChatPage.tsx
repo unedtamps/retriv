@@ -116,6 +116,13 @@ export function AgentChatPage({
     localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? 'open' : 'collapsed')
   }, [sidebarOpen])
 
+  // The chat is its own viewport: the page around it stays put and only the
+  // transcript, sidebar list and composer scroll area move.
+  useEffect(() => {
+    document.body.classList.add('chat-viewport')
+    return () => document.body.classList.remove('chat-viewport')
+  }, [])
+
   const composer = (
     <form
       className="chat-composer"
