@@ -1081,11 +1081,11 @@ describe('dashboard application', () => {
     ).toBeInTheDocument()
     expect(screen.getAllByText('What is in this workspace?').length).toBeGreaterThan(0)
     expect(
-      screen.getByRole('button', { name: 'Start a new conversation' }),
+      screen.getByRole('button', { name: 'New task' }),
     ).toBeInTheDocument()
   })
 
-  it('starts a fresh conversation when New chat is pressed', async () => {
+  it('starts a fresh conversation when New task is pressed', async () => {
     window.history.replaceState(null, '', '/dashboard?view=chat')
     installApi()
     writeSessionToken('member-token')
@@ -1097,7 +1097,7 @@ describe('dashboard application', () => {
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
 
-    await user.click(screen.getByRole('button', { name: 'Start a new conversation' }))
+    await user.click(screen.getByRole('button', { name: 'New task' }))
 
     expect(
       await screen.findByPlaceholderText('Ask this workspace…'),
@@ -1140,6 +1140,46 @@ describe('dashboard application', () => {
     expect(screen.queryByRole('dialog', { name: 'Chat history' })).not.toBeInTheDocument()
   })
 
+  it('collapses the history sidebar and gives the space to the conversation', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    writeSessionToken('member-token')
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(min-width: 1024px)',
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }))
+    installApi()
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'sidebar conversation question')
+    await user.keyboard('{Enter}')
+    await screen.findByText('The workspace holds one report.')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450))
+    })
+
+    expect(screen.getByRole('complementary', { name: 'Chat history' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Chat sessions' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New task' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'History' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Collapse chat history' }))
+    expect(screen.queryByRole('list', { name: 'Chat sessions' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show chat history' })).toBeInTheDocument()
+    await waitFor(() => expect(localStorage.getItem('retriv.chat.sidebar')).toBe('collapsed'))
+
+    await user.click(screen.getByRole('button', { name: 'Show chat history' }))
+    expect(await screen.findByRole('list', { name: 'Chat sessions' })).toBeInTheDocument()
+    await waitFor(() => expect(localStorage.getItem('retriv.chat.sidebar')).toBe('open'))
+  })
+
   it('lists past sessions in the sidebar and restores the one picked', async () => {
     window.history.replaceState(null, '', '/dashboard?view=chat')
     installApi()
@@ -1152,7 +1192,7 @@ describe('dashboard application', () => {
     await user.keyboard('{Enter}')
     await screen.findByText('The workspace holds one report.')
 
-    await user.click(screen.getByRole('button', { name: 'Start a new conversation' }))
+    await user.click(screen.getByRole('button', { name: 'New task' }))
     const fresh = await screen.findByPlaceholderText('Ask this workspace…')
     await user.type(fresh, 'second conversation question')
     await user.keyboard('{Enter}')

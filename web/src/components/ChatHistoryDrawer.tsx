@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { CirclePlus, Trash2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import type { AgentConversation } from '../hooks/useAgentConversation'
+import { ChatHistoryPanel } from './ChatHistoryPanel'
 
 interface ChatHistoryDrawerProps {
   open: boolean
@@ -9,17 +10,13 @@ interface ChatHistoryDrawerProps {
 }
 
 /**
- * The chat archive, kept out of the reading column until asked for.
+ * The chat archive on a narrow screen.
  *
- * The transcript is the work; history is a navigation aid. It opens as a
- * drawer over the left edge rather than permanently narrowing the answer.
+ * There is no room for a permanent rail, so the same panel opens over the
+ * transcript and closes as soon as a session is picked.
  */
 export function ChatHistoryDrawer({ open, onClose, conversation }: ChatHistoryDrawerProps) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
-  const { sessions, activeId, selectSession, deleteSession, newConversation } = conversation
-  const orderedSessions = [...sessions].sort((a, b) =>
-    a.updatedAt < b.updatedAt ? 1 : -1,
-  )
 
   useEffect(() => {
     if (!open) return
@@ -63,59 +60,7 @@ export function ChatHistoryDrawer({ open, onClose, conversation }: ChatHistoryDr
           </button>
         </div>
 
-        <button
-          type="button"
-          className="chat-history-new"
-          aria-label="Start a new conversation from history"
-          onClick={() => {
-            newConversation()
-            onClose()
-          }}
-        >
-          <CirclePlus aria-hidden="true" size={13} />
-          New chat
-        </button>
-
-        {orderedSessions.length === 0 ? (
-          <p className="chat-history-empty">
-            Conversations you start are saved in this browser and listed here.
-          </p>
-        ) : (
-          <ul aria-label="Chat sessions" className="chat-history-list">
-            {orderedSessions.map((session) => {
-              const active = session.id === activeId
-              return (
-                <li key={session.id} className="chat-history-entry">
-                  <button
-                    type="button"
-                    className="chat-history-item"
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => {
-                      selectSession(session.id)
-                      onClose()
-                    }}
-                  >
-                    <span className="chat-history-item-title">{session.title}</span>
-                    <span className="chat-history-item-date">
-                      {new Date(session.updatedAt).toLocaleDateString()}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-history-delete"
-                    aria-label={`Delete conversation: ${session.title}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      deleteSession(session.id)
-                    }}
-                  >
-                    <Trash2 aria-hidden="true" size={12} />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <ChatHistoryPanel conversation={conversation} onDone={onClose} />
       </aside>
     </>
   )

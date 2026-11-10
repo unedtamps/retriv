@@ -40,5 +40,6 @@ afterEach(() => {
   delete document.documentElement.dataset.theme
   document.documentElement.style.removeProperty('color-scheme')
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   window.history.replaceState(null, '', '/')
 })

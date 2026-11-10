@@ -3,9 +3,13 @@ import { CirclePlus, PanelLeft, Square } from 'lucide-react'
 import type { AgentConversation, ChatItem, ToolStep } from '../hooks/useAgentConversation'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import type { AgentChatSource, ProcessingRun, Workspace } from '../types'
+import { useIsDesktop } from '../hooks/useIsDesktop'
 import { ChatAnswerCard } from './ChatAnswerCard'
 import { ChatHistoryDrawer } from './ChatHistoryDrawer'
+import { ChatSidebar } from './ChatSidebar'
 import { ChatProcessingBanner } from './ChatProcessingBanner'
+
+const SIDEBAR_KEY = 'retriv.chat.sidebar'
 
 const SUGGESTIONS = [
   'What is in this workspace?',
@@ -90,6 +94,11 @@ export function AgentChatPage({
   workspace: Workspace
 }) {
   const { items, draft, setDraft, busy, send, stop, newConversation } = conversation
+  const isDesktop = useIsDesktop()
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof localStorage === 'undefined') return true
+    return localStorage.getItem(SIDEBAR_KEY) !== 'collapsed'
+  })
   const [historyOpen, setHistoryOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const turns = useMemo(() => groupTurns(items), [items])
@@ -102,6 +111,10 @@ export function AgentChatPage({
     const scroller = scrollRef.current
     if (scroller !== null) scroller.scrollTop = scroller.scrollHeight
   }, [items, busy])
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? 'open' : 'collapsed')
+  }, [sidebarOpen])
 
   const composer = (
     <form
@@ -148,97 +161,111 @@ export function AgentChatPage({
     <div className="chat-room">
       <h1 className="sr-only">Chat</h1>
 
-      <div className="chat-topbar">
-        <button
-          type="button"
-          className="chat-history-tab"
-          aria-controls="chat-history-drawer"
-          aria-expanded={historyOpen}
-          onClick={() => setHistoryOpen(true)}
-        >
-          <PanelLeft aria-hidden="true" size={13} />
-          History
-        </button>
+      {isDesktop ? (
+        <ChatSidebar
+          conversation={conversation}
+          collapsed={!sidebarOpen}
+          onToggle={() => setSidebarOpen((open) => !open)}
+        />
+      ) : null}
 
-        <button
-          type="button"
-          className="chat-new-chat"
-          aria-label="Start a new conversation"
-          onClick={() => {
-            newConversation()
-            setHistoryOpen(false)
-          }}
-        >
-          <CirclePlus aria-hidden="true" size={13} />
-          New chat
-        </button>
-      </div>
+      <div className="chat-main">
+        {isDesktop ? null : (
+          <div className="chat-topbar">
+            <button
+              type="button"
+              className="chat-history-tab"
+              aria-controls="chat-history-drawer"
+              aria-expanded={historyOpen}
+              onClick={() => setHistoryOpen(true)}
+            >
+              <PanelLeft aria-hidden="true" size={13} />
+              History
+            </button>
 
-      <div ref={scrollRef} data-testid="chat-transcript" className="chat-scroll">
-        <div className="chat-column">
-          {activeRun === null ? null : <ChatProcessingBanner run={activeRun} />}
+            <button
+              type="button"
+              className="chat-new-task"
+              aria-label="New task"
+              onClick={() => {
+                newConversation()
+                setHistoryOpen(false)
+              }}
+            >
+              <CirclePlus aria-hidden="true" size={13} />
+              New task
+            </button>
+          </div>
+        )}
 
-          {empty ? (
-            <div className="chat-empty">
-              <h2 className="chat-empty-title">Ask this workspace</h2>
-              <p className="chat-empty-copy">
-                The agent searches, reads and queries the documents in this workspace, and
-                answers with the sources it used.
-              </p>
-              <div className="chat-suggestions">
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    className="chat-suggestion"
-                    onClick={() => setDraft(suggestion)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            turns.map((turn) => {
-              const isLiveTurn = busy && turn.key === turns.length - 1
-              const showAnswer =
-                turn.texts.length > 0 ||
-                turn.calls.length > 0 ||
-                turn.errors.length > 0 ||
-                isLiveTurn
-              return (
-                <div className="chat-turn" key={turn.key}>
-                  {turn.question === null ? null : (
-                    <div className="chat-user-row">
-                      <p className="chat-user-bubble">{turn.question}</p>
-                    </div>
-                  )}
-                  {showAnswer ? (
-                    <ChatAnswerCard
-                      calls={turn.calls}
-                      texts={turn.texts}
-                      sources={turn.sources}
-                      streaming={turn.streaming}
-                      busy={isLiveTurn}
-                      errors={turn.errors}
-                    />
-                  ) : null}
+        <div ref={scrollRef} data-testid="chat-transcript" className="chat-scroll">
+          <div className="chat-column">
+            {activeRun === null ? null : <ChatProcessingBanner run={activeRun} />}
+
+            {empty ? (
+              <div className="chat-empty">
+                <h2 className="chat-empty-title">Ask this workspace</h2>
+                <p className="chat-empty-copy">
+                  The agent searches, reads and queries the documents in this workspace, and
+                  answers with the sources it used.
+                </p>
+                <div className="chat-suggestions">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      className="chat-suggestion"
+                      onClick={() => setDraft(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
                 </div>
-              )
-            })
-          )}
+              </div>
+            ) : (
+              turns.map((turn) => {
+                const isLiveTurn = busy && turn.key === turns.length - 1
+                const showAnswer =
+                  turn.texts.length > 0 ||
+                  turn.calls.length > 0 ||
+                  turn.errors.length > 0 ||
+                  isLiveTurn
+                return (
+                  <div className="chat-turn" key={turn.key}>
+                    {turn.question === null ? null : (
+                      <div className="chat-user-row">
+                        <p className="chat-user-bubble">{turn.question}</p>
+                      </div>
+                    )}
+                    {showAnswer ? (
+                      <ChatAnswerCard
+                        calls={turn.calls}
+                        texts={turn.texts}
+                        sources={turn.sources}
+                        streaming={turn.streaming}
+                        busy={isLiveTurn}
+                        errors={turn.errors}
+                      />
+                    ) : null}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="chat-composer-area">
+          <div className="chat-composer-wrap">{composer}</div>
         </div>
       </div>
 
-      <div className="chat-composer-area">
-        <div className="chat-composer-wrap">{composer}</div>
-      </div>
-
-      <ChatHistoryDrawer
-        open={historyOpen}
-        onClose={closeHistory}
-        conversation={conversation}
-      />
+      {isDesktop ? null : (
+        <ChatHistoryDrawer
+          open={historyOpen}
+          onClose={closeHistory}
+          conversation={conversation}
+        />
+      )}
     </div>
   )
 }
