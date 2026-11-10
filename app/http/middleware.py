@@ -18,6 +18,10 @@ class UploadSizeLimitMiddleware:
         self.app = app
         self.settings = settings
         self.max_upload_request_bytes = settings.max_upload_bytes + self._multipart_overhead_bytes
+        self.max_json_request_bytes = (
+            min(settings.max_upload_bytes, settings.max_json_bytes)
+            + self._multipart_overhead_bytes
+        )
         self.upload_slots = asyncio.Semaphore(settings.max_concurrent_uploads)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -26,12 +30,16 @@ class UploadSizeLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if request_kind == "upload":
+        if request_kind in {"upload", "json_data"}:
             auth_error = self._authenticate_upload(scope)
             if auth_error is not None:
                 await self._send_authentication_error(scope, receive, send, auth_error)
                 return
-            limit = self.max_upload_request_bytes
+            limit = (
+                self.max_upload_request_bytes
+                if request_kind == "upload"
+                else self.max_json_request_bytes
+            )
         else:
             limit = self._auth_request_limit_bytes
 
@@ -40,7 +48,7 @@ class UploadSizeLimitMiddleware:
             await self._send_size_rejection(scope, receive, send)
             return
 
-        if request_kind == "upload":
+        if request_kind in {"upload", "json_data"}:
             async with self.upload_slots:
                 await self._call_with_stream_limit(scope, receive, send, limit)
         else:
@@ -137,6 +145,14 @@ class UploadSizeLimitMiddleware:
             and segments[3] == "documents"
         ):
             return "upload"
+        if (
+            len(segments) == 5
+            and segments[0] == "v1"
+            and segments[1] == "workspaces"
+            and segments[3] == "documents"
+            and segments[4] == "json"
+        ):
+            return "json_data"
         return None
 
     @staticmethod

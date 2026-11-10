@@ -46,10 +46,10 @@ class DocumentSummary:
     def is_row_stored(self) -> bool:
         """Whether this file's content is rows rather than text.
 
-        A workbook is stored exactly like a CSV -- one row per record, one
-        column per header -- so a listing that offers one to ``query_rows``
-        has to offer the other. Keyed on the media type the pipeline detected,
-        not on the filename: a workbook is queryable whatever it was called.
+        A CSV, workbook and retriv-json payload all land in the same row store,
+        so a listing that offers one to ``query_rows`` has to offer the others.
+        Keyed on the media type the pipeline detected, not on the filename: a
+        workbook is queryable whatever it was called.
         """
         return self.media_type in ROW_STORED_MEDIA_TYPES
 

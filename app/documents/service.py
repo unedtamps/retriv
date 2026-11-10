@@ -26,7 +26,7 @@ from app.db.models import (
     DocumentWorkspace,
     ProcessingRun,
 )
-from app.documents.validation import StagedUpload, validate_document
+from app.documents.validation import StagedUpload, ValidationResult, validate_document
 from app.infrastructure.scanner import (
     MalwareDetectedError,
     MalwareScanner,
@@ -60,6 +60,7 @@ async def ingest_staged_upload(
     workspace_id: UUID,
     uploader_id: UUID,
     staged: StagedUpload,
+    validation: ValidationResult | None = None,
 ) -> IngestedDocument:
     """Move one staged file through scanning, validation, storage and linking.
 
@@ -72,7 +73,8 @@ async def ingest_staged_upload(
     attaches existing content to a new workspace.
     """
     await scan_upload(scanner, staged.path)
-    validation = await to_thread.run_sync(validate_document, staged, settings)
+    if validation is None:
+        validation = await to_thread.run_sync(validate_document, staged, settings)
 
     existing = await find_document_by_sha(session, staged.sha256)
     if existing is not None:

@@ -175,7 +175,8 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                 "description": (
                     "Read a document in order from `start_ordinal` onward. Use it to "
                     "continue where a search hit left off, or from 0 to read straight "
-                    "through. CSV files are rows, not text, and cannot be read here."
+                    "through. CSV, workbook and JSON data files are rows, not text, "
+                    "and cannot be read here."
                 ),
                 "parameters": {
                     "type": "object",
@@ -294,8 +295,9 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                 "function": {
                     "name": "list_queryable_files",
                     "description": (
-                        "List the CSV and workbook files whose rows can be queried, "
-                        "with their column names. Call this before query_rows."
+                        "List the CSV, workbook and JSON data files whose rows can "
+                        "be queried, with their column names. Call this before "
+                        "query_rows."
                     ),
                     "parameters": {
                         "type": "object",
@@ -317,13 +319,13 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                 "function": {
                     "name": "query_rows",
                     "description": (
-                        "Run one SQL SELECT over the rows of one CSV or workbook "
-                        "file. Every cell is text inside the JSONB column `data`, "
-                        "keyed by the header exactly as list_queryable_files spells "
-                        "it; cast to compare, `(data->>'Amount')::numeric`. The "
-                        "statement must filter on document_id; a workbook's rows "
-                        "also carry a `sheet` column and one result may span only "
-                        "one sheet."
+                        "Run one SQL SELECT over the rows of one CSV, workbook or "
+                        "JSON data file. Cells live inside the JSONB column `data`; "
+                        "CSV and workbook cells are text, JSON values keep their "
+                        "native types; cast to compare, "
+                        "`(data->>'Amount')::numeric`. The statement must filter "
+                        "on document_id; workbook and JSON rows also carry a "
+                        "`sheet` column and one result may span only one sheet."
                     ),
                     "parameters": {
                         "type": "object",

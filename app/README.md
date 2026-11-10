@@ -49,7 +49,7 @@ There are two external request surfaces, both served by the same FastAPI app:
   workspaces, uploads, downloads, processing status and admin operations.
 - **`/mcp`** is the agent surface. It uses a long-lived `rk_...` API key and
   exposes read-only tools: document lookup, context search, in-order reading,
-  CSV row queries and download address minting.
+  row queries and download address minting.
 
 Neither surface trusts a workspace id supplied by the caller to widen access.
 The caller's live workspace memberships are the scope.
@@ -115,8 +115,8 @@ two distinct leases at once -- `FOR UPDATE SKIP LOCKED` keeps them apart, so
   second workspace gets a link, not a second object, chunk set, or vector set.
 - Uploads default to 100 MiB, 1,000 pages (or 1,000 slides for a deck); encrypted and
   macro-enabled documents are rejected, and ClamAV scans before anything is stored.
-- `PDF`, `DOCX` and `PPTX` are chunked and embedded. `CSV` and `XLSX` are stored as
-  rows and queried with SQL; neither is embedded.
+- `PDF`, `DOCX` and `PPTX` are chunked and embedded. `CSV`, `XLSX` and
+  `retriv-json` files are stored as rows and queried with SQL; none is embedded.
 - A document's status is derived from its active processing run. There is no status
   column, so the document and the pipeline cannot disagree.
 
@@ -260,7 +260,7 @@ Reading a document in order rather than by relevance is a third move,
 `read_document`, and it is described below.
 
 `find_documents` is the door in rather than the way out: it maps a name to a
-document_id. Without it a model can only learn an id from a search result or the CSV
+document_id. Without it a model can only learn an id from a search result or the row
 catalogue, so naming a file in a question is not something it can act on. It reports
 each match's status, because `ready` is the difference between a document that answers
 a question and one that returns nothing yet, and each match's size and workspace,
@@ -431,9 +431,9 @@ truncated window cannot be mistaken for the whole document. A single chunk over 
 still returned, because trimming it would return nothing and every retry from the same
 `start_ordinal` would trim it again -- a window that can never advance.
 
-Row-stored files (CSV and workbooks) are refused here rather than handled: their content
-is stored as rows, not chunks, so the failure names `list_queryable_files` and
-`query_rows` instead of reading as a fault.
+Row-stored files (CSV, workbooks and JSON data) are refused here rather than handled:
+their content is stored as rows, not chunks, so the failure names
+`list_queryable_files` and `query_rows` instead of reading as a fault.
 
 ### Asking a spreadsheet question
 
@@ -517,7 +517,13 @@ literal check is the only guard — a query using `ANY(array[...])` over two ids
 slip past it. That gap is real and still open; a fix would parse the id out of the
 statement rather than searching its text.
 
-### How a CSV answer is cited
+JSON payloads use the same store and the same `query_rows` guard. A declared
+table becomes a `sheet`, and values keep their native JSON types; use
+`data->'field'` for JSONB and cast `data->>'field'` before numeric comparison.
+The envelope is documented in
+[`docs/json-data-protocol.md`](../docs/json-data-protocol.md).
+
+### How a row answer is cited
 
 An aggregate has no row to point at, so it cannot be cited the way a quoted line is.
 `query_rows` reports it as values and says so outright -- "these values are computed from
@@ -525,9 +531,9 @@ the rows, so there is no single row to cite" -- so a count is never dressed up a
 quotation. Row results are the opposite: each row becomes one source, and two files
 still yield two sources, because they are different evidence.
 
-A source is located by page if it has one and by nothing if it does not. Every CSV row
-carries `pages=unknown`, for the plain reason that a row has no page and inventing one
-would make a citation point at the wrong place.
+A source is located by page if it has one and by nothing if it does not. Every row
+source carries `pages=unknown`, for the plain reason that a row has no page and
+inventing one would make a citation point at the wrong place.
 
 ## How a document becomes searchable
 
@@ -544,7 +550,7 @@ sequenceDiagram
     participant L as LM Studio
     participant V as vision model
 
-    U->>W: choose a PDF, DOCX or CSV
+    U->>W: choose a PDF, DOCX, CSV or JSON
     W->>A: POST /v1/workspaces/{id}/documents
     A->>A: stage to a temp file, hash it
     A->>C: scan the temp file
@@ -590,21 +596,23 @@ sequenceDiagram
             L-->>K: vectors
             K->>Q: upsert points, each payload carrying workspace_ids and its run
         end
-    else CSV
-        K->>K: stdlib csv reader into memory, one dict per row
+    else CSV, XLSX or JSON
+        K->>K: parse the CSV, each JSON table, or each workbook sheet
         loop in batches of 1000
             K->>DB: INSERT document_rows (data as JSONB)
         end
-        Note over K,DB: no artifact, no chunks, no embeddings
+        Note over K,DB: no chunks, no embeddings
     end
     K->>DB: BEGIN, delete rows from superseded runs, then set<br/>status=ready and document.active_processing_run_id = run
     K->>DB: COMMIT
 ```
 
-A CSV takes the rows path, not the chunk path. It is tabular data the model will
-aggregate rather than prose it will quote, so it is stored verbatim as JSONB and
-queried with SQL. Nothing is embedded, which is why the run reports `row_count = 320`
-rather than a chunk count.
+CSV, workbook and JSON data take the rows path, not the chunk path. They are
+tabular data the model will aggregate rather than prose it will quote, so they are
+stored as JSONB and queried with SQL. Nothing is embedded, which is why the run
+reports `row_count = 320` rather than a chunk count. JSON must follow the
+[`retriv-json` v1 protocol](../docs/json-data-protocol.md); its tables and columns
+are declared, not inferred.
 
 The search reads the caller's scope from `document_workspaces` at query time: the
 vector statement's join only serves chunks whose document has a live link to one of
@@ -631,7 +639,7 @@ stateDiagram-v2
     queued --> fetching: worker claims it
     queued --> unsupported_format: media type has no text to read
     fetching --> extracting
-    extracting --> row_storing: media type is CSV
+    extracting --> row_storing: media type is CSV, XLSX or JSON
     extracting --> describing: the document has pictures
     extracting --> storing_artifact: PDF or DOCX
     describing --> storing_artifact: every picture described
@@ -855,7 +863,7 @@ erDiagram
     users ||--o{ api_keys : "owns"
     documents ||--o{ processing_runs : "is processed by"
     processing_runs ||--o{ document_chunks : "produces, PDF or DOCX"
-    processing_runs ||--o{ document_rows : "produces, CSV"
+    processing_runs ||--o{ document_rows : "produces, row-stored"
     document_chunks ||--o{ chunk_embeddings : "is embedded as"
 
     users {
@@ -903,7 +911,7 @@ erDiagram
         timestamptz lease_until
         uuid lease_token
         timestamptz available_at
-        int chunk_count "0 for a CSV"
+        int chunk_count "0 for a row-stored file"
         int row_count "0 for a document"
         jsonb csv_columns "labels each returned cell"
     }
@@ -938,8 +946,9 @@ A document has either `document_chunks` or `document_rows`, never both, and the 
 carries the count that says which: `row_count = 320` for a CSV, `chunk_count = 412` for
 a PDF. `csv_columns` sits on the run rather than on every row because it labels each
 returned cell, and repeating a header across 100k rows is the cost this design avoids.
-A workbook stores one catalogue entry per sheet -- the CSV's is the unnamed sheet -- and
-`document_rows.sheet` says which sheet a row came from, empty for a CSV.
+A workbook stores one catalogue entry per sheet, a JSON payload one per declared table;
+`document_rows.sheet` says which one a row came from, and is empty for a CSV or an
+unnamed JSON table.
 
 `document_rows.data` is JSONB and read with `->>`, which is why a SQL error saying
 `column "year" does not exist` comes back to the model as a hint naming `data->>'Year'`
@@ -954,10 +963,10 @@ make check     # pytest, ruff, mypy
 
 `tests/test_postgres_integration.py` covers the things SQLite cannot show —
 concurrent identical uploads racing on a unique constraint, foreign-key ordering, RLS
-against a real `retriv_reader`, and the full CSV path from HTTP upload through storage
+against a real `retriv_reader`, and the full row path from HTTP upload through storage
 and the worker to a queryable row. It skips unless `TEST_POSTGRES_URL` is set.
 
-Two tests there currently fail and are unrelated to CSV: the concurrent-upload race can
+Two tests there currently fail and are unrelated to row storage: the concurrent-upload race can
 observe a rolled-back duplicate, and one assertion still expects `RUN_CHUNKING` where the
 worker now sets `RUN_EMBEDDING` directly.
 

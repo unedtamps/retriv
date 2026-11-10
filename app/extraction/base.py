@@ -1,3 +1,4 @@
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -36,6 +37,19 @@ ALLOCATION_FAILURE_MARKERS = (
 def looks_like_allocation_failure(message: str) -> bool:
     lowered = message.lower()
     return any(marker in lowered for marker in ALLOCATION_FAILURE_MARKERS)
+
+
+class TabularTable(Protocol):
+    """What the row store needs from a CSV sheet, workbook sheet or JSON table."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def columns(self) -> list[str]: ...
+
+    @property
+    def rows(self) -> Iterable[Mapping[str, Any]]: ...
 
 
 @dataclass(frozen=True)

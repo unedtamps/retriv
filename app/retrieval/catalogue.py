@@ -1,10 +1,11 @@
-"""Rendering and attribution helpers for CSV evidence.
+"""Rendering and attribution helpers for row evidence.
 
 Split out of the agent harness so the MCP tools can share them: they describe
 what the row query produced, which is a fact about the data and not about any
 one caller.
 """
 
+import json
 import re
 from typing import Any
 
@@ -14,7 +15,7 @@ from app.retrieval.sql import Catalogue
 def format_catalogue(
     catalogue: Catalogue,
     *,
-    header: str = "Queryable CSV files:",
+    header: str = "Queryable files:",
     queryable: bool = True,
 ) -> str:
     """Render the catalogue with the document_id each query has to name.
@@ -76,7 +77,18 @@ def format_values(values: list[dict[str, Any]], *, limit: int = 50) -> str:
     columns = list(shown[0])
     lines.append("  " + " | ".join(columns))
     for value in shown:
-        lines.append("  " + " | ".join(str(value.get(name, "")) for name in columns))
+        lines.append(
+            "  "
+            + " | ".join(_render_value(value.get(name, "")) for name in columns)
+        )
     if len(values) > len(shown):
         lines.append(f"  ... and {len(values) - len(shown)} more row(s).")
     return "\n".join(lines) + "\n\n"
+
+
+def _render_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return str(value)

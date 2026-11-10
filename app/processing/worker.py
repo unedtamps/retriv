@@ -9,7 +9,7 @@ import os
 import shutil
 import struct
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -53,10 +53,16 @@ from app.db.models import (
     ProcessingRun,
 )
 from app.documents import conversion
+from app.documents.json_protocol import (
+    JsonLimits,
+    JsonProtocolError,
+    validate_json_protocol,
+)
 from app.documents.validation import (
     CSV_ENCODINGS,
     CSV_MEDIA_TYPE,
     DOCX_MEDIA_TYPE,
+    JSON_MEDIA_TYPE,
     PDF_MEDIA_TYPE,
     PPTX_MEDIA_TYPE,
     XLSX_MEDIA_TYPE,
@@ -75,6 +81,7 @@ from app.extraction.base import (
     ExtractionError,
     ExtractionResourceError,
     ExtractionResult,
+    TabularTable,
 )
 from app.extraction.images import (
     IMAGE_SUFFIXES,
@@ -108,6 +115,11 @@ _SOURCE_SUFFIX = {
 }
 
 _ROW_INSERT_BATCH = 1_000
+_JSON_ROW_BATCH_BYTES = 8 * 1024 * 1024
+"""JSON rows can carry nested values, so a thousand-row batch can be large.
+
+Flush a JSON batch once its serialised rows reach this size; CSV and workbook
+rows keep the count-only batching they have always used."""
 
 _IMAGE_PREVIEW_EDGE = 1568
 """Longest side of the preview an agent is served by default.
@@ -730,6 +742,10 @@ class ProcessingWorker:
             await self._process_xlsx_extract(claimed_run, lease_token, document)
             return
 
+        if document.detected_media_type == JSON_MEDIA_TYPE:
+            await self._process_json_extract(claimed_run, lease_token, document)
+            return
+
         self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
         suffix = _SOURCE_SUFFIX.get(document.detected_media_type)
         if suffix is None:
@@ -1281,6 +1297,134 @@ class ProcessingWorker:
         finally:
             await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
 
+    async def _process_json_extract(
+        self, claimed_run: ProcessingRun, lease_token: UUID, document: Document
+    ) -> None:
+        """Store a ``retriv-json`` v1 payload as rows, never as chunks.
+
+        The upload validator already refused a malformed envelope, but the
+        worker owns the bytes it actually downloaded, so it validates again
+        before writing. The protocol is explicit: there is no shape inference
+        here, only normalisation of the declared tables and records.
+        """
+
+        if document.bucket != self._settings.s3_raw_bucket:
+            raise PermanentProcessingError("Document references an unapproved raw bucket")
+        expected_key = (
+            f"workspaces/{document.origin_workspace_id}/objects/{document.sha256}/{document.id}"
+        )
+        if document.object_key != expected_key:
+            raise PermanentProcessingError("Object key does not match document identity")
+        if document.size_bytes > self._settings.max_json_bytes:
+            raise PermanentProcessingError("Document exceeds the JSON processing size limit")
+
+        self._settings.processing_temp_dir.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix="context-source-",
+            suffix=".json",
+            dir=self._settings.processing_temp_dir,
+        )
+        os.close(descriptor)
+        temporary_path = Path(temporary_name)
+        manifest_key: str | None = None
+        rows_persisted = False
+        try:
+            downloaded = await to_thread.run_sync(
+                partial(
+                    self._storage.download_file,
+                    temporary_path,
+                    bucket=document.bucket,
+                    key=document.object_key,
+                    max_bytes=self._settings.max_json_bytes,
+                )
+            )
+            if downloaded.size_bytes != document.size_bytes:
+                raise PermanentProcessingError("Downloaded object size does not match the event")
+            if downloaded.sha256 != document.sha256:
+                raise PermanentProcessingError("Downloaded object hash does not match the event")
+
+            await self._set_phase(claimed_run.id, lease_token, RUN_AWAITING_PARSER)
+            async with self._extraction_slots:
+                await self._set_phase(claimed_run.id, lease_token, RUN_EXTRACTING)
+                raw = await to_thread.run_sync(temporary_path.read_bytes)
+                try:
+                    parsed = await to_thread.run_sync(
+                        partial(
+                            validate_json_protocol,
+                            raw,
+                            JsonLimits.from_settings(self._settings),
+                        )
+                    )
+                except JsonProtocolError as exc:
+                    raise PermanentProcessingError(
+                        "The JSON data does not follow the retriv-json v1 protocol: "
+                        f"{exc.detail}"
+                    ) from exc
+
+                artifact_prefix = (
+                    f"workspaces/{document.origin_workspace_id}/documents/{document.id}/"
+                    f"runs/{claimed_run.id}/attempts/{lease_token}"
+                )
+                manifest_key = f"{artifact_prefix}/manifest.json"
+                manifest_bytes = json.dumps(
+                    {
+                        "artifact_type": "retriv-json",
+                        "protocol": "retriv-json",
+                        "protocol_version": 1,
+                        "tables": [
+                            {
+                                "sheet": table.name,
+                                "columns": table.schema,
+                                "rows": len(table.rows),
+                            }
+                            for table in parsed.tables
+                        ],
+                        "media_type": document.detected_media_type,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+                await self._set_artifact_keys(
+                    claimed_run.id,
+                    lease_token,
+                    artifact_key=None,
+                    manifest_key=manifest_key,
+                )
+                await self._set_phase(claimed_run.id, lease_token, RUN_STORING_ARTIFACT)
+                await to_thread.run_sync(
+                    partial(
+                        self._storage.put_bytes,
+                        manifest_bytes,
+                        bucket=self._settings.s3_artifact_bucket,
+                        key=manifest_key,
+                        content_type="application/json",
+                        content_encoding=None,
+                        sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+                    )
+                )
+
+                await self._set_phase(claimed_run.id, lease_token, RUN_CHUNKING)
+                rows_persisted = await self._persist_tabular_rows(
+                    claimed_run.id,
+                    lease_token,
+                    document,
+                    parsed.tables,
+                    manifest_key=manifest_key,
+                    stored_images=[],
+                    batch_bytes_limit=_JSON_ROW_BATCH_BYTES,
+                )
+                if not rows_persisted:
+                    await self._delete_artifacts(None, manifest_key)
+                else:
+                    await self._sweep_superseded_artifacts(document.id, claimed_run.id)
+        except Exception:
+            if manifest_key is not None:
+                await self._delete_artifacts(None, manifest_key)
+            raise
+        finally:
+            await to_thread.run_sync(partial(temporary_path.unlink, missing_ok=True))
+
     async def _describe_xlsx_images(
         self, run_id: UUID, lease_token: UUID, pictures: list[SheetPicture]
     ) -> dict[str, str]:
@@ -1382,20 +1526,22 @@ class ProcessingWorker:
         run_id: UUID,
         lease_token: UUID,
         document: Document,
-        tables: list[SheetTable],
+        tables: Sequence[TabularTable],
         *,
         manifest_key: str,
         stored_images: list[DocumentImage],
+        batch_bytes_limit: int | None = None,
     ) -> bool:
         """Store one tabular document's rows, replacing whatever it had.
 
-        A CSV arrives as one unnamed table and a workbook as several named
-        ones; both land here, because the store, the caps and the citation
-        contract are the same. The row id seeds from the sheet name when
-        there is one, and keeps the older seed for a CSV so existing rows
-        keep their identity. This is also the run's activation gate: the
-        document row is locked, so a delete that committed meanwhile turns
-        the run into a cancellation instead of a write over a tombstone.
+        A CSV arrives as one unnamed table, a workbook as several named ones,
+        and a retriv-json payload as its declared tables; all land here because
+        the store, the caps and the citation contract are the same. The row id
+        seeds from the sheet name when there is one, and keeps the older seed
+        for a CSV so existing rows keep their identity. This is also the run's
+        activation gate: the document row is locked, so a delete that committed
+        meanwhile turns the run into a cancellation instead of a write over a
+        tombstone.
         """
         stop_event = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
@@ -1425,7 +1571,25 @@ class ProcessingWorker:
                 for table in tables:
                     inserted = 0
                     batch: list[dict[str, object]] = []
+                    batch_bytes = 0
                     for row_number, row in enumerate(table.rows, start=1):
+                        row_data = dict(row)
+                        row_bytes = 0
+                        if batch_bytes_limit is not None:
+                            row_bytes = len(
+                                json.dumps(
+                                    row_data,
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                    default=str,
+                                ).encode()
+                            )
+                            if batch and batch_bytes + row_bytes > batch_bytes_limit:
+                                await session.execute(insert(DocumentRow), batch)
+                                inserted += len(batch)
+                                batch.clear()
+                                batch_bytes = 0
+                                await asyncio.sleep(0)
                         seed = str(row_number) if not table.name else f"{table.name}:{row_number}"
                         batch.append(
                             {
@@ -1435,13 +1599,15 @@ class ProcessingWorker:
                                 "processing_run_id": run_id,
                                 "sheet": table.name,
                                 "row_number": row_number,
-                                "data": row,
+                                "data": row_data,
                             }
                         )
+                        batch_bytes += row_bytes
                         if len(batch) >= _ROW_INSERT_BATCH:
                             await session.execute(insert(DocumentRow), batch)
                             inserted += len(batch)
                             batch.clear()
+                            batch_bytes = 0
                             await asyncio.sleep(0)
                     if batch:
                         await session.execute(insert(DocumentRow), batch)

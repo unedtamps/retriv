@@ -164,7 +164,7 @@ class DocumentNavigator:
                     )
                 if document.detected_media_type in ROW_STORED_MEDIA_TYPES:
                     raise DocumentNotNavigable(
-                        "That file is a CSV or workbook, which is stored as rows "
+                        "That file is a CSV, workbook or JSON data file, which is stored as rows "
                         "rather than text. Use list_queryable_files to see its "
                         "columns, then query_rows to ask questions of the data."
                     )
@@ -241,7 +241,7 @@ class DocumentNavigator:
                     )
                 if document.detected_media_type in ROW_STORED_MEDIA_TYPES:
                     raise DocumentNotNavigable(
-                        "That file is a CSV or workbook, which is stored as rows "
+                        "That file is a CSV, workbook or JSON data file, which is stored as rows "
                         "rather than text. Use list_queryable_files to see its "
                         "columns, then query_rows to ask questions of the data."
                     )

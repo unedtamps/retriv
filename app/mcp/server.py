@@ -2,7 +2,7 @@
 
 Everything a tool does, an HTTP route already does behind a JWT. The tools
 are not a second implementation of those routes: they share the retrieval,
-the CSV reader, and the permission checks -- now literally, through
+the row readers, and the permission checks -- now literally, through
 ``app.agents.toolkit`` -- and differ only in how the caller is authenticated
 and how the answer is shaped.
 
@@ -76,8 +76,9 @@ def _instructions(*, row_queries: bool) -> str:
         "than text, and the wording it points at is further into the document: "
         "call read_document with that document_id and start_ordinal to read on "
         "from there. Use read_document from ordinal 0 to read a document "
-        "straight through. For CSV files, call list_queryable_files as well: "
-        "it gives the column names a query has to name."
+        "straight through. For CSV, XLSX or JSON data files, call "
+        "list_queryable_files as well: it gives the table and column names a "
+        "query has to name."
     )
     extra = (
         "\n\nlist_workspaces names the workspaces this key can read. "
@@ -189,7 +190,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         marked `kind=heading` and a note says so, because the wording it points
         at is elsewhere in the document; call read_document with that source's
         ordinal to read on from there. Call list_queryable_files instead when
-        the question is about CSV columns or rows.
+        the question is about row-stored files and their columns or rows.
 
         `document_id`, from find_documents, restricts the search to that one
         document; omit it to search every document in scope. `min_score`
@@ -253,8 +254,9 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         document has and where to resume, so a long document is read in
         successive calls rather than truncated silently.
 
-        CSV files and workbooks are stored as rows, not text, and are not
-        readable here; use list_queryable_files and query_rows for those.
+        CSV, workbook and JSON data files are stored as rows, not text, and
+        are not readable here; use list_queryable_files and query_rows for
+        those.
 
         Omit `workspace_id` to read the document from whichever workspace in
         scope holds it.
@@ -303,7 +305,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
 
         `find_documents` says a document is `ready`; that only means the
         pipeline finished. This says what it produced: pages, chunks, how many
-        of them were embedded, sections, images and CSV rows. A scanned PDF
+        of them were embedded, sections, images and rows. A scanned PDF
         without a text layer is `ready` with zero chunks, and searching it will
         never find anything -- the difference between "the document does not
         say" and "the document was never readable" is exactly this report.
@@ -324,12 +326,12 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         pattern: Annotated[str, Field(max_length=200)] | None = None,
         workspace_id: UUID | None = None,
     ) -> str:
-        """List the CSV files you may query, with their column names.
+        """List the row-stored files you may query, with their column names.
 
         Use this when the catalogue was truncated, or to find one file among
         many. `pattern` matches part of the filename and is usually faster
-        than paging through offsets. Omit `workspace_id` to list every CSV in
-        scope.
+        than paging through offsets. Omit `workspace_id` to list every
+        queryable file in scope.
         """
         return await (await _kit(box.runtime, ctx.headers)).list_queryable_files(
             workspace_id=workspace_id, offset=offset, limit=limit, pattern=pattern
@@ -357,10 +359,10 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         whole set.
 
         `status` tells you whether searching it will help: `ready` documents
-        are searchable, `processing` ones are not yet. A CSV or a workbook
-        also shows its row count and is queryable with query_rows; any other
-        file is read with search_context, or fetched whole with
-        get_document_link.
+        are searchable, `processing` ones are not yet. A CSV, workbook or
+        JSON data file also shows its row count and is queryable with
+        query_rows; any other file is read with search_context, or fetched
+        whole with get_document_link.
 
         Filenames are not unique, and one canonical document can appear in
         several linked workspaces with a different name in each. Compare
@@ -396,21 +398,23 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             ctx: Context,
             sql: Annotated[str, Field(min_length=1, max_length=8000)],
         ) -> str:
-            """Run one SQL statement over the rows of a CSV file.
+            """Run one SQL statement over the rows of a row-stored file.
 
-            Two tables may be read: `document_rows` and `documents`. A CSV has
-            no columns of its own -- every cell is text inside the JSONB column
-            `data`, keyed by the header exactly as list_queryable_files spells
-            it. Cast to compare, and guard the empty cell, which is `''` rather
-            than NULL: `nullif(data->>'Amount','')::numeric`.
+            Two tables may be read: `document_rows` and `documents`. A CSV or
+            workbook cell is text inside the JSONB column `data`, keyed by the
+            header exactly as list_queryable_files spells it. A JSON data file
+            keeps its declared native types; use `data->>'field'` for text and
+            `data->'field'` for JSONB. Cast to compare, and guard the empty
+            cell, which is `''` rather than NULL:
+            `nullif(data->>'Amount','')::numeric`.
 
             The statement must filter on document_id, and every row it returns
-            must come from that one file; a workbook's rows also carry a
-            `sheet` column, and a result spanning two sheets is rejected, so
-            add `AND sheet = '<name from the catalogue>'` for one. Use the
-            document_id, sheet and column names from list_queryable_files. An
-            aggregate such as `count(*)` returns no rows and is reported as a
-            value.
+            must come from that one file and table. Workbook sheets and JSON
+            tables both use the `sheet` column, and a result spanning two is
+            rejected, so add `AND sheet = '<name from the catalogue>'` when
+            there is more than one. Use the document_id, sheet and column
+            names from list_queryable_files. An aggregate such as `count(*)`
+            returns no rows and is reported as a value.
             """
             return (await (await _kit(box.runtime, ctx.headers)).query_rows(sql=sql)).text
 
@@ -451,9 +455,9 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
 
         The document text names a picture by ref wherever the prose sat next
         to it, and each ref is exactly what get_image takes. Use this when
-        you want to see what a document depicts before choosing one. A CSV
-        has no pictures, and neither does a document that was processed
-        without the vision stage.
+        you want to see what a document depicts before choosing one. A CSV or
+        JSON data file has no pictures, and neither does a document that was
+        processed without the vision stage.
         """
         return await (await _kit(box.runtime, ctx.headers)).list_images(
             workspace_id=workspace_id, document_id=document_id

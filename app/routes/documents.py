@@ -1,11 +1,13 @@
 import logging
 import re
+from collections.abc import AsyncIterator
 from functools import partial
+from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import quote
 
 from anyio import to_thread
-from fastapi import APIRouter, Depends, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, Query, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,13 +27,27 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.models import Document, DocumentWorkspace, ProcessingRun
 from app.db.session import get_session
+from app.documents.json_protocol import (
+    JsonLimits,
+    JsonProtocolError,
+    validate_json_protocol,
+)
 from app.documents.service import (
     accept_document_delete,
     accept_document_reindex,
     ingest_staged_upload,
     storage_unavailable_error,
 )
-from app.documents.validation import stage_upload
+from app.documents.validation import (
+    JSON_MEDIA_TYPE,
+    ValidationResult,
+    file_too_large_error,
+    json_protocol_error,
+    max_bytes_for_extension,
+    sanitize_filename,
+    stage_chunks,
+    stage_upload,
+)
 from app.infrastructure.storage import ObjectNotFoundError, StorageError, iter_object
 from app.processing.service import derived_document_status, load_active_run
 from app.security.auth import CurrentUser
@@ -67,6 +83,112 @@ async def upload_document(
         await file.close()
         if staged is not None:
             await to_thread.run_sync(partial(staged.path.unlink, missing_ok=True))
+    if result.duplicate:
+        response.status_code = status.HTTP_200_OK
+    else:
+        response.status_code = status.HTTP_202_ACCEPTED
+    return document_response(result.document, result.link, result.run, duplicate=result.duplicate)
+
+
+@router.post(
+    "/json",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def ingest_json_data(
+    workspace: UploadWorkspaceContext,
+    current_user: CurrentUser,
+    request: Request,
+    response: Response,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    storage: StorageDependency,
+    scanner: ScannerDependency,
+    filename: Annotated[str, Query(min_length=1, max_length=255)] = "data.json",
+) -> DocumentResponse:
+    """Ingest a ``retriv-json`` v1 payload sent as the request body.
+
+    The endpoint is a thin wrapper around the file path: the body is validated,
+    staged as a ``.json`` document, scanned, stored, and enqueued exactly like
+    an uploaded file. That keeps deduplication, reindexing, download links and
+    the worker in one place.
+    """
+
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type != JSON_MEDIA_TYPE:
+        raise AppError(
+            status_code=415,
+            code="unsupported_media_type",
+            title="Unsupported media type",
+            detail="JSON data ingestion requires Content-Type: application/json.",
+        )
+
+    json_limit = max_bytes_for_extension(".json", settings)
+    body = await request.body()
+    if not body:
+        raise AppError(
+            status_code=422,
+            code="empty_file",
+            title="Empty file",
+            detail="The JSON request body is empty.",
+        )
+    if len(body) > json_limit:
+        raise file_too_large_error(json_limit)
+
+    try:
+        await to_thread.run_sync(
+            partial(
+                validate_json_protocol,
+                body,
+                JsonLimits.from_settings(settings),
+            )
+        )
+    except JsonProtocolError as exc:
+        raise json_protocol_error(exc) from exc
+
+    safe_filename = sanitize_filename(filename)
+    if not safe_filename.lower().endswith(".json"):
+        if Path(safe_filename).suffix:
+            raise AppError(
+                status_code=422,
+                code="invalid_filename",
+                title="Invalid filename",
+                detail="The filename for JSON data must end with .json.",
+            )
+        safe_filename = f"{safe_filename}.json"
+    if len(safe_filename.encode("utf-8")) > 255:
+        raise AppError(
+            status_code=422,
+            code="invalid_filename",
+            title="Invalid filename",
+            detail="The filename is longer than 255 bytes.",
+        )
+
+    staged = None
+    try:
+        async def body_chunks() -> AsyncIterator[bytes]:
+            yield body
+
+        staged = await stage_chunks(
+            safe_filename,
+            body_chunks(),
+            settings=settings,
+            max_bytes=json_limit,
+        )
+        result = await ingest_staged_upload(
+            session=session,
+            settings=settings,
+            storage=storage,
+            scanner=scanner,
+            workspace_id=workspace.id,
+            uploader_id=current_user.id,
+            staged=staged,
+            validation=ValidationResult(media_type=JSON_MEDIA_TYPE),
+        )
+    finally:
+        if staged is not None:
+            await to_thread.run_sync(partial(staged.path.unlink, missing_ok=True))
+
     if result.duplicate:
         response.status_code = status.HTTP_200_OK
     else:

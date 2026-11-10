@@ -563,6 +563,7 @@ async def test_query_rows_states_the_jsonb_shape_before_any_failure(
     description = tools["query_rows"]["description"]
     assert "JSONB" in description
     assert "document_rows" in description
+    assert "JSON data file" in description
     assert "nullif(data->>'Amount','')::numeric" in description
 
 
@@ -617,6 +618,50 @@ async def _seed_queryable_csv(
         document.active_processing_run_id = run.id
         await session.commit()
     return seeded
+
+
+async def _seed_queryable_json(
+    mcp: McpEnv,
+    *,
+    filename: str = "orders.json",
+    workspace: str = "legal",
+) -> SeededDocument:
+    seeded = await _seed_document(mcp, filename=filename, workspace=workspace)
+    workspace_id = getattr(mcp.entities, workspace).id
+    async with mcp.session_factory() as session:
+        document = await session.get(Document, seeded.document_id)
+        assert document is not None
+        run = ProcessingRun(
+            document_id=document.id,
+            origin_workspace_id=workspace_id,
+            job_kind=JOB_EXTRACT,
+            pipeline_version=mcp.settings.pipeline_version,
+            status="ready",
+            row_count=2,
+            csv_columns=[
+                {
+                    "sheet": "orders",
+                    "columns": ["id", "total"],
+                    "rows": 2,
+                }
+            ],
+        )
+        session.add(run)
+        await session.flush()
+        document.active_processing_run_id = run.id
+        await session.commit()
+    return seeded
+
+
+async def test_list_queryable_files_includes_json_tables(mcp: McpEnv) -> None:
+    seeded = await _seed_queryable_json(mcp)
+    result = await mcp.session.call(mcp.bob_key, "list_queryable_files")
+    body = text_of(result)
+
+    assert "orders.json" in body
+    assert str(seeded.document_id) in body
+    assert "sheet orders" in body
+    assert "id, total" in body
 
 
 async def test_list_queryable_files_shows_ids_and_columns(mcp: McpEnv) -> None:
@@ -716,6 +761,32 @@ async def test_find_documents_shows_that_a_workbook_is_queryable(
     body = text_of(result)
     assert "queryable with query_rows" in body
     assert "0 rows" in body
+
+
+async def test_find_documents_shows_that_json_is_queryable(
+    mcp: McpEnv,
+) -> None:
+    await _seed_document(mcp, filename="orders.json")
+    result = await mcp.session.call(mcp.alice_key, "find_documents")
+
+    body = text_of(result)
+    assert "queryable with query_rows" in body
+    assert "0 rows" in body
+
+
+async def test_describe_document_shows_json_tables(
+    mcp: McpEnv,
+) -> None:
+    seeded = await _seed_queryable_json(mcp)
+    result = await mcp.session.call(
+        mcp.alice_key,
+        "describe_document",
+        workspace_id=str(mcp.entities.legal.id),
+        document_id=str(seeded.document_id),
+    )
+
+    body = text_of(result)
+    assert "table orders: 2 rows; columns: id, total" in body
 
 
 async def test_find_documents_keeps_two_revisions_of_one_name_apart(
@@ -1053,6 +1124,8 @@ def _media_type_of(filename: str) -> str:
         return "text/csv"
     if lowered.endswith(".xlsx"):
         return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if lowered.endswith(".json"):
+        return "application/json"
     return "application/pdf"
 
 
@@ -1444,7 +1517,7 @@ async def test_read_document_refuses_a_workbook(mcp: McpEnv) -> None:
     )
 
     assert result["isError"] is True
-    assert "CSV or workbook" in text_of(result)
+    assert "CSV, workbook or JSON" in text_of(result)
 
 
 async def _seed_processed_document(
