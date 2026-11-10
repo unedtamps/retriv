@@ -26,13 +26,21 @@ from app.db.models import (
 from app.documents.validation import (
     CSV_MEDIA_TYPE,
     DOCX_MEDIA_TYPE,
+    JSON_MEDIA_TYPE,
     PDF_MEDIA_TYPE,
     PPTX_MEDIA_TYPE,
     XLSX_MEDIA_TYPE,
 )
 
 SUPPORTED_MEDIA_TYPES = frozenset(
-    {PDF_MEDIA_TYPE, DOCX_MEDIA_TYPE, PPTX_MEDIA_TYPE, XLSX_MEDIA_TYPE, CSV_MEDIA_TYPE}
+    {
+        PDF_MEDIA_TYPE,
+        DOCX_MEDIA_TYPE,
+        PPTX_MEDIA_TYPE,
+        XLSX_MEDIA_TYPE,
+        CSV_MEDIA_TYPE,
+        JSON_MEDIA_TYPE,
+    }
 )
 
 

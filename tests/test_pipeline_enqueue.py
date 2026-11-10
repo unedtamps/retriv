@@ -23,7 +23,7 @@ from app.db.models import (
     Document,
     ProcessingRun,
 )
-from app.documents.validation import DOCX_MEDIA_TYPE, PDF_MEDIA_TYPE
+from app.documents.validation import DOCX_MEDIA_TYPE, JSON_MEDIA_TYPE, PDF_MEDIA_TYPE
 from app.processing.service import (
     derived_document_status,
     enqueue_delete,
@@ -68,6 +68,21 @@ async def test_enqueue_extract_queues_a_run_and_points_the_document_at_it(
     assert run.pipeline_version == settings.pipeline_version
     assert document.active_processing_run_id == run.id
     assert derived_document_status(document, run) == "processing"
+
+
+async def test_json_is_queued_as_a_supported_row_format(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    entities: SeededEntities,
+) -> None:
+    document = new_document(entities.finance.id, JSON_MEDIA_TYPE)
+    async with db_session_factory() as session, session.begin():
+        session.add(document)
+        await session.flush()
+        run = await enqueue_extract(session, document, settings)
+
+    assert run.status == RUN_QUEUED
+    assert run.last_error is None
 
 
 async def test_enqueue_extract_is_idempotent(
