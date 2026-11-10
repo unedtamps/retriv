@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import type { ToolStep } from '../hooks/useAgentConversation'
 
 const MarkdownText = lazy(() => import('./MarkdownText').then((m) => ({ default: m.MarkdownText })))
@@ -94,6 +95,7 @@ function formatDuration(call: ToolStep, running: boolean): string {
  * produced it, and the citations that make it checkable.
  */
 export function ChatAnswerCard({ calls, texts, streaming, busy, errors }: ChatAnswerCardProps) {
+  const [trailOpen, setTrailOpen] = useState(false)
   const answer = texts.join('\n\n')
   const hasAnswer = answer.trim() !== ''
   const sources = parseSources(calls)
@@ -108,6 +110,10 @@ export function ChatAnswerCard({ calls, texts, streaming, busy, errors }: ChatAn
           ? `source ${firstSource.index}`
           : null
   const stamp = hasAnswer ? 'Answer' : busy ? 'Working' : 'Answer'
+  const lastCall = calls[calls.length - 1]
+  const running = busy && lastCall !== undefined && lastCall.preview === ''
+  const totalMs = calls.reduce((total, call) => total + (call.durationMs ?? 0), 0)
+  const totalDuration = totalMs > 0 ? `${(totalMs / 1000).toFixed(1)}s` : ''
 
   return (
     <article className="chat-answer-card" aria-label="Answer">
@@ -149,22 +155,56 @@ export function ChatAnswerCard({ calls, texts, streaming, busy, errors }: ChatAn
 
       {calls.length === 0 ? null : (
         <div className="chat-tool-trail" aria-label="Tool activity">
-          {calls.map((call, index) => {
-            const running = busy && index === calls.length - 1 && call.preview === ''
-            const summary = argumentSummary(call)
-            const duration = formatDuration(call, running)
-            return (
-              <div className="chat-tool-row" key={`${call.name}-${index}`} title={JSON.stringify(call.arguments)}>
-                <span
-                  className={`chat-tool-dot ${running ? 'chat-tool-dot-running' : ''}`}
-                  aria-hidden="true"
-                />
-                <span className="chat-tool-name">{call.name}</span>
-                {summary === '' ? null : <span className="chat-tool-arg">“{summary}”</span>}
-                {duration === '' ? null : <span className="chat-tool-time">{duration}</span>}
-              </div>
-            )
-          })}
+          <button
+            type="button"
+            className="chat-tool-summary"
+            aria-expanded={trailOpen}
+            onClick={() => setTrailOpen((open) => !open)}
+          >
+            <span
+              className={`chat-tool-dot ${running ? 'chat-tool-dot-running' : ''}`}
+              aria-hidden="true"
+            />
+            <span className="chat-tool-name">
+              {running
+                ? lastCall.name
+                : `${calls.length} tool call${calls.length === 1 ? '' : 's'}`}
+            </span>
+            {running ? <span className="chat-tool-arg">running</span> : null}
+            {running || totalDuration === '' ? null : (
+              <span className="chat-tool-time">{totalDuration}</span>
+            )}
+            <ChevronDown
+              aria-hidden="true"
+              size={12}
+              className={`chat-tool-chevron${trailOpen ? ' chat-tool-chevron-open' : ''}`}
+            />
+          </button>
+
+          {trailOpen ? (
+            <div className="chat-tool-list">
+              {calls.map((call, index) => {
+                const callRunning = running && index === calls.length - 1
+                const summary = argumentSummary(call)
+                const duration = formatDuration(call, callRunning)
+                return (
+                  <div
+                    className="chat-tool-row"
+                    key={`${call.name}-${index}`}
+                    title={JSON.stringify(call.arguments)}
+                  >
+                    <span
+                      className={`chat-tool-dot ${callRunning ? 'chat-tool-dot-running' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <span className="chat-tool-name">{call.name}</span>
+                    {summary === '' ? null : <span className="chat-tool-arg">“{summary}”</span>}
+                    {duration === '' ? null : <span className="chat-tool-time">{duration}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
         </div>
       )}
 

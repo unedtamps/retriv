@@ -836,7 +836,6 @@ describe('dashboard application', () => {
     const pinned = screen.getByPlaceholderText('Ask this workspace…')
     expect(pinned).toBeInTheDocument()
     expect((pinned as HTMLTextAreaElement).value).toBe('')
-    expect(await screen.findByText('search_context')).toBeInTheDocument()
     expect(await screen.findByText('The workspace holds one report.')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
     const transcript = screen.getByTestId('chat-transcript')
@@ -845,6 +844,9 @@ describe('dashboard application', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument(),
     )
+    expect(screen.queryByText('search_context')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /1 tool call/ }))
+    expect(await screen.findByText('search_context')).toBeInTheDocument()
     const chatCall = fetchMock.mock.calls.find(([input]) =>
       String(input).endsWith('/agent/chat'),
     )
@@ -874,6 +876,14 @@ describe('dashboard application', () => {
     await user.type(input, 'who is the executive officer of 3M?')
     await user.keyboard('{Enter}')
 
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument(),
+    )
+    expect(await screen.findByRole('button', { name: /2 tool calls/ })).toBeInTheDocument()
+    expect(screen.queryByText('read_document')).not.toBeInTheDocument()
+    expect(screen.queryByText('find_documents')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /2 tool calls/ }))
     expect(await screen.findByText('read_document')).toBeInTheDocument()
     expect(await screen.findByText('find_documents')).toBeInTheDocument()
   })
