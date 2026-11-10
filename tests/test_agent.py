@@ -279,6 +279,7 @@ async def test_chat_streams_tool_calls_to_an_answer(
     assert kinds == ["turn_start", "tool_call", "tool_result", "final"]
     assert events[1]["name"] == "search_context"
     assert "Net revenue rose by a tenth." in events[2]["preview"]
+    assert "page_number=2" in events[2]["preview"]
     assert events[3]["content"].startswith("Net revenue rose")
     # The labels in the prose are the ones the payload names; the client must
     # not have to reconstruct them from a possibly-truncated preview.
@@ -296,6 +297,49 @@ async def test_chat_streams_tool_calls_to_an_answer(
     )
     assert "untrusted_document_text" in tool_message["content"]
     assert scripted_model.closed
+
+
+async def test_a_repeated_chunk_keeps_one_citation_label(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """A read that returns a chunk already searched keeps its original label."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    source = a_source(entities.finance.id)
+    runtime_env.results.append([source])
+    runtime_env.results.append([source])
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-2", name="search_context", arguments={"query": "revenue again"})
+            ],
+        ),
+        ChatTurn(content="Net revenue rose by a tenth [1].", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    previews = [event["preview"] for event in events if event["type"] == "tool_result"]
+    assert all("[1] filename=" in preview for preview in previews)
+    assert [source["index"] for source in events[-1]["sources"]] == [1]
 
 
 async def test_chat_can_list_queryable_files_without_a_row_reader(
@@ -938,8 +982,9 @@ class _LimitRecordingKit:
         document_id: Any = None,
         min_score: float | None = None,
         start_index: int = 1,
+        citations: Any = None,
     ) -> str:
-        del query, workspace_id, start_index
+        del query, workspace_id, start_index, citations
         self.limits.append(limit)
         self.min_scores.append(min_score)
         self.document_ids.append(document_id)
@@ -953,8 +998,9 @@ class _LimitRecordingKit:
         workspace_id: Any = None,
         document_id: Any = None,
         start_index: int = 1,
+        citations: Any = None,
     ) -> str:
-        del workspace_id, start_index
+        del workspace_id, start_index, citations
         self.text_queries.append((query, limit, document_id))
         return "ok"
 

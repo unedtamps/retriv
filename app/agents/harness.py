@@ -26,6 +26,7 @@ from app.agents.chat import ChatProviderError, ChatTurn, OpenAICompatibleChatPro
 from app.agents.toolkit import AgentToolKit, ServedSource, ToolOutcome, ToolRejection
 from app.core.errors import AppError
 from app.retrieval.context import RetrievalUnavailable
+from app.retrieval.format import CitationIndex
 from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 
 MAX_TURNS = 12
@@ -379,6 +380,7 @@ async def _execute_tool(
     arguments: dict[str, Any],
     *,
     start_index: int = 1,
+    citations: CitationIndex | None = None,
 ) -> ToolOutcome:
     if name == "search_context":
         query = arguments.get("query")
@@ -393,6 +395,7 @@ async def _execute_tool(
             document_id=_uuid_argument(arguments, "document_id"),
             min_score=None if min_score is None else max(-1.0, min(1.0, min_score)),
             start_index=start_index,
+            citations=citations,
         )
     if name == "find_documents":
         pattern = arguments.get("pattern")
@@ -413,6 +416,7 @@ async def _execute_tool(
             limit=max(1, min(limit, MAX_SEARCH_LIMIT)),
             document_id=_uuid_argument(arguments, "document_id"),
             start_index=start_index,
+            citations=citations,
         )
     if name == "list_workspaces":
         return ToolOutcome(text=await kit.list_workspaces())
@@ -427,6 +431,7 @@ async def _execute_tool(
             start_ordinal=_int_argument(arguments, "start_ordinal", 0),
             limit=_int_argument(arguments, "limit", 20),
             start_index=start_index,
+            citations=citations,
         )
     if name == "get_document_outline":
         document_id = _uuid_argument(arguments, "document_id")
@@ -465,7 +470,11 @@ async def _execute_tool(
         sql = arguments.get("sql")
         if not isinstance(sql, str) or not sql.strip():
             raise ToolRejection("The 'sql' argument is required.")
-        return await kit.query_rows(sql=sql[:8000], start_index=start_index)
+        return await kit.query_rows(
+            sql=sql[:8000],
+            start_index=start_index,
+            citations=citations,
+        )
     if name == "list_images":
         document_id = _uuid_argument(arguments, "document_id")
         workspace_id = _uuid_argument(arguments, "workspace_id")
@@ -675,9 +684,9 @@ async def run_agent(
         {"role": "user", "content": message},
     ]
     specs = _tool_specs(row_queries=kit.row_queries)
-    served: list[ServedSource] = []
+    served: dict[int, ServedSource] = {}
     tool_names: list[str] = []
-    next_index = 1
+    citations = CitationIndex()
     yield {"type": "turn_start", "turns_allowed": MAX_TURNS}
 
     for _ in range(MAX_TURNS):
@@ -716,7 +725,7 @@ async def run_agent(
 
         if not turn.tool_calls:
             content = turn.content or ""
-            failure = _grounding_failure(content, served, tool_names, message)
+            failure = _grounding_failure(content, list(served.values()), tool_names, message)
             if failure is not None:
                 yield {
                     "type": "final",
@@ -731,7 +740,7 @@ async def run_agent(
             yield {
                 "type": "final",
                 "content": content,
-                "sources": _cited_sources(content, served),
+                "sources": _cited_sources(content, list(served.values())),
             }
             return
 
@@ -744,7 +753,7 @@ async def run_agent(
                     kit,
                     call.name,
                     call.arguments,
-                    start_index=next_index,
+                    citations=citations,
                 )
             except ToolRejection as exc:
                 outcome = ToolOutcome(text=f"Rejected: {exc}")
@@ -766,8 +775,8 @@ async def run_agent(
                 # guarded wrapper used to make the same translation for
                 # external clients; the harness needs its own.
                 outcome = ToolOutcome(text=f"Unavailable: {exc}")
-            next_index += len(outcome.sources)
-            served.extend(outcome.sources)
+            for source in outcome.sources:
+                served.setdefault(source.index, source)
             text = _result_for_model(outcome.text)
             yield {
                 "type": "tool_result",

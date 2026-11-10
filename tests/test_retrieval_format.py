@@ -10,7 +10,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.retrieval.format import format_context, navigation_hint, source_indices
+from app.retrieval.format import (
+    CitationIndex,
+    format_context,
+    navigation_hint,
+    source_indices,
+)
 from app.retrieval.schemas import ContextSource
 
 
@@ -77,6 +82,19 @@ def test_the_hint_names_the_first_heading_only() -> None:
     assert "source [1]" in text
 
 
+def test_citation_index_reuses_a_chunk_for_the_whole_answer() -> None:
+    """A passage served twice must keep one label, not gain a second."""
+    first = source(heading=False)
+    second = source(heading=False)
+    index = CitationIndex()
+
+    assert index.indices_for([first, second]) == {first.chunk_id: 1, second.chunk_id: 2}
+    assert index.indices_for([first]) == {first.chunk_id: 1}
+
+    third = source(heading=False)
+    assert index.indices_for([third]) == {third.chunk_id: 3}
+
+
 def test_the_source_label_names_what_a_reader_can_act_on() -> None:
     """A label carries the handles a tool takes, and nothing else.
 
@@ -91,5 +109,5 @@ def test_the_source_label_names_what_a_reader_can_act_on() -> None:
     assert f"ordinal={first.ordinal}" in label
     assert f"document_id={first.document_id}" in label
     assert f"workspace_id={first.workspace_id}" in label
-    assert "pages=1" in label
+    assert "page_number=1" in label
     assert "chunk_id" not in label

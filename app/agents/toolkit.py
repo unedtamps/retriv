@@ -49,11 +49,11 @@ from app.mcp.runtime import McpRuntime
 from app.processing.service import derived_document_status
 from app.retrieval.catalogue import format_catalogue, format_values, mentions_document_id
 from app.retrieval.format import (
+    CitationIndex,
     format_context,
     format_outline,
     navigation_footer,
     navigation_hint,
-    source_indices,
 )
 from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 from app.retrieval.schemas import ContextSource
@@ -134,10 +134,6 @@ def _served_sources(
         )
         for source in sources
     )
-
-
-def _by_chunk(sources: list[ContextSource]) -> dict[UUID, ContextSource]:
-    return {source.chunk_id: source for source in sources}
 
 
 async def _scoped_document(
@@ -227,6 +223,7 @@ class AgentToolKit:
         document_id: UUID | None = None,
         min_score: float | None = None,
         start_index: int = 1,
+        citations: CitationIndex | None = None,
     ) -> ToolOutcome:
         scope = self._scope(workspace_id)
         if not scope:
@@ -241,7 +238,8 @@ class AgentToolKit:
         )
         if not sources:
             return ToolOutcome(text="No relevant sources were found.")
-        indices = source_indices(_by_chunk(sources), start=start_index)
+        registry = citations if citations is not None else CitationIndex(start_index)
+        indices = registry.indices_for(sources)
         body = format_context(sources, indices)
         hint = navigation_hint(sources, indices)
         text = f"{body}\n\n{hint}" if hint else body
@@ -255,6 +253,7 @@ class AgentToolKit:
         workspace_id: UUID | None = None,
         document_id: UUID | None = None,
         start_index: int = 1,
+        citations: CitationIndex | None = None,
     ) -> ToolOutcome:
         """Literal matches, for identifiers an embedding cannot resolve."""
         scope = self._scope(workspace_id)
@@ -271,7 +270,8 @@ class AgentToolKit:
                     "for a paraphrase."
                 )
             )
-        indices = source_indices(_by_chunk(sources), start=start_index)
+        registry = citations if citations is not None else CitationIndex(start_index)
+        indices = registry.indices_for(sources)
         return ToolOutcome(
             text=format_context(sources, indices),
             sources=_served_sources(sources, indices),
@@ -285,6 +285,7 @@ class AgentToolKit:
         start_ordinal: int = 0,
         limit: int = 20,
         start_index: int = 1,
+        citations: CitationIndex | None = None,
     ) -> ToolOutcome:
         scope = self._scope(workspace_id)
         window = await self._runtime.navigator.read_window(
@@ -295,7 +296,8 @@ class AgentToolKit:
         )
         if not window.sources:
             return ToolOutcome(text=navigation_footer(window))
-        indices = source_indices(_by_chunk(window.sources), start=start_index)
+        registry = citations if citations is not None else CitationIndex(start_index)
+        indices = registry.indices_for(window.sources)
         body = format_context(window.sources, indices)
         return ToolOutcome(
             text=f"{body}\n\n{navigation_footer(window)}",
@@ -523,7 +525,13 @@ class AgentToolKit:
             )
         )
 
-    async def query_rows(self, *, sql: str, start_index: int = 1) -> ToolOutcome:
+    async def query_rows(
+        self,
+        *,
+        sql: str,
+        start_index: int = 1,
+        citations: CitationIndex | None = None,
+    ) -> ToolOutcome:
         runtime = self._runtime
         rows = runtime.row_query
         if rows is None:
@@ -555,7 +563,8 @@ class AgentToolKit:
                 result.as_source(filenames.get(result.document_id))
                 for result in outcome.sources
             ]
-            indices = source_indices(_by_chunk(sources), start=start_index)
+            registry = citations if citations is not None else CitationIndex(start_index)
+            indices = registry.indices_for(sources)
             body = format_context(sources, indices)
             return ToolOutcome(
                 text=f"{body}{computed}",

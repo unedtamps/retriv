@@ -57,11 +57,13 @@ export function MarkdownText({
   text,
   citations = [],
   citationPrefix = 'citation',
+  citationTitles = {},
   onCitationClick,
 }: {
   text: string
   citations?: number[]
   citationPrefix?: string
+  citationTitles?: Record<number, string>
   onCitationClick?: (index: number) => void
 }) {
   return (
@@ -71,17 +73,17 @@ export function MarkdownText({
         components={{
           a: ({ href, children, node: _node, ...props }) => {
             if (href?.startsWith(`#${citationPrefix}-`)) {
+              const index = Number.parseInt(href.slice(href.lastIndexOf('-') + 1), 10)
               return (
                 <a
                   {...props}
                   href={href}
                   className="retriv-cite"
+                  title={citationTitles[index]}
                   onClick={(event) => {
                     event.preventDefault()
                     if (onCitationClick !== undefined) {
-                      onCitationClick(
-                        Number.parseInt(href.slice(href.lastIndexOf('-') + 1), 10),
-                      )
+                      onCitationClick(index)
                       return
                     }
                     const chip = document.getElementById(href.slice(1))

@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterable
 from html import escape
 from uuid import UUID
 
@@ -25,9 +26,9 @@ def format_context(sources: list[ContextSource], indices: dict[UUID, int]) -> st
         )
         kind = " kind=heading" if source.is_heading_only else ""
         sections.append(
-            f"[{index}] filename={filename}{section}{kind} ordinal={source.ordinal} "
-            f"workspace_id={source.workspace_id} "
-            f"document_id={source.document_id} pages={pages}\n"
+            f"[{index}] filename={filename} page_number={pages}{section}{kind} "
+            f"ordinal={source.ordinal} workspace_id={source.workspace_id} "
+            f"document_id={source.document_id}\n"
             f"<untrusted_document_text>\n{escape(source.text)}\n</untrusted_document_text>"
         )
     return "\n\n".join(sections)
@@ -89,6 +90,31 @@ def source_indices(
     sources: dict[UUID, ContextSource], *, start: int = 1
 ) -> dict[UUID, int]:
     return {chunk_id: index for index, chunk_id in enumerate(sources, start=start)}
+
+
+class CitationIndex:
+    """One stable ``[n]`` per chunk for the length of one answer.
+
+    A chunk can come back from a later tool call -- a search, then a read
+    around the hit -- and reusing its label keeps ``[n]`` pointing at one
+    passage rather than two. A new answer builds a new index, so numbering
+    starts at 1 again.
+    """
+
+    def __init__(self, start: int = 1) -> None:
+        self._next = start
+        self._by_chunk: dict[UUID, int] = {}
+
+    def indices_for(self, sources: Iterable[ContextSource]) -> dict[UUID, int]:
+        indices: dict[UUID, int] = {}
+        for source in sources:
+            label = self._by_chunk.get(source.chunk_id)
+            if label is None:
+                label = self._next
+                self._next += 1
+                self._by_chunk[source.chunk_id] = label
+            indices[source.chunk_id] = label
+        return indices
 
 
 def format_outline(outline: DocumentOutline) -> str:

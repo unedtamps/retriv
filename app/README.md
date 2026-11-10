@@ -532,7 +532,7 @@ quotation. Row results are the opposite: each row becomes one source, and two fi
 still yield two sources, because they are different evidence.
 
 A source is located by page if it has one and by nothing if it does not. Every row
-source carries `pages=unknown`, for the plain reason that a row has no page and
+source carries `page_number=unknown`, for the plain reason that a row has no page and
 inventing one would make a citation point at the wrong place.
 
 ## How a document becomes searchable

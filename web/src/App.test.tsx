@@ -886,19 +886,20 @@ describe('dashboard application', () => {
 
     const marker = await screen.findByRole('link', { name: '[1]' })
     expect(marker).toHaveClass('retriv-cite')
-    expect(screen.queryByText(/report\.pdf · p\.2/)).not.toBeInTheDocument()
+    expect(marker).toHaveAttribute('title', 'report.pdf, page 2')
+    expect(screen.queryByText(/report\.pdf, page 2/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /1 source/ })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
 
     await user.click(marker)
-    const chip = await screen.findByText(/report\.pdf · p\.2/)
+    const chip = await screen.findByText(/report\.pdf, page 2/)
     expect(chip).toHaveTextContent('[1]')
     await waitFor(() => expect(chip).toHaveClass('chat-citation-flash'))
 
     await user.click(screen.getByRole('button', { name: /1 source/ }))
-    expect(screen.queryByText(/report\.pdf · p\.2/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/report\.pdf, page 2/)).not.toBeInTheDocument()
   })
 
   it('shows every tool call, not only the first', async () => {

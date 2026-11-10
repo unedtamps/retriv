@@ -76,9 +76,9 @@ function documentRef(source: SourceRef | undefined): string | null {
 function citationLocation(source: SourceRef): string {
   const extension = source.filename.toLowerCase().split('.').pop() ?? ''
   if (['csv', 'xlsx', 'json'].includes(extension) && source.ordinal !== undefined) {
-    return `r.${source.ordinal}`
+    return `row ${source.ordinal}`
   }
-  if (source.page !== undefined) return `p.${source.page}`
+  if (source.page !== undefined) return `page ${source.page}`
   if (source.ordinal !== undefined) return `source ${source.index}`
   return `source ${source.index}`
 }
@@ -178,6 +178,12 @@ export function ChatAnswerCard({
                   text={answer}
                   citations={sources.map((source) => source.index)}
                   citationPrefix={citationPrefix}
+                  citationTitles={Object.fromEntries(
+                    sources.map((source) => [
+                      source.index,
+                      `${source.filename}, ${citationLocation(source)}`,
+                    ]),
+                  )}
                   onCitationClick={revealCitation}
                 />
               </Suspense>
@@ -280,7 +286,7 @@ export function ChatAnswerCard({
                   key={`${source.documentId ?? source.filename}-${source.ordinal ?? source.index}`}
                 >
                   <span className="chat-citation-index">[{source.index}]</span>
-                  {source.filename} · {citationLocation(source)}
+                  {source.filename}, {citationLocation(source)}
                 </span>
               ))}
             </div>
