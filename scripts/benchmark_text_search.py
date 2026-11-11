@@ -22,6 +22,10 @@ Usage::
     uv run python scripts/benchmark_text_search.py \
       --out docs/benchmarks/2026-11-11-text-search-bm25.json
 
+    # Add the ParadeDB arms against a pg_search-enabled database
+    uv run python scripts/benchmark_text_search.py --paradedb \
+      --out docs/benchmarks/2026-11-11-text-search-bm25.json
+
 The harness is read-only; it writes only the benchmark JSON.
 """
 
@@ -74,6 +78,8 @@ LATENCIES = (
     "hybrid_fts_en",
     "hybrid_fts_simple",
 )
+PARADEDB_METHODS = ("paradedb", "hybrid_paradedb")
+PARADEDB_LATENCIES = ("paradedb", "hybrid_paradedb")
 TOKEN_RE = re.compile(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*")
 STOPWORDS = frozenset(
     """
@@ -449,6 +455,46 @@ async def search_fts(
     return [str(row.id) for row in rows]
 
 
+async def search_paradedb(
+    factory: async_sessionmaker,
+    query: str,
+    workspace_ids: list[UUID],
+    limit: int,
+) -> list[str]:
+    """Rank the scoped chunks with ParadeDB's BM25 index.
+
+    ``|||`` is ParadeDB's match-disjunction operator: a document matches when
+    it contains any of the query tokens. That mirrors the OR-joined FTS query
+    and the term-summing BM25 score.
+    """
+    if not query.strip():
+        return []
+    score = func.pdb.score(DocumentChunk.id)
+    statement = (
+        select(DocumentChunk.id)
+        .join(Document, Document.id == DocumentChunk.document_id)
+        .where(
+            exists().where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            ),
+            Document.deleted_at.is_(None),
+            Document.active_processing_run_id == DocumentChunk.processing_run_id,
+            DocumentChunk.text.op("|||")(query),
+        )
+        .order_by(
+            score.desc(),
+            DocumentChunk.document_id,
+            DocumentChunk.ordinal,
+        )
+        .limit(limit)
+    )
+    async with factory() as session:
+        rows = (await session.execute(statement)).all()
+    return [str(row.id) for row in rows]
+
+
 async def evaluate(
     factory: async_sessionmaker,
     retriever: ContextRetriever,
@@ -456,10 +502,13 @@ async def evaluate(
     queries: list[Query],
     *,
     limit: int,
+    paradedb: bool = False,
 ) -> dict[str, object]:
     by_id = {chunk.chunk_id: chunk for chunk in chunks}
     bm25 = BM25(chunks, remove_stopwords=True)
     rows: list[dict[str, object]] = []
+    methods = METHODS + (PARADEDB_METHODS if paradedb else ())
+    latency_methods = LATENCIES + (PARADEDB_LATENCIES if paradedb else ())
     for query in queries:
         if not any(chunk in by_id for chunk in query.relevant):
             continue
@@ -488,6 +537,15 @@ async def evaluate(
         )
         fts_simple_ms = (time.perf_counter() - started) * 1000
 
+        parade_ids: list[str] = []
+        parade_ms = 0.0
+        if paradedb:
+            started = time.perf_counter()
+            parade_ids = await search_paradedb(
+                factory, text, list(query.workspaces), limit
+            )
+            parade_ms = (time.perf_counter() - started) * 1000
+
         labels = [by_id[chunk_id] for chunk_id in query.relevant if chunk_id in by_id]
         method_ids = {
             "exact": exact_ids,
@@ -500,6 +558,22 @@ async def evaluate(
                 exact_ids, fts_simple_ids, limit
             ),
         }
+        latency = {
+            "ilike": exact_ms,
+            "bm25": bm25_ms,
+            "hybrid": exact_ms + bm25_ms,
+            "fts_en": fts_en_ms,
+            "fts_simple": fts_simple_ms,
+            "hybrid_fts_en": exact_ms + fts_en_ms,
+            "hybrid_fts_simple": exact_ms + fts_simple_ms,
+        }
+        if paradedb:
+            method_ids["paradedb"] = parade_ids
+            method_ids["hybrid_paradedb"] = merge_exact_first(
+                exact_ids, parade_ids, limit
+            )
+            latency["paradedb"] = parade_ms
+            latency["hybrid_paradedb"] = exact_ms + parade_ms
         rows.append(
             {
                 "source": query.source,
@@ -513,15 +587,7 @@ async def evaluate(
                     for method, ids in method_ids.items()
                 },
                 "zero": {method: not ids for method, ids in method_ids.items()},
-                "latency_ms": {
-                    "ilike": exact_ms,
-                    "bm25": bm25_ms,
-                    "hybrid": exact_ms + bm25_ms,
-                    "fts_en": fts_en_ms,
-                    "fts_simple": fts_simple_ms,
-                    "hybrid_fts_en": exact_ms + fts_en_ms,
-                    "hybrid_fts_simple": exact_ms + fts_simple_ms,
-                },
+                "latency_ms": latency,
             }
         )
 
@@ -541,7 +607,7 @@ async def evaluate(
         if not subset:
             continue
         summary[split] = {}
-        for method in METHODS:
+        for method in methods:
             summary[split][method] = {}
             for level in LEVELS:
                 results = [
@@ -553,7 +619,7 @@ async def evaluate(
                 ]
                 summary[split][method][level] = summarize(results)
         summary[split]["latency_ms"] = {}
-        for method in LATENCIES:
+        for method in latency_methods:
             values = [
                 row["latency_ms"][method]  # type: ignore[index]
                 for row in subset
@@ -568,12 +634,13 @@ async def evaluate(
             method: statistics.fmean(
                 [1.0 if row["zero"][method] else 0.0 for row in subset]  # type: ignore[index]
             )
-            for method in METHODS
+            for method in methods
         }
 
     return {
         "summary": summary,
         "items": rows,
+        "methods": list(methods),
     }
 
 
@@ -613,6 +680,7 @@ async def run(args: argparse.Namespace) -> int:
             chunks,
             all_queries + identifiers + terms,
             limit=args.limit,
+            paradedb=args.paradedb,
         )
     finally:
         if previous:
@@ -634,6 +702,11 @@ async def run(args: argparse.Namespace) -> int:
                 "rank": "ts_rank_cd",
                 "expression_index": False,
             },
+            "paradedb": {
+                "enabled": args.paradedb,
+                "operator": "|||",
+                "score": "pdb.score(id)",
+            },
             "tokenizer": TOKEN_RE.pattern,
             "chat_queries": str(chat_path),
             "golden_queries": str(golden_path),
@@ -654,6 +727,7 @@ async def run(args: argparse.Namespace) -> int:
 def print_summary(payload: dict[str, object]) -> None:
     evaluation = payload["evaluation"]
     summary = evaluation["summary"]  # type: ignore[index]
+    methods = evaluation["methods"]  # type: ignore[index]
     for split in ("all", "chat", "golden", "identifiers", "terms"):
         if split not in summary:
             continue
@@ -663,7 +737,7 @@ def print_summary(payload: dict[str, object]) -> None:
             f"{'chunk R@12':>11} {'section MRR':>12} {'section R@12':>13} "
             f"{'zero':>7}"
         )
-        for method in METHODS:
+        for method in methods:
             data = summary[split][method]  # type: ignore[index]
             zero = summary[split]["zero_result_rate"][method]  # type: ignore[index]
             print(
@@ -683,6 +757,11 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--identifier-limit", type=int, default=40)
     parser.add_argument("--term-limit", type=int, default=40)
+    parser.add_argument(
+        "--paradedb",
+        action="store_true",
+        help="Add the ParadeDB ||| / pdb.score arms (requires pg_search).",
+    )
     parser.add_argument(
         "--out",
         default="docs/benchmarks/2026-11-11-text-search-bm25.json",
