@@ -1,0 +1,64 @@
+{
+  "model": "jev-1.13-free",
+  "base_url": "https://opencode.ai/zen/v1",
+  "auth": "RETRIV_VLM_API_KEY (oc_...)",
+  "availability": {
+    "models_status": 200,
+    "systemone_status": 200,
+    "billing_source": "free",
+    "list_cost": 0,
+    "approx_latency_ms": [
+      529,
+      413
+    ]
+  },
+  "benchmark": {
+    "status": "completed",
+    "queries": 16,
+    "candidates": 30,
+    "batch_size": 10,
+    "calls": 48,
+    "input_tokens": 168488,
+    "elapsed_seconds": 8.9,
+    "cost": 0,
+    "summary": {
+      "all": {
+        "cosine": {
+          "mrr": 0.516,
+          "ndcg@10": 0.559,
+          "recall@12": 0.938
+        },
+        "jev_free": {
+          "mrr": 0.485,
+          "ndcg@10": 0.504,
+          "recall@12": 0.75
+        }
+      },
+      "chat": {
+        "cosine": {
+          "mrr": 0.5,
+          "ndcg@10": 0.333,
+          "recall@12": 0.75
+        },
+        "jev_free": {
+          "mrr": 0.583,
+          "ndcg@10": 0.471,
+          "recall@12": 0.75
+        }
+      },
+      "golden": {
+        "cosine": {
+          "mrr": 0.521,
+          "ndcg@10": 0.634,
+          "recall@12": 1.0
+        },
+        "jev_free": {
+          "mrr": 0.452,
+          "ndcg@10": 0.515,
+          "recall@12": 0.75
+        }
+      }
+    },
+    "note": "The free quota was exhausted once before this completed run; no paid model was used."
+  }
+}

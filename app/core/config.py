@@ -157,6 +157,14 @@ class Settings(BaseSettings):
     embedding_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     embedding_reconciliation_interval_seconds: int = Field(default=300, ge=1, le=86_400)
 
+    rerank_base_url: str = "http://127.0.0.1:8099"
+    """The optional cross-encoder's llama.cpp server.
+
+    It is separate from the embedding endpoint because a reranker is not an
+    embedding model: llama.cpp exposes it on ``/v1/rerank`` when it is started
+    with ``--reranking``. The admin toggle decides whether it is used.
+    """
+
     image_processing_enabled: bool = True
     layout_model_path: str | None = None
     """The PP-DocLayout ONNX file that finds the figures on a scanned page.
@@ -314,7 +322,7 @@ class Settings(BaseSettings):
             raise ValueError("RETRIV_S3_ENDPOINT_URL must not contain credentials or query data")
         return value.rstrip("/")
 
-    @field_validator("embedding_base_url", "vlm_base_url")
+    @field_validator("embedding_base_url", "rerank_base_url", "vlm_base_url")
     @classmethod
     def validate_service_url(cls, value: str) -> str:
         parsed = urlsplit(value)

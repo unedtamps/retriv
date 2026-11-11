@@ -19,6 +19,7 @@ import type { ThemePreference } from '../hooks/useTheme'
 import { useProcessingRuns } from '../hooks/useProcessingRuns'
 import { useWorkspaceDocuments } from '../hooks/useWorkspaceDocuments'
 import { AdminAgentModel } from './AdminAgentModel'
+import { AdminRerank } from './AdminRerank'
 import { AdminUserPanel } from './AdminUserPanel'
 import { AdminWorkspacesPage } from './AdminWorkspaces'
 import { AgentChatPage } from './AgentChatPage'
@@ -260,9 +261,12 @@ export function Dashboard({
         <PlatformPage
           eyebrow="Platform administration"
           title="Agent harness"
-          description="The one chat model every workspace agent answers with. Pick a provider, paste its API key, and the connection test proves the endpoint before anyone uses it."
+          description="The one chat model every workspace agent answers with, plus the optional retrieval reranker. Both connection tests prove the endpoints before anyone uses them."
         >
-          <AdminAgentModel onUnauthorized={onUnauthorized} onNotice={showNotice} />
+          <div className="grid gap-4">
+            <AdminAgentModel onUnauthorized={onUnauthorized} onNotice={showNotice} />
+            <AdminRerank onUnauthorized={onUnauthorized} onNotice={showNotice} />
+          </div>
         </PlatformPage>
       ) : activeView === 'help' ? (
         <PlatformPage

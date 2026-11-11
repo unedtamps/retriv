@@ -1,8 +1,10 @@
 import secrets
+import time
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 from anyio import to_thread
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import Result, delete, func, select, update
@@ -26,16 +28,21 @@ from app.api.schemas import (
     AgentModelSettingsUpdate,
     AgentModelTestResult,
     AgentProviderInfo,
+    RetrievalSettingsResponse,
+    RetrievalSettingsUpdate,
+    RetrievalTestResult,
     WorkspaceCreateRequest,
     WorkspaceMemberListResponse,
     WorkspaceMemberResponse,
     WorkspaceResponse,
 )
+from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.models import (
     AgentModelSetting,
     Document,
     DocumentWorkspace,
+    RetrievalSetting,
     User,
     Workspace,
     WorkspaceMembership,
@@ -664,3 +671,178 @@ async def test_agent_model(
         return AgentModelTestResult(ok=False, error=str(exc))
     finally:
         await provider.aclose()
+
+
+def _retrieval_response(
+    row: RetrievalSetting | None,
+    settings: Settings,
+) -> RetrievalSettingsResponse:
+    return RetrievalSettingsResponse(
+        rerank_enabled=row.rerank_enabled if row is not None else False,
+        rerank_provider=row.rerank_provider if row is not None else "laya",
+        rerank_model=row.rerank_model if row is not None else "laya",
+        rerank_blend=row.rerank_blend if row is not None else 1.0,
+        rerank_candidates=row.rerank_candidates if row is not None else 30,
+        rerank_concurrency=row.rerank_concurrency if row is not None else 8,
+        rerank_min_score=row.rerank_min_score if row is not None else None,
+        rerank_timeout_ms=row.rerank_timeout_ms if row is not None else 10_000,
+        embedding_base_url=settings.embedding_base_url,
+        embedding_model=settings.embedding_model,
+        rerank_base_url=settings.rerank_base_url,
+        last_test_ok=row.last_test_ok if row is not None else None,
+        last_test_ms=row.last_test_ms if row is not None else None,
+        last_test_error=row.last_test_error if row is not None else None,
+        last_tested_at=row.last_tested_at if row is not None else None,
+        updated_at=row.updated_at if row is not None else None,
+    )
+
+
+async def _test_laya(settings: Settings, model: str) -> RetrievalTestResult:
+    """One real decision request, so the admin sees the same path retrieval uses."""
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(
+            base_url=f"{settings.embedding_base_url.rstrip('/')}/",
+            headers={
+                "Authorization": (
+                    f"Bearer {settings.embedding_api_key.get_secret_value()}"
+                )
+            },
+            timeout=5,
+        ) as client:
+            response = await client.post(
+                "systemone",
+                json={
+                    "model": model,
+                    "state": (
+                        "Query: What was the Q3 disbursement total?\n\n"
+                        "Candidate 1: Q3 disbursements totalled 482,150 euro."
+                    ),
+                    "questions": {
+                        "c1": {
+                            "type": "score",
+                            "instructions": (
+                                "Rate candidate 1 for how directly it answers the query."
+                            ),
+                            "criteria": [
+                                "irrelevant",
+                                "partially relevant",
+                                "directly answers",
+                            ],
+                        }
+                    },
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            score = payload["answers"]["c1"]["score"]
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            return RetrievalTestResult(
+                ok=True,
+                model=model,
+                latency_ms=latency_ms,
+                score=float(score),
+            )
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        return RetrievalTestResult(
+            ok=False,
+            model=model,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            error=str(exc),
+        )
+
+
+async def _test_bge(settings: Settings, model: str) -> RetrievalTestResult:
+    """One real rerank request, so the admin sees the llama.cpp path."""
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(
+            base_url=f"{settings.rerank_base_url.rstrip('/')}/",
+            timeout=10,
+        ) as client:
+            response = await client.post(
+                "v1/rerank",
+                json={
+                    "model": model,
+                    "query": "What was the Q3 disbursement total?",
+                    "documents": [
+                        "Q3 disbursements totalled 482,150 euro.",
+                        "The audit committee met on 4 March.",
+                    ],
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            results = payload["results"]
+            if not isinstance(results, list) or not results:
+                raise ValueError("BGE response carried no results")
+            score = max(float(entry["relevance_score"]) for entry in results)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            return RetrievalTestResult(
+                ok=True,
+                model=model,
+                latency_ms=latency_ms,
+                score=score,
+            )
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        return RetrievalTestResult(
+            ok=False,
+            model=model,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            error=str(exc),
+        )
+
+
+async def _test_rerank(settings: Settings, provider: str, model: str) -> RetrievalTestResult:
+    if provider == "bge":
+        return await _test_bge(settings, model)
+    return await _test_laya(settings, model)
+
+
+@router.get("/retrieval", response_model=RetrievalSettingsResponse)
+async def get_retrieval(
+    _admin: PlatformAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RetrievalSettingsResponse:
+    row = await session.get(RetrievalSetting, 1)
+    return _retrieval_response(row, settings)
+
+
+@router.put("/retrieval", response_model=RetrievalSettingsResponse)
+async def set_retrieval(
+    payload: RetrievalSettingsUpdate,
+    admin: PlatformAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RetrievalSettingsResponse:
+    """Save the retrieval settings, then prove the configured endpoint answers."""
+    test = await _test_rerank(settings, payload.rerank_provider, payload.rerank_model)
+    row = await session.get(RetrievalSetting, 1)
+    if row is None:
+        row = RetrievalSetting(id=1)
+        session.add(row)
+    row.rerank_enabled = payload.rerank_enabled
+    row.rerank_provider = payload.rerank_provider
+    row.rerank_model = payload.rerank_model
+    row.rerank_blend = payload.rerank_blend
+    row.rerank_candidates = payload.rerank_candidates
+    row.rerank_concurrency = payload.rerank_concurrency
+    row.rerank_min_score = payload.rerank_min_score
+    row.rerank_timeout_ms = payload.rerank_timeout_ms
+    row.last_test_ok = test.ok
+    row.last_test_ms = test.latency_ms
+    row.last_test_error = test.error
+    row.last_tested_at = datetime.now(UTC)
+    row.updated_by_user_id = admin.id
+    await session.commit()
+    await session.refresh(row)
+    return _retrieval_response(row, settings)
+
+
+@router.post("/retrieval/test", response_model=RetrievalTestResult)
+async def test_retrieval(
+    payload: RetrievalSettingsUpdate,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RetrievalTestResult:
+    return await _test_rerank(settings, payload.rerank_provider, payload.rerank_model)

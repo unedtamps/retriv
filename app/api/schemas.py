@@ -331,6 +331,46 @@ class AgentModelTestResult(BaseModel):
     error: str | None = None
 
 
+class RetrievalSettingsUpdate(BaseModel):
+    """The retrieval-stage knobs an admin can change at runtime."""
+
+    rerank_enabled: bool
+    rerank_provider: Literal["laya", "bge"] = "laya"
+    rerank_model: str = Field(min_length=1, max_length=200)
+    rerank_blend: float = Field(default=1.0, ge=0.0, le=1.0)
+    rerank_candidates: int = Field(ge=1, le=100)
+    rerank_concurrency: int = Field(ge=1, le=16)
+    rerank_min_score: float | None = Field(default=None, ge=0.0, le=2.0)
+    rerank_timeout_ms: int = Field(ge=100, le=60_000)
+
+
+class RetrievalSettingsResponse(BaseModel):
+    rerank_enabled: bool
+    rerank_provider: str
+    rerank_model: str
+    rerank_blend: float
+    rerank_candidates: int
+    rerank_concurrency: int
+    rerank_min_score: float | None
+    rerank_timeout_ms: int
+    embedding_base_url: str
+    embedding_model: str
+    rerank_base_url: str
+    last_test_ok: bool | None = None
+    last_test_ms: int | None = None
+    last_test_error: str | None = None
+    last_tested_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class RetrievalTestResult(BaseModel):
+    ok: bool
+    model: str | None = None
+    latency_ms: int | None = None
+    score: float | None = None
+    error: str | None = None
+
+
 class AgentChatMessage(BaseModel):
     """One prior exchange the client replays into an ephemeral conversation."""
 

@@ -1,0 +1,261 @@
+{
+  "generated_at": "2026-11-10T20:23:26.508802+00:00",
+  "source": "real chat questions from the local browser archive; assistant-cited chunks are the relevance labels",
+  "queries": [
+    {
+      "query": "i wanna know list of revenue of microsoft in our finance file",
+      "citations": [
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 302,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            85
+          ],
+          "chunk_id": "3491e5dd-d70f-57d7-8609-e1d2bd973928",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 125,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            37,
+            38
+          ],
+          "chunk_id": "e155080e-aa27-5c5b-993e-ddc352b5823f",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 114,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            34
+          ],
+          "chunk_id": "7155005c-3903-57ca-97cb-852fe1c10aee",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 127,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            38
+          ],
+          "chunk_id": "cea28541-1759-5d47-b285-4beaed5bca8e",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        }
+      ],
+      "conversation_id": "88721b7e-db72-40ee-9fa8-12b74a3a999e"
+    },
+    {
+      "query": "where is the field that microsoft lost the most",
+      "citations": [
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 133,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            39,
+            40
+          ],
+          "chunk_id": "40d1380a-cd7f-5b4a-9dc5-a17910c09649",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 136,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            40
+          ],
+          "chunk_id": "f4b9428f-04f4-5b41-99f4-6b28e77cc879",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 125,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            37,
+            38
+          ],
+          "chunk_id": "e155080e-aa27-5c5b-993e-ddc352b5823f",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 302,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            85
+          ],
+          "chunk_id": "3491e5dd-d70f-57d7-8609-e1d2bd973928",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        }
+      ],
+      "conversation_id": "88721b7e-db72-40ee-9fa8-12b74a3a999e"
+    },
+    {
+      "query": "is the FY2026 revenue after new CEO take over ?",
+      "citations": [
+        {
+          "document_id": "01731493-f2c8-4d75-bb9b-cbde17a3b327",
+          "ordinal": 92,
+          "filename": "Anthropic_IPO_Prospectus.pdf",
+          "page_numbers": [
+            49
+          ],
+          "chunk_id": "a8a77e8c-5976-5da0-a81b-aa9d3b94e7e9",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 45,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            12
+          ],
+          "chunk_id": "e51c2df6-a864-556b-a31e-dd3ae14b6664",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 348,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            101,
+            102
+          ],
+          "chunk_id": "00e1bff1-6030-59ec-ae1e-d5e83bbf7d35",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 407,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            115,
+            116
+          ],
+          "chunk_id": "a2099f38-2c1c-5f86-b46b-83ab93eae977",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 409,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            117
+          ],
+          "chunk_id": "4cabc227-c70d-5d55-938d-2339437f7540",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 98,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            28,
+            29
+          ],
+          "chunk_id": "2ed5d4fe-78f9-5319-bcb7-9ee414ecdb32",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        }
+      ],
+      "conversation_id": "88721b7e-db72-40ee-9fa8-12b74a3a999e"
+    },
+    {
+      "query": "i mean the new CEO of Xbox, is the lost of revenue already in the new CEO term",
+      "citations": [
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 32,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            8,
+            9
+          ],
+          "chunk_id": "c8ce41dc-3170-5821-afb7-979907fd77c3",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 125,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            37,
+            38
+          ],
+          "chunk_id": "e155080e-aa27-5c5b-993e-ddc352b5823f",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 133,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            39,
+            40
+          ],
+          "chunk_id": "40d1380a-cd7f-5b4a-9dc5-a17910c09649",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 136,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            40
+          ],
+          "chunk_id": "f4b9428f-04f4-5b41-99f4-6b28e77cc879",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 302,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            85
+          ],
+          "chunk_id": "3491e5dd-d70f-57d7-8609-e1d2bd973928",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 45,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            12
+          ],
+          "chunk_id": "e51c2df6-a864-556b-a31e-dd3ae14b6664",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 169,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            48,
+            49
+          ],
+          "chunk_id": "686a1db5-8100-5da1-a3ba-34bc2e556c1e",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        },
+        {
+          "document_id": "6491749b-f7f1-46d0-a502-93c1425999b3",
+          "ordinal": 407,
+          "filename": "Microsoft.pdf",
+          "page_numbers": [
+            115,
+            116
+          ],
+          "chunk_id": "a2099f38-2c1c-5f86-b46b-83ab93eae977",
+          "workspace_id": "1c0ea1b6-0325-43c3-9920-4ffd11180dbb"
+        }
+      ],
+      "conversation_id": "88721b7e-db72-40ee-9fa8-12b74a3a999e"
+    }
+  ]
+}

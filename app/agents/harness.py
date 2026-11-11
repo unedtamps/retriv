@@ -140,11 +140,11 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
             "function": {
                 "name": "search_text",
                 "description": (
-                    "Find chunks containing an exact word or phrase, "
-                    "case-insensitive. Use it for identifiers, article numbers, "
-                    "codes and names that a meaning-based search misses; use "
-                    "search_context for concepts. Pass document_id to search only "
-                    "that document."
+                    "Find chunks containing the query's terms, exact phrase "
+                    "matches first, case-insensitive. Use it for identifiers, "
+                    "article numbers, codes, names, and keyword strings that a "
+                    "meaning-based search misses; use search_context for "
+                    "concepts. Pass document_id to search only that document."
                 ),
                 "parameters": {
                     "type": "object",
@@ -573,8 +573,9 @@ def _system_prompt() -> str:
         "find_documents returned to stay inside one file), read_document to "
         "read around a hit, list_queryable_files and query_rows for "
         "spreadsheets and CSVs. list_workspaces names the workspaces you can "
-        "read. search_text matches literal words -- identifiers, article "
-        "numbers, exact names -- where search_context matches meaning. "
+        "read. search_text matches literal terms -- identifiers, article "
+        "numbers, exact names, and keyword strings -- with exact phrase "
+        "matches first, where search_context matches meaning. "
         "get_document_outline lists a document's sections with the ordinal each "
         "starts at, so a long document is entered at the right place instead of "
         "read from the top. describe_document reports what was actually "

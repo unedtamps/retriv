@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-11-10T20:31:45.654720+00:00",
+  "questions": 64,
+  "train_questions": 48,
+  "eval_questions": 16,
+  "chat_questions": 4,
+  "golden_questions": 60,
+  "candidates": 30,
+  "negatives_per_question": 5,
+  "state_format": "Query + passage, score rubric 0/1/2"
+}

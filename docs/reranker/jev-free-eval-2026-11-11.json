@@ -1,0 +1,268 @@
+{
+  "model": "jev-1.13-free",
+  "base_url": "https://opencode.ai/zen/v1",
+  "queries": 16,
+  "candidates": 30,
+  "concurrency": 4,
+  "batch_size": 10,
+  "elapsed_seconds": 8.871443079000073,
+  "calls": 48,
+  "input_tokens": 168488,
+  "cost": 0,
+  "summary": {
+    "all": {
+      "cosine": {
+        "mrr": 0.5158730158730158,
+        "ndcg@10": 0.5587293764964089,
+        "recall@12": 0.9375,
+        "mean_first_rank": 3.1333333333333333
+      },
+      "jev_free": {
+        "mrr": 0.48464368386243384,
+        "ndcg@10": 0.5043541458109141,
+        "recall@12": 0.75,
+        "mean_first_rank": 5.533333333333333
+      }
+    },
+    "chat": {
+      "cosine": {
+        "mrr": 0.5,
+        "ndcg@10": 0.33275820339656703,
+        "recall@12": 0.75,
+        "mean_first_rank": 1.6666666666666667
+      },
+      "jev_free": {
+        "mrr": 0.5833333333333334,
+        "ndcg@10": 0.4712118495100185,
+        "recall@12": 0.75,
+        "mean_first_rank": 1.6666666666666667
+      }
+    },
+    "golden": {
+      "cosine": {
+        "mrr": 0.5211640211640212,
+        "ndcg@10": 0.6340531008630228,
+        "recall@12": 1.0,
+        "mean_first_rank": 3.5
+      },
+      "jev_free": {
+        "mrr": 0.4517471340388007,
+        "ndcg@10": 0.5154015779112127,
+        "recall@12": 0.75,
+        "mean_first_rank": 6.5
+      }
+    }
+  },
+  "items": [
+    {
+      "source": "chat",
+      "query": "i wanna know list of revenue of microsoft in our finance file",
+      "relevant": 4,
+      "ranks": [
+        3,
+        4,
+        6
+      ],
+      "cosine_ranks": [
+        2,
+        10,
+        19
+      ]
+    },
+    {
+      "source": "chat",
+      "query": "where is the field that microsoft lost the most",
+      "relevant": 4,
+      "ranks": [
+        1,
+        2
+      ],
+      "cosine_ranks": [
+        2,
+        6
+      ]
+    },
+    {
+      "source": "chat",
+      "query": "is the FY2026 revenue after new CEO take over ?",
+      "relevant": 6,
+      "ranks": [],
+      "cosine_ranks": []
+    },
+    {
+      "source": "chat",
+      "query": "i mean the new CEO of Xbox, is the lost of revenue already in the new CEO term",
+      "relevant": 8,
+      "ranks": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        16
+      ],
+      "cosine_ranks": [
+        1,
+        2,
+        5,
+        9,
+        26,
+        30
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "Does the company have to register the shares with the SEC?",
+      "relevant": 1,
+      "ranks": [
+        27
+      ],
+      "cosine_ranks": [
+        7
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "What specific documents are incorporated by reference for Item 10 regarding corporate governance?",
+      "relevant": 1,
+      "ranks": [
+        1
+      ],
+      "cosine_ranks": [
+        1
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "Which company's deferred compensation plan is listed as Exhibit 4.30?",
+      "relevant": 1,
+      "ranks": [
+        14
+      ],
+      "cosine_ranks": [
+        3
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "What role do early adopters play in accelerating the deployment of a new technology within an organization?",
+      "relevant": 1,
+      "ranks": [
+        2
+      ],
+      "cosine_ranks": [
+        1
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "When do the restrictions in Section 203 of the Delaware General Corporation Law begin to apply to the company?",
+      "relevant": 1,
+      "ranks": [
+        1
+      ],
+      "cosine_ranks": [
+        1
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "How much did the company spend on share repurchases during 2025?",
+      "relevant": 1,
+      "ranks": [
+        2
+      ],
+      "cosine_ranks": [
+        6
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "How much cash did the company receive from stock option exercises in 2015?",
+      "relevant": 1,
+      "ranks": [
+        2
+      ],
+      "cosine_ranks": [
+        2
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "How many times did the average daily volume of code contributed to the company's codebase per engineer increase between the year ended December 31, 2024, and the three months ended September 30, 2026?",
+      "relevant": 1,
+      "ranks": [
+        4
+      ],
+      "cosine_ranks": [
+        3
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "What was the percentage of consolidated net revenues that product development represented in 2015?",
+      "relevant": 1,
+      "ranks": [
+        4
+      ],
+      "cosine_ranks": [
+        6
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "What is the expected range for the company's effective tax rate in 2016?",
+      "relevant": 1,
+      "ranks": [
+        1
+      ],
+      "cosine_ranks": [
+        1
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "What potential conflict could arise between the company's long-term focus and the financial interests of its stockholders?",
+      "relevant": 1,
+      "ranks": [
+        16
+      ],
+      "cosine_ranks": [
+        2
+      ]
+    },
+    {
+      "source": "golden",
+      "query": "What is the page number listed for the section covering Quantitative and Qualitative Disclosures about Market Risk?",
+      "relevant": 1,
+      "ranks": [
+        4
+      ],
+      "cosine_ranks": [
+        9
+      ]
+    }
+  ],
+  "audit": {
+    "pointwise_chat": {
+      "queries": 4,
+      "calls": 120,
+      "input_tokens": 68422,
+      "mrr": 0.625,
+      "ndcg@10": 0.48,
+      "recall@12": 0.75
+    },
+    "batched_chat": {
+      "queries": 4,
+      "mrr": 0.583,
+      "ndcg@10": 0.471,
+      "recall@12": 0.75
+    },
+    "notes": [
+      "The full run was batched to fit the free quota; pointwise chat scoring is slightly better.",
+      "Golden labels are single-chunk; adjacent chunks from the same section can be equally relevant and are counted as misses.",
+      "Jev scores are coarse (0/1/2) with many ties; ties preserve cosine order."
+    ],
+    "paid_model_used": false
+  }
+}

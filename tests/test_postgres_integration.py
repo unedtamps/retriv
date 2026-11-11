@@ -1906,6 +1906,14 @@ async def test_text_search_matches_literals_under_postgres() -> None:
             lowered = await retriever.search_text("invoice inv-2024-001", [workspace_id], 10)
             assert [source.text for source in lowered] == [texts[0]]
 
+            if not await retriever._has_bm25():
+                pytest.skip("pg_search BM25 index is not available")
+
+            # The phrase "settled March" is not contiguous in either chunk, so
+            # the exact pass is empty; BM25 should still find the March invoice.
+            terms = await retriever.search_text("settled March", [workspace_id], 10)
+            assert [source.text for source in terms] == [texts[0]]
+
             assert await retriever.search_text("%", [workspace_id], 10) == []
             assert await retriever.search_text("INV-2024-001", [uuid4()], 10) == []
         finally:

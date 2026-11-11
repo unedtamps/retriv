@@ -1,0 +1,120 @@
+{
+  "generated_at": "2026-11-11T03:40:00+07:00",
+  "corpus": {
+    "workspace": "finance (1c0ea1b6-0325-43c3-9920-4ffd11180dbb)",
+    "chunks": 3111,
+    "avg_chunk_tokens": 325,
+    "p90_chunk_tokens": 668,
+    "embedding_model": "text-embedding-qwen3-embedding-8b (2000 dims)"
+  },
+  "benchmark_full": {
+    "queries": {
+      "chat": 4,
+      "golden": 60,
+      "total": 64
+    },
+    "candidate_pool": 30,
+    "top_n": 12,
+    "all": {
+      "baseline": {
+        "mrr": 0.706,
+        "ndcg@10": 0.752,
+        "recall@12": 0.95
+      },
+      "laya_zero_shot": {
+        "mrr": 0.205,
+        "ndcg@10": 0.293,
+        "recall@12": 0.67,
+        "p50_ms": 678,
+        "calls_per_query": 30,
+        "tokens_per_query": 10049
+      }
+    },
+    "chat": {
+      "baseline": {
+        "mrr": 0.5,
+        "ndcg@10": 0.333,
+        "recall@12": 0.75
+      },
+      "laya_zero_shot": {
+        "mrr": 0.15,
+        "ndcg@10": 0.203,
+        "recall@12": 0.75
+      }
+    },
+    "golden": {
+      "baseline": {
+        "mrr": 0.72,
+        "ndcg@10": 0.78,
+        "recall@12": 0.97
+      },
+      "laya_zero_shot": {
+        "mrr": 0.209,
+        "ndcg@10": 0.299,
+        "recall@12": 0.67
+      }
+    }
+  },
+  "heldout_16": {
+    "queries": {
+      "chat": 4,
+      "golden": 12,
+      "total": 16
+    },
+    "cosine": {
+      "mrr": 0.516,
+      "ndcg@10": 0.559,
+      "recall@12": 0.938
+    },
+    "base_score": {
+      "mrr": 0.466,
+      "ndcg@10": 0.452,
+      "recall@12": 0.75
+    },
+    "finetuned_score": {
+      "mrr": 0.113,
+      "ndcg@10": 0.057,
+      "recall@12": 0.188
+    },
+    "base_noul": {
+      "mrr": 0.446,
+      "ndcg@10": 0.456,
+      "recall@12": 0.688
+    },
+    "finetuned_noul": {
+      "mrr": 0.448,
+      "ndcg@10": 0.457,
+      "recall@12": 0.688
+    }
+  },
+  "fine_tuning": {
+    "method": "head-only (encoder frozen), score and noul relevance heads trained separately",
+    "train_cases": 287,
+    "train_queries": 48,
+    "eval_cases": 103,
+    "eval_queries": 16,
+    "epochs": 4,
+    "loss": "soft-ce",
+    "micro_batch": 1,
+    "grad_accum": 8,
+    "optimizer_updates": 132,
+    "score_head": {
+      "accuracy_before": 0.1845,
+      "accuracy_after": 0.5631,
+      "ece_before": 0.389,
+      "ece_after": 0.194
+    },
+    "noul_head": {
+      "accuracy_before": 0.6796,
+      "accuracy_after": 0.7864,
+      "ece_before": 0.105,
+      "ece_after": 0.141
+    },
+    "checkpoints": [
+      "laya-rerank (score)",
+      "laya-rerank-noul (noul)"
+    ]
+  },
+  "decision": "Keep the reranker disabled. Neither zero-shot Laya nor the head-only fine-tunes beat the Qwen cosine baseline on retrieval ranking.",
+  "note": "The real-chat subset is only four questions; treat the chat numbers as directional, not statistically conclusive."
+}

@@ -257,6 +257,44 @@ export interface AgentModelTestResult {
   error: string | null
 }
 
+export interface RetrievalSettings {
+  rerank_enabled: boolean
+  rerank_provider: 'laya' | 'bge'
+  rerank_model: string
+  rerank_blend: number
+  rerank_candidates: number
+  rerank_concurrency: number
+  rerank_min_score: number | null
+  rerank_timeout_ms: number
+  embedding_base_url: string
+  embedding_model: string
+  rerank_base_url: string
+  last_test_ok: boolean | null
+  last_test_ms: number | null
+  last_test_error: string | null
+  last_tested_at: string | null
+  updated_at: string | null
+}
+
+export interface RetrievalUpdate {
+  rerank_enabled: boolean
+  rerank_provider: 'laya' | 'bge'
+  rerank_model: string
+  rerank_blend: number
+  rerank_candidates: number
+  rerank_concurrency: number
+  rerank_min_score: number | null
+  rerank_timeout_ms: number
+}
+
+export interface RetrievalTestResult {
+  ok: boolean
+  model: string | null
+  latency_ms: number | null
+  score: number | null
+  error: string | null
+}
+
 export interface AgentChatHistoryMessage {
   role: 'user' | 'assistant'
   content: string

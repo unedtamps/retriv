@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import math
+import re
 from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
@@ -17,6 +18,7 @@ from sqlalchemy import (
     bindparam,
     case,
     exists,
+    func,
     or_,
     select,
     text,
@@ -31,15 +33,19 @@ from app.db.models import (
     Document,
     DocumentChunk,
     DocumentWorkspace,
+    RetrievalSetting,
 )
 from app.embeddings.base import EmbeddingProviderError
 from app.embeddings.openai_compatible import truncate_normalize
 from app.embeddings.pgvector import vector_literal
+from app.retrieval.rerank import BgeReranker, LayaReranker, RerankConfig
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import escape_like
 from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
 
 logger = logging.getLogger(__name__)
+
+BM25_QUERY_RE = re.compile(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*")
 
 SEARCH_VECTORS = (
     text("""
@@ -210,6 +216,54 @@ class ContextRetriever:
             headers={"Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"},
             timeout=settings.embedding_timeout_seconds,
         )
+        self._rerank_client = httpx.AsyncClient(
+            base_url=f"{settings.rerank_base_url.rstrip('/')}/",
+            timeout=settings.embedding_timeout_seconds,
+        )
+        self._bm25_available = False
+
+    async def _rerank_config(self) -> RerankConfig | None:
+        """The admin's optional rerank setting, or None when it is off.
+
+        The row is read per search so an admin's change applies to the next
+        tool call. A missing row is the normal default; a database error is
+        treated as "off" rather than turning a retrieval into a failure.
+        """
+        try:
+            async with self._sessions() as session:
+                row = await session.get(RetrievalSetting, 1)
+        except SQLAlchemyError:
+            logger.warning("retrieval settings could not be read; reranking stays off")
+            return None
+        if row is None or not row.rerank_enabled:
+            return None
+        return RerankConfig(
+            model=row.rerank_model,
+            candidates=max(1, min(row.rerank_candidates, 100)),
+            concurrency=max(1, min(row.rerank_concurrency, 16)),
+            min_score=row.rerank_min_score,
+            timeout_ms=max(100, min(row.rerank_timeout_ms, 60_000)),
+            provider=row.rerank_provider,
+            blend=min(1.0, max(0.0, row.rerank_blend)),
+        )
+
+    async def _rerank(
+        self,
+        query: str,
+        sources: list[ContextSource],
+        *,
+        limit: int,
+        config: RerankConfig,
+    ) -> list[ContextSource]:
+        if config.provider == "bge":
+            result = await BgeReranker(self._rerank_client, config).rerank(
+                query, sources, limit=limit
+            )
+        else:
+            result = await LayaReranker(self._embedding_client, config).rerank(
+                query, sources, limit=limit
+            )
+        return result.sources
 
     async def retrieve(
         self,
@@ -245,13 +299,15 @@ class ContextRetriever:
         width = self._settings.section_expand_chunks
         cap = limit if budget is None else min(limit + width, budget)
         floor = self._settings.min_relevance_score if min_score is None else min_score
+        rerank = await self._rerank_config()
+        pool = max(limit, rerank.candidates) if rerank is not None else limit
 
         try:
             vector = await self._embed_query(query)
             sources = await self._search_vectors(
                 vector,
                 workspace_ids,
-                limit,
+                pool,
                 min_score=floor,
                 document_id=document_id,
             )
@@ -261,8 +317,11 @@ class ContextRetriever:
                 min_score=floor,
                 document_id=document_id,
             )
-            room = max(0, cap - len(sources))
-            return sources + completed[:room]
+            if rerank is None:
+                room = max(0, cap - len(sources))
+                return sources + completed[:room]
+            candidates = sources + completed[: max(0, pool - len(sources))]
+            return await self._rerank(query, candidates, limit=cap, config=rerank)
         except (
             EmbeddingProviderError,
             httpx.HTTPError,
@@ -274,35 +333,31 @@ class ContextRetriever:
         ) as exc:
             raise RetrievalUnavailable("Scoped context retrieval failed validation") from exc
 
-    async def search_text(
-        self,
-        query: str,
-        workspace_ids: list[UUID],
-        limit: int,
-        *,
-        document_id: UUID | None = None,
-    ) -> list[ContextSource]:
-        """Chunks containing ``query`` as literal text, not by meaning.
+    async def _has_bm25(self) -> bool:
+        """Whether the scoped database has a usable ParadeDB BM25 index.
 
-        An embedding answers "what is this about" and does that well, but it is
-        the wrong instrument for an identifier: an invoice number, an article
-        reference, a name. Those are strings, and a string search is exact
-        where a vector is approximate.
-
-        The rows are validated exactly as a vector match is -- live document,
-        active run, workspace link, matching content hash -- but the embedding
-        ledger is deliberately not joined. Text that failed to embed is still
-        text a reader can use, and a lexical tool that refuses it would be
-        hiding the one thing it exists to find.
+        The check is cached only once it succeeds: a migration that creates the
+        index after the retriever was constructed should still be picked up on
+        the next search.
         """
-        if not workspace_ids:
-            raise RetrievalUnavailable("A verified non-empty workspace scope is required")
-        if len(workspace_ids) != len(set(workspace_ids)):
-            raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
-        if not query.strip():
-            raise RetrievalUnavailable("A non-empty text query is required")
+        if not self._is_postgres or self._bm25_available:
+            return self._bm25_available
+        try:
+            async with self._sessions() as session:
+                found = await session.scalar(
+                    text(
+                        "SELECT 1 FROM pg_extension "
+                        "WHERE extname = 'pg_search' "
+                        "AND to_regclass('public.document_chunks_bm25') IS NOT NULL"
+                    )
+                )
+        except SQLAlchemyError:
+            found = None
+        self._bm25_available = found is not None
+        return self._bm25_available
 
-        pattern = f"%{escape_like(query)}%"
+    def _text_select(self, workspace_ids: list[UUID]) -> Any:
+        """The shared validated text-search row shape and scope."""
         link_workspace = (
             select(DocumentWorkspace.workspace_id)
             .where(
@@ -325,7 +380,7 @@ class ContextRetriever:
             .limit(1)
             .scalar_subquery()
         )
-        statement = (
+        return (
             select(
                 DocumentChunk.id,
                 link_workspace.label("workspace_id"),
@@ -343,7 +398,6 @@ class ContextRetriever:
             )
             .join(Document, Document.id == DocumentChunk.document_id)
             .where(
-                DocumentChunk.text.ilike(pattern, escape="\\"),
                 exists().where(
                     DocumentWorkspace.document_id == DocumentChunk.document_id,
                     DocumentWorkspace.workspace_id.in_(workspace_ids),
@@ -352,12 +406,92 @@ class ContextRetriever:
                 Document.deleted_at.is_(None),
                 Document.active_processing_run_id == DocumentChunk.processing_run_id,
             )
+        )
+
+    async def _bm25_search_text(
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        document_id: UUID | None,
+        limit: int,
+    ) -> list[ContextSource]:
+        """Rank chunks containing any of the query's terms with ParadeDB.
+
+        Called only when the exact substring query found nothing. The tool's
+        identifier behaviour is therefore unchanged: an exact hit always wins
+        outright, and BM25 is the fallback for a long keyword string whose
+        terms are spread across the chunk.
+        """
+        bm25_query = " ".join(BM25_QUERY_RE.findall(query.lower()))
+        if not bm25_query:
+            return []
+        statement = (
+            self._text_select(workspace_ids)
+            .where(DocumentChunk.text.op("|||")(bm25_query))
+            .order_by(
+                func.pdb.score(DocumentChunk.id).desc(),
+                DocumentChunk.document_id,
+                DocumentChunk.ordinal,
+            )
+            .limit(limit)
+        )
+        if document_id is not None:
+            statement = statement.where(DocumentChunk.document_id == document_id)
+        try:
+            async with self._sessions() as session:
+                rows = (await session.execute(statement)).all()
+        except SQLAlchemyError as exc:
+            logger.warning("BM25 text search failed; exact matches only: %s", exc)
+            return []
+        return self._text_sources(rows)
+
+    async def search_text(
+        self,
+        query: str,
+        workspace_ids: list[UUID],
+        limit: int,
+        *,
+        document_id: UUID | None = None,
+    ) -> list[ContextSource]:
+        """Chunks matching ``query`` literally, then by its lexical terms.
+
+        An embedding answers "what is this about" and does that well, but it is
+        the wrong instrument for an identifier: an invoice number, an article
+        reference, a name. Those are strings, and a string search is exact
+        where a vector is approximate.
+
+        Exact substring matches are returned first and win outright. If no
+        chunk contains the query as a phrase, a ParadeDB BM25 index ranks the
+        chunks containing its terms; that is what makes a long keyword string
+        useful when the words are present but not contiguous. Without
+        ``pg_search`` or the BM25 index, the tool keeps the old exact-only
+        behaviour.
+
+        The rows are validated exactly as a vector match is -- live document,
+        active run, workspace link, matching content hash -- but the embedding
+        ledger is deliberately not joined. Text that failed to embed is still
+        text a reader can use, and a lexical tool that refuses it would be
+        hiding the one thing it exists to find.
+        """
+        if not workspace_ids:
+            raise RetrievalUnavailable("A verified non-empty workspace scope is required")
+        if len(workspace_ids) != len(set(workspace_ids)):
+            raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
+        if not query.strip():
+            raise RetrievalUnavailable("A non-empty text query is required")
+
+        rerank = await self._rerank_config()
+        pool = max(limit, min(rerank.candidates, 20)) if rerank is not None else limit
+        pattern = f"%{escape_like(query)}%"
+        statement = (
+            self._text_select(workspace_ids)
+            .where(DocumentChunk.text.ilike(pattern, escape="\\"))
             .order_by(
                 case((DocumentChunk.text.like(pattern, escape="\\"), 0), else_=1),
                 DocumentChunk.document_id,
                 DocumentChunk.ordinal,
             )
-            .limit(limit)
+            .limit(pool)
         )
         if document_id is not None:
             statement = statement.where(DocumentChunk.document_id == document_id)
@@ -367,7 +501,14 @@ class ContextRetriever:
                 rows = (await session.execute(statement)).all()
         except (SQLAlchemyError, IndexError, KeyError, TypeError, ValueError) as exc:
             raise RetrievalUnavailable("Scoped text search failed validation") from exc
-        return self._text_sources(rows)
+        sources = self._text_sources(rows)
+        if not sources and await self._has_bm25():
+            sources = await self._bm25_search_text(
+                query, workspace_ids, document_id, pool
+            )
+        if rerank is None:
+            return sources
+        return await self._rerank(query, sources, limit=limit, config=rerank)
 
     async def _embed_query(self, query: str) -> list[float]:
         response = await self._embedding_client.post(
@@ -511,10 +652,10 @@ class ContextRetriever:
     def _text_sources(self, rows: Sequence[Any]) -> list[ContextSource]:
         """Text-search rows in the same shape a vector match produces.
 
-        The score is 1.0 rather than a similarity: a substring either is
-        present or is not, and inventing a number between those two would
-        invite a caller to compare it against the relevance floor, which does
-        not apply here.
+        The score is 1.0 rather than a similarity: text search is lexical and
+        the row order carries the ranking. Inventing a comparable number would
+        invite a caller to compare it against the vector relevance floor, which
+        does not apply here.
         """
         sources: list[ContextSource] = []
         for row in rows:
@@ -690,4 +831,5 @@ class ContextRetriever:
 
     async def aclose(self) -> None:
         await self._embedding_client.aclose()
+        await self._rerank_client.aclose()
         await self._engine.dispose()
