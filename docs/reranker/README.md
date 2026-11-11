@@ -181,5 +181,35 @@ Four real questions is not enough to turn the feature on. The signal is promisin
 Jev free as the leading external candidate, but the default stays off until a larger real-question
 set confirms the chat result.
 
+### Pointwise audit
+
+The full run above was batched to stay inside the free call budget, but the production adapter is
+pointwise. A separate pointwise audit of the four real chat questions (30 candidates each, 120
+calls, 68,422 input tokens) scored:
+
+| Set | MRR | nDCG@10 | recall@12 |
+|---|---:|---:|---:|
+| Chat, batched Jev free | 0.583 | 0.471 | 75% |
+| **Chat, pointwise Jev free** | **0.625** | **0.480** | 75% |
+
+So batching slightly understates Jev, but it does not change the direction of the result.
+
+### Why the combined number is not the whole story
+
+- **The combined set is 75% golden questions.** The real-chat subset is four questions; the
+  twelve synthetic questions dominate the "all" row. On the real chat questions Jev beats cosine
+  both batched and pointwise.
+- **The golden labels are single-chunk.** A spot check showed Jev promoting an adjacent chunk from
+  the same document and the same `Item 15` section as the labelled chunk (Activision ordinal 597
+  vs Jev top 579), then ranking analogous registration/Item 10 sections from other companies.
+  Those are often semantically reasonable but count as misses under a strict chunk label. A
+  document- or section-level judgement would be fairer to any reranker.
+- **Jev's score is coarse.** It frequently returns 0/1/2 with many ties at 2; ties keep the cosine
+  order. Qwen3-Embedding-8B cosine is already strong (95% recall@12 on the full set, 100% on the
+  golden held-out set), so there is little headroom and a few bad reorderings can dominate MRR.
+- **The free model is the only Jev variant tested.** The paid `jev-1.13` was not called.
+
 The harness is `scripts/benchmark_jev_free.py`; it batches 10 candidates per request to stay well
-inside the free call budget and never falls back to the paid `jev-1.13` model.
+inside the free call budget and never falls back to the paid `jev-1.13` model. A full pointwise
+run on a larger real-question set, with document/section-level relevance labels, is the next
+experiment.

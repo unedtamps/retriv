@@ -242,5 +242,27 @@
         9
       ]
     }
-  ]
+  ],
+  "audit": {
+    "pointwise_chat": {
+      "queries": 4,
+      "calls": 120,
+      "input_tokens": 68422,
+      "mrr": 0.625,
+      "ndcg@10": 0.48,
+      "recall@12": 0.75
+    },
+    "batched_chat": {
+      "queries": 4,
+      "mrr": 0.583,
+      "ndcg@10": 0.471,
+      "recall@12": 0.75
+    },
+    "notes": [
+      "The full run was batched to fit the free quota; pointwise chat scoring is slightly better.",
+      "Golden labels are single-chunk; adjacent chunks from the same section can be equally relevant and are counted as misses.",
+      "Jev scores are coarse (0/1/2) with many ties; ties preserve cosine order."
+    ],
+    "paid_model_used": false
+  }
 }
