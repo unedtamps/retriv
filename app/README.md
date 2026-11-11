@@ -407,7 +407,7 @@ document read through from the top.
 | | Axis | Answers |
 |---|---|---|
 | `search_context` | embedding, semantic | "what is this about?" |
-| `search_text` | substring, literal | "where does it say INV-2024-001?" |
+| `search_text` | literal + BM25 fallback | "where does it say INV-2024-001?" / "where are the net revenue terms?" |
 | `get_document_outline` | `section_key`, hierarchical | "where does Bab 3 start?" |
 | `read_document` | `ordinal`, positional | "what comes after this chunk?" |
 

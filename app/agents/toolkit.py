@@ -255,7 +255,7 @@ class AgentToolKit:
         start_index: int = 1,
         citations: CitationIndex | None = None,
     ) -> ToolOutcome:
-        """Literal matches, for identifiers an embedding cannot resolve."""
+        """Exact matches first, then BM25 term matches for keyword strings."""
         scope = self._scope(workspace_id)
         if not scope:
             return ToolOutcome(text="No searchable workspace is in scope for this API key.")
@@ -265,8 +265,8 @@ class AgentToolKit:
         if not sources:
             return ToolOutcome(
                 text=(
-                    f"No chunk contains the literal text {query!r}. This search "
-                    "matches exact words rather than meaning; use search_context "
+                    f"No chunk contains the literal text {query!r} or enough "
+                    "of its terms. This search is lexical; use search_context "
                     "for a paraphrase."
                 )
             )

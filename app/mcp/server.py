@@ -61,11 +61,11 @@ def _instructions(*, row_queries: bool) -> str:
         "argument can only narrow that set -- every read tool accepts one and "
         "omits it to search the whole scope.\n\n"
         "Route by the shape of the question. An exact string -- an identifier, "
-        "an invoice or article number, a name -- goes to search_text, because "
-        "an embedding returns near matches instead. A topic or a concept goes "
-        "to search_context. Either way each source carries the ordinal to read "
-        "on from, and get_document_outline names the ordinal a section starts "
-        "at.\n\n"
+        "an invoice or article number, a name -- or a keyword string whose words "
+        "may not be contiguous goes to search_text, because an embedding returns "
+        "near matches instead. A topic or a concept goes to search_context. "
+        "Either way each source carries the ordinal to read on from, and "
+        "get_document_outline names the ordinal a section starts at.\n\n"
         "Call find_documents when a question names a file and you need its "
         "document_id and whether it is ready to search; omit the name to see "
         "everything you may read. Then use search_context for narrative "
@@ -213,18 +213,19 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         workspace_id: UUID | None = None,
         document_id: UUID | None = None,
     ) -> str:
-        """Find chunks containing an exact word or phrase.
+        """Find chunks containing the query's terms, exact phrase first.
 
         search_context answers "what is this about" and is the right tool for a
         concept. It is the wrong one for a string: an invoice number, an
         article reference, a name, a code. An embedding represents those
         approximately, so a query for `Pasal 7` can return Pasal 6 and Pasal 8
         while the passage that says Pasal 7 is not in the result set at all.
-        This matches the text literally, case-insensitively.
+        This matches the text literally first, case-insensitively.
 
-        Every word is matched as written, so `net revenue` finds only that
-        phrase and not either word alone. Pass `document_id` to stay inside one
-        file; omit it to search every document in scope.
+        When no chunk contains the whole phrase, it falls back to BM25 term
+        ranking, so `net revenue` can also find a passage where those words are
+        separated. Pass `document_id` to stay inside one file; omit it to search
+        every document in scope.
         """
         return (await (await _kit(box.runtime, ctx.headers)).search_text(
             query=query,

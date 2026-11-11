@@ -232,5 +232,18 @@ The development compose stack now uses
 `paradedb/paradedb:17-v0.26.2` with a fresh volume
 (`retriv-api_postgres_data_paradedb`). The pre-ParadeDB volume
 (`retriv-api_postgres_data`) is retained for rollback. The BM25 index is
-created by migration `0006_bm25_index`; the application code still uses
-`ILIKE` until `search_text` is switched to the exact-first hybrid.
+created by migration `0006_bm25_index`.
+
+## Implemented behaviour
+
+`search_text` now runs the exact substring query first. If it finds a match,
+those rows are returned unchanged and BM25 is not consulted; identifiers keep
+their exact-first behaviour. If the exact pass is empty, the retriever checks
+for `pg_search` and the `document_chunks_bm25` index and, when both exist,
+runs the ParadeDB `|||` / `pdb.score(id)` query. A database without the
+extension or index keeps the old exact-only behaviour.
+
+The benchmark's `hybrid_paradedb` arm fills the remaining slots with BM25 after
+exact matches; the implementation returns exact matches only when they exist.
+The measured MRR and recall are identical on all five query sets because every
+query with an exact hit already had enough exact rows to fill the metric window.
