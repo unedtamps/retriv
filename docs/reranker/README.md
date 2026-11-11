@@ -143,41 +143,43 @@ Keep the reranker **off**. Cosine Qwen3 retrieval remains the production path. T
 adapter, and benchmark stay in place so a future model or a better fine-tune can be evaluated
 without changing the hot path. If this is revisited, the next experiments should be:
 
-1. A larger, cleaner labelled set, ideally with real user questions and graded relevance.
+1. A larger, cleaner labelled set, ideally with real user questions and graded relevance; Jev free
+   is the leading candidate to retest on it.
 2. Same-document hard negatives to remove document-name shortcuts.
 3. Full encoder fine-tuning (not head-only) or a cross-encoder such as `bge-reranker-v2-m3`.
 4. A two-stage blend rather than replacing cosine order.
 
-## Jev 1.13 free (OpenCode Zen): availability check
+## Jev 1.13 free (OpenCode Zen)
 
-The free model was reachable with the deployment's **VLM API key** (an `oc_…` OpenCode Zen key)
-against the OpenCode Zen API:
+The free quota reset after the earlier `FreeUsageLimitError`, and the batched 16-query held-out
+benchmark completed. It uses the deployment's **VLM API key** (an `oc_…` OpenCode Zen key) against
+`https://opencode.ai/zen/v1/systemone` with `model = "jev-1.13-free"`.
 
-- `GET https://opencode.ai/zen/v1/models` → `200`
-- `POST https://opencode.ai/zen/v1/systemone` with `model = "jev-1.13-free"` → `200`
-- The response reported `billing_source: "free"`, `cost: 0`, and a normal `score` answer.
-- Pointwise latency was roughly **0.4–0.5 s** per candidate.
+- **48 batched calls** (10 candidates per request), **168,488 input tokens**, **8.9 s**, **cost 0**.
+- Responses reported `billing_source: "free"` and `list_cost: 0`.
+- Raw run: [`jev-free-eval-2026-11-11.json`](jev-free-eval-2026-11-11.json).
 
-The full benchmark did **not** complete. After about 210 candidate requests (seven of the sixteen
-held-out questions), the endpoint returned:
+### Results (same 16 held-out questions as Laya)
 
-```json
-{"type":"error","error":{"type":"FreeUsageLimitError","message":"Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go"}}
-```
+| Set | Metric | Cosine | Jev free |
+|---|---|---:|---:|
+| All (16) | MRR | **0.516** | 0.485 |
+| All (16) | nDCG@10 | **0.559** | 0.504 |
+| All (16) | recall@12 | **93.8%** | 75.0% |
+| Real chat (4) | MRR | 0.500 | **0.583** |
+| Real chat (4) | nDCG@10 | 0.333 | **0.471** |
+| Real chat (4) | recall@12 | **75.0%** | 75.0% |
+| Golden (12) | MRR | **0.521** | 0.452 |
+| Golden (12) | nDCG@10 | **0.634** | 0.515 |
+| Golden (12) | recall@12 | **100%** | 75.0% |
 
-No paid `jev-1.13` request was made. The partial first-relevant ranks were mixed:
+Jev free is clearly stronger than Laya on this corpus (all-query MRR 0.485 vs Laya's 0.448), and it
+**beats cosine on the four real chat questions** (MRR 0.583 vs 0.500, nDCG@10 0.471 vs 0.333). It
+still loses to cosine on the twelve golden questions and on the combined set.
 
-| # | Set | Cosine first rank | Jev free first rank |
-|---:|---|---:|---:|
-| 1 | chat | 2 | 3 |
-| 2 | chat | 2 | **1** |
-| 3 | chat | — | — |
-| 4 | chat | 1 | 1 |
-| 5 | golden | 7 | 30 |
-| 6 | golden | 1 | 1 |
-| 7 | golden | 3 | 20 |
+Four real questions is not enough to turn the feature on. The signal is promising enough to keep
+Jev free as the leading external candidate, but the default stays off until a larger real-question
+set confirms the chat result.
 
-That is not enough to judge the model; it is recorded only so the quota result is not mistaken for
-a benchmark. The harness at `scripts/benchmark_jev_free.py` is batched (10 candidates per request)
-to stay well under the free call budget; rerun it after the free quota resets or from an OpenCode
-account with more free usage. It never falls back to the paid model.
+The harness is `scripts/benchmark_jev_free.py`; it batches 10 candidates per request to stay well
+inside the free call budget and never falls back to the paid `jev-1.13` model.
