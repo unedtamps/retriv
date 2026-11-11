@@ -36,7 +36,7 @@ from app.db.models import (
 from app.embeddings.base import EmbeddingProviderError
 from app.embeddings.openai_compatible import truncate_normalize
 from app.embeddings.pgvector import vector_literal
-from app.retrieval.rerank import LayaReranker, RerankConfig
+from app.retrieval.rerank import BgeReranker, LayaReranker, RerankConfig
 from app.retrieval.schemas import ContextSource
 from app.retrieval.sql import escape_like
 from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
@@ -212,6 +212,10 @@ class ContextRetriever:
             headers={"Authorization": f"Bearer {settings.embedding_api_key.get_secret_value()}"},
             timeout=settings.embedding_timeout_seconds,
         )
+        self._rerank_client = httpx.AsyncClient(
+            base_url=f"{settings.rerank_base_url.rstrip('/')}/",
+            timeout=settings.embedding_timeout_seconds,
+        )
 
     async def _rerank_config(self) -> RerankConfig | None:
         """The admin's optional rerank setting, or None when it is off.
@@ -234,6 +238,8 @@ class ContextRetriever:
             concurrency=max(1, min(row.rerank_concurrency, 16)),
             min_score=row.rerank_min_score,
             timeout_ms=max(100, min(row.rerank_timeout_ms, 60_000)),
+            provider=row.rerank_provider,
+            blend=min(1.0, max(0.0, row.rerank_blend)),
         )
 
     async def _rerank(
@@ -244,9 +250,14 @@ class ContextRetriever:
         limit: int,
         config: RerankConfig,
     ) -> list[ContextSource]:
-        result = await LayaReranker(self._embedding_client, config).rerank(
-            query, sources, limit=limit
-        )
+        if config.provider == "bge":
+            result = await BgeReranker(self._rerank_client, config).rerank(
+                query, sources, limit=limit
+            )
+        else:
+            result = await LayaReranker(self._embedding_client, config).rerank(
+                query, sources, limit=limit
+            )
         return result.sources
 
     async def retrieve(
@@ -738,4 +749,5 @@ class ContextRetriever:
 
     async def aclose(self) -> None:
         await self._embedding_client.aclose()
+        await self._rerank_client.aclose()
         await self._engine.dispose()

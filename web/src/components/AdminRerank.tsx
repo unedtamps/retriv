@@ -4,12 +4,12 @@ import { getErrorMessage, isUnauthorized, retrievalAdmin } from '../api'
 import type { RetrievalSettings, RetrievalUpdate } from '../types'
 
 /**
- * The optional Laya reranker, configured beside the chat model.
+ * The optional reranker, configured beside the chat model.
  *
  * Off by default: the retrieval path stays cosine-only until an admin turns
- * this on, and any failure at the decision endpoint falls back to that same
- * cosine order. The endpoint and key are the embedding server's, because one
- * LM Studio instance already serves both Qwen and Laya.
+ * this on, and any failure at the reranker falls back to that same cosine
+ * order. Laya is a pointwise decision model on the embedding server; BGE is a
+ * local llama.cpp cross-encoder whose score is blended with cosine.
  */
 export function AdminRerank({
   onUnauthorized,
@@ -21,7 +21,9 @@ export function AdminRerank({
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [enabled, setEnabled] = useState(false)
+  const [provider, setProvider] = useState<'laya' | 'bge'>('laya')
   const [model, setModel] = useState('laya')
+  const [blend, setBlend] = useState('1')
   const [candidates, setCandidates] = useState('30')
   const [concurrency, setConcurrency] = useState('8')
   const [minScore, setMinScore] = useState('')
@@ -32,7 +34,9 @@ export function AdminRerank({
   const apply = (loaded: RetrievalSettings) => {
     setSettings(loaded)
     setEnabled(loaded.rerank_enabled)
+    setProvider(loaded.rerank_provider)
     setModel(loaded.rerank_model)
+    setBlend(String(loaded.rerank_blend))
     setCandidates(String(loaded.rerank_candidates))
     setConcurrency(String(loaded.rerank_concurrency))
     setMinScore(loaded.rerank_min_score === null ? '' : String(loaded.rerank_min_score))
@@ -52,15 +56,25 @@ export function AdminRerank({
     return () => controller.abort()
   }, [onUnauthorized])
 
+  const parsedBlend = Number.parseFloat(blend)
   const update = (): RetrievalUpdate => ({
     rerank_enabled: enabled,
-    rerank_model: model.trim() || 'laya',
+    rerank_provider: provider,
+    rerank_model: model.trim() || (provider === 'bge' ? 'bge-reranker-v2-m3' : 'laya'),
+    rerank_blend:
+      provider === 'laya'
+        ? 1
+        : Number.isFinite(parsedBlend)
+          ? Math.min(1, Math.max(0, parsedBlend))
+          : 0.3,
     rerank_candidates: Number.parseInt(candidates, 10) || 30,
     rerank_concurrency: Number.parseInt(concurrency, 10) || 8,
     rerank_min_score:
       minScore.trim() === '' ? null : Number.parseFloat(minScore),
     rerank_timeout_ms: Number.parseInt(timeoutMs, 10) || 3000,
   })
+
+  const rerankerName = provider === 'bge' ? 'BGE' : 'Laya'
 
   const save = async () => {
     if (saving) return
@@ -70,11 +84,11 @@ export function AdminRerank({
       apply(saved)
       if (saved.last_test_ok) {
         onNotice(
-          `Retrieval settings saved; Laya answered in ${saved.last_test_ms ?? '?'} ms.`,
+          `Retrieval settings saved; ${rerankerName} answered in ${saved.last_test_ms ?? '?'} ms.`,
         )
       } else {
         onNotice(
-          `Retrieval settings saved, but the Laya test failed: ${saved.last_test_error ?? 'no response'}`,
+          `Retrieval settings saved, but the ${rerankerName} test failed: ${saved.last_test_error ?? 'no response'}`,
           'error',
         )
       }
@@ -93,10 +107,10 @@ export function AdminRerank({
       const result = await retrievalAdmin.test(update())
       if (result.ok) {
         onNotice(
-          `Laya answered in ${result.latency_ms ?? '?'} ms with score ${result.score?.toFixed(2) ?? '?'}.`,
+          `${rerankerName} answered in ${result.latency_ms ?? '?'} ms with score ${result.score?.toFixed(2) ?? '?'}.`,
         )
       } else {
-        onNotice(`Laya test failed: ${result.error ?? 'no response'}`, 'error')
+        onNotice(`${rerankerName} test failed: ${result.error ?? 'no response'}`, 'error')
       }
     } catch (caught) {
       if (isUnauthorized(caught)) onUnauthorized()
@@ -136,10 +150,23 @@ export function AdminRerank({
         ) : null}
       </div>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-faint">
-        A second retrieval stage scores the top candidates with Laya before the
-        agent sees them. It uses the same local endpoint as the embeddings
-        (<span className="font-mono text-[0.72rem]">{settings.embedding_base_url}</span>,
-        embedding model <span className="font-mono text-[0.72rem]">{settings.embedding_model}</span>).
+        A second retrieval stage scores the top candidates before the agent sees
+        them.{' '}
+        {provider === 'bge' ? (
+          <>
+            BGE is a local llama.cpp cross-encoder at{' '}
+            <span className="font-mono text-[0.72rem]">{settings.rerank_base_url}</span>.
+            Its score is blended with cosine, so a passage the reranker dislikes
+            can still survive.
+          </>
+        ) : (
+          <>
+            Laya uses the same local endpoint as the embeddings (
+            <span className="font-mono text-[0.72rem]">{settings.embedding_base_url}</span>,
+            embedding model{' '}
+            <span className="font-mono text-[0.72rem]">{settings.embedding_model}</span>).
+          </>
+        )}{' '}
         When it is off, or when a request fails, the cosine order is used unchanged.
       </p>
 
@@ -157,10 +184,33 @@ export function AdminRerank({
             style={{ accentColor: 'var(--color-accent)' }}
             onChange={(event) => setEnabled(event.target.checked)}
           />
-          <span className="text-sm font-medium text-ink">Enable Laya reranking</span>
+          <span className="text-sm font-medium text-ink">Enable reranking</span>
           <span className="text-xs text-ink-faint">default off; cosine order is the fallback</span>
         </label>
 
+        <label className="block">
+          <span className="label">Provider</span>
+          <select
+            className="field"
+            value={provider}
+            onChange={(event) => {
+              const next = event.target.value === 'bge' ? 'bge' : 'laya'
+              setProvider(next)
+              if (next === 'bge') {
+                if (model.trim() === '' || model === 'laya') {
+                  setModel('bge-reranker-v2-m3')
+                }
+                if (blend === '1') setBlend('0.3')
+              } else {
+                if (model === 'bge-reranker-v2-m3') setModel('laya')
+                setBlend('1')
+              }
+            }}
+          >
+            <option value="laya">Laya decision model</option>
+            <option value="bge">BGE cross-encoder</option>
+          </select>
+        </label>
         <label className="block">
           <span className="label">Model</span>
           <input
@@ -168,10 +218,27 @@ export function AdminRerank({
             value={model}
             required
             maxLength={200}
-            placeholder="laya"
+            placeholder={provider === 'bge' ? 'bge-reranker-v2-m3' : 'laya'}
             onChange={(event) => setModel(event.target.value)}
           />
         </label>
+        {provider === 'bge' ? (
+          <label className="block">
+            <span className="label">BGE blend weight</span>
+            <input
+              className="field"
+              type="number"
+              min={0}
+              max={1}
+              step="0.05"
+              value={blend}
+              onChange={(event) => setBlend(event.target.value)}
+            />
+            <span className="mt-1 block text-xs text-ink-faint">
+              0.3 measured best; 1.0 is pure reranking.
+            </span>
+          </label>
+        ) : null}
         <label className="block">
           <span className="label">Candidates</span>
           <input
@@ -183,30 +250,34 @@ export function AdminRerank({
             onChange={(event) => setCandidates(event.target.value)}
           />
         </label>
-        <label className="block">
-          <span className="label">Concurrency</span>
-          <input
-            className="field"
-            type="number"
-            min={1}
-            max={16}
-            value={concurrency}
-            onChange={(event) => setConcurrency(event.target.value)}
-          />
-        </label>
-        <label className="block">
-          <span className="label">Minimum score</span>
-          <input
-            className="field"
-            type="number"
-            min={0}
-            max={2}
-            step="0.1"
-            value={minScore}
-            placeholder="keep all"
-            onChange={(event) => setMinScore(event.target.value)}
-          />
-        </label>
+        {provider === 'laya' ? (
+          <label className="block">
+            <span className="label">Concurrency</span>
+            <input
+              className="field"
+              type="number"
+              min={1}
+              max={16}
+              value={concurrency}
+              onChange={(event) => setConcurrency(event.target.value)}
+            />
+          </label>
+        ) : null}
+        {provider === 'laya' ? (
+          <label className="block">
+            <span className="label">Minimum score</span>
+            <input
+              className="field"
+              type="number"
+              min={0}
+              max={2}
+              step="0.1"
+              value={minScore}
+              placeholder="keep all"
+              onChange={(event) => setMinScore(event.target.value)}
+            />
+          </label>
+        ) : null}
         <label className="block">
           <span className="label">Timeout (ms)</span>
           <input

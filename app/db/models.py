@@ -538,9 +538,12 @@ class RetrievalSetting(Base):
     """The deployment-wide retrieval knobs an admin can change at runtime.
 
     Reranking is optional and off by default, so the existing cosine path is
-    the baseline every deployment starts from. The endpoint and key are the
-    existing embedding endpoint's: one local LM Studio instance serves both
-    Qwen for embeddings and Laya for decisions.
+    the baseline every deployment starts from. ``rerank_provider`` selects the
+    adapter: ``laya`` is a pointwise decision model on the embedding endpoint,
+    while ``bge`` is a local cross-encoder served by llama.cpp on
+    ``RETRIV_RERANK_BASE_URL``. ``rerank_blend`` is the reranker's weight when
+    its score is combined with cosine; Laya keeps 1.0 (pure rerank) and BGE
+    measured best at 0.3.
     """
 
     __tablename__ = "retrieval_settings"
@@ -554,6 +557,12 @@ class RetrievalSetting(Base):
     )
     rerank_model: Mapped[str] = mapped_column(
         String(200), default="laya", server_default="laya", nullable=False
+    )
+    rerank_provider: Mapped[str] = mapped_column(
+        String(20), default="laya", server_default="laya", nullable=False
+    )
+    rerank_blend: Mapped[float] = mapped_column(
+        Float, default=1.0, server_default="1.0", nullable=False
     )
     rerank_candidates: Mapped[int] = mapped_column(
         Integer, default=30, server_default="30", nullable=False

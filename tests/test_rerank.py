@@ -6,18 +6,19 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.retrieval.rerank import LayaReranker, RerankConfig
+from app.retrieval.context import ContextRetriever
+from app.retrieval.rerank import BgeReranker, LayaReranker, RerankConfig
 from app.retrieval.schemas import ContextSource
 
 
-def source(text: str) -> ContextSource:
+def source(text: str, score: float = 0.5) -> ContextSource:
     return ContextSource(
         workspace_id=uuid4(),
         document_id=uuid4(),
         processing_run_id=uuid4(),
         chunk_id=uuid4(),
         ordinal=1,
-        score=0.5,
+        score=score,
         content_hash="a" * 64,
         filename="report.pdf",
         section_path=["Revenue"],
@@ -40,6 +41,10 @@ def config(**overrides: object) -> RerankConfig:
 
 def client(handler: httpx.MockTransport) -> httpx.AsyncClient:
     return httpx.AsyncClient(base_url="http://laya.test/v1/", transport=handler)
+
+
+def bge_client(handler: httpx.MockTransport) -> httpx.AsyncClient:
+    return httpx.AsyncClient(base_url="http://bge.test/", transport=handler)
 
 
 @pytest.mark.asyncio
@@ -108,3 +113,164 @@ async def test_laya_falls_back_to_cosine_order_on_failure() -> None:
 
     assert result.fallback is True
     assert result.sources == [first, second]
+
+
+@pytest.mark.asyncio
+async def test_bge_scores_the_pool_and_orders_by_relevance() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/rerank"
+        payload = json.loads(request.content)
+        assert payload["model"] == "bge-reranker-v2-m3"
+        assert len(payload["documents"]) == 3
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"index": 2, "relevance_score": -1.0},
+                    {"index": 0, "relevance_score": 5.0},
+                    {"index": 1, "relevance_score": 9.0},
+                ],
+                "usage": {"prompt_tokens": 42},
+            },
+        )
+
+    first = source("first")
+    second = source("second")
+    third = source("third")
+    async with bge_client(httpx.MockTransport(handle)) as http:
+        result = await BgeReranker(
+            http, config(model="bge-reranker-v2-m3", blend=1.0)
+        ).rerank("query", [first, second, third], limit=3)
+
+    assert [entry.text for entry in result.sources] == ["second", "first", "third"]
+    assert result.fallback is False
+    assert result.calls == 1
+    assert result.input_tokens == 42
+
+
+@pytest.mark.asyncio
+async def test_bge_blend_balances_cosine_and_reranker_scores() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"index": 0, "relevance_score": 0.0},
+                    {"index": 1, "relevance_score": 10.0},
+                    {"index": 2, "relevance_score": 5.0},
+                ]
+            },
+        )
+
+    first = source("first", score=0.9)
+    second = source("second", score=0.8)
+    third = source("third", score=0.1)
+    async with bge_client(httpx.MockTransport(handle)) as http:
+        result = await BgeReranker(
+            http, config(model="bge", blend=0.3)
+        ).rerank("query", [first, second, third], limit=2)
+
+    # cosine: [1.0, 0.875, 0.0]; bge: [0.0, 1.0, 0.5]
+    # blend:  [0.70, 0.9125, 0.15]
+    assert [entry.text for entry in result.sources] == ["second", "first"]
+
+
+@pytest.mark.asyncio
+async def test_bge_blend_zero_keeps_cosine_order() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"index": 0, "relevance_score": -10.0},
+                    {"index": 1, "relevance_score": 10.0},
+                ]
+            },
+        )
+
+    first = source("first", score=0.9)
+    second = source("second", score=0.1)
+    async with bge_client(httpx.MockTransport(handle)) as http:
+        result = await BgeReranker(
+            http, config(model="bge", blend=0.0)
+        ).rerank("query", [first, second], limit=2)
+
+    assert [entry.text for entry in result.sources] == ["first", "second"]
+
+
+@pytest.mark.asyncio
+async def test_bge_falls_back_when_a_candidate_is_missing() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            json={"results": [{"index": 0, "relevance_score": 1.0}]},
+        )
+
+    first = source("first")
+    second = source("second")
+    async with bge_client(httpx.MockTransport(handle)) as http:
+        result = await BgeReranker(
+            http, config(model="bge", blend=1.0)
+        ).rerank("query", [first, second], limit=2)
+
+    assert result.fallback is True
+    assert result.sources == [first, second]
+
+
+@pytest.mark.asyncio
+async def test_bge_falls_back_to_cosine_order_on_failure() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(500, text="model unavailable")
+
+    first = source("first")
+    second = source("second")
+    async with bge_client(httpx.MockTransport(handle)) as http:
+        result = await BgeReranker(
+            http, config(model="bge", blend=0.3)
+        ).rerank("query", [first, second], limit=2)
+
+    assert result.fallback is True
+    assert result.sources == [first, second]
+
+
+@pytest.mark.asyncio
+async def test_context_dispatches_the_bge_provider_to_the_rerank_client() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/rerank"
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"index": 0, "relevance_score": -5.0},
+                    {"index": 1, "relevance_score": 5.0},
+                ]
+            },
+        )
+
+    def embedding_should_not_run(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected embedding call: {request.url}")
+
+    first = source("first")
+    second = source("second")
+    retriever = object.__new__(ContextRetriever)
+    retriever._rerank_client = bge_client(httpx.MockTransport(handle))
+    retriever._embedding_client = httpx.AsyncClient(
+        base_url="http://embedding.test/v1/",
+        transport=httpx.MockTransport(embedding_should_not_run),
+    )
+    try:
+        result = await retriever._rerank(
+            "query",
+            [first, second],
+            limit=1,
+            config=config(provider="bge", blend=1.0),
+        )
+    finally:
+        await retriever._rerank_client.aclose()
+        await retriever._embedding_client.aclose()
+
+    assert [entry.text for entry in result] == ["second"]

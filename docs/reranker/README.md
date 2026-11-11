@@ -1,37 +1,52 @@
-# Laya reranker: optional second stage
+# Optional reranking: Laya, Jev free, and BGE
 
-**Status:** implemented, **disabled by default**, and **not recommended for production yet**.
-The benchmark and fine-tuning experiment below explain why.
+**Status:** implemented, **disabled by default**. Laya and Jev free are not recommended. The local
+`bge-reranker-v2-m3` cross-encoder, **blended with cosine at weight 0.3**, is the first configuration
+to pass the ranking gate; it stays opt-in because it adds roughly 370 ms p50 / 500 ms p95 on the
+test machine.
 
-This folder contains the reproducible benchmark, the fine-tuning dataset recipe, and the
-comparison that led to the decision to keep cosine retrieval as the hot path.
+This folder contains the reproducible benchmarks, the fine-tuning dataset recipe, and the
+comparisons behind the current default.
 
 ## What was built
 
-`search_context` and `search_text` can now pass their candidate pool through an optional Laya
-reranker before the agent sees the results.
+`search_context` and `search_text` can pass their candidate pool through an optional reranker
+before the agent sees the results.
 
 - **Admin-controlled, global, off by default.** Configure it in **Platform administration →
   Agent harness → Retrieval → Reranking**.
+- **Provider:** `laya` (pointwise decision model on the embedding endpoint) or `bge` (local
+  llama.cpp cross-encoder at `RETRIV_RERANK_BASE_URL`).
 - **Candidate pool:** 30 cosine candidates by default.
 - **Final context:** the existing cap (`max_context_sources = 12`, section completion included).
-- **Scoring:** each candidate is sent pointwise to Laya's `/v1/systemone` as a `score` question
-  with the rubric `irrelevant / partially relevant / directly answers`.
-- **Concurrency:** 8 pointwise requests by default.
+- **Laya scoring:** each candidate is sent pointwise to `/v1/systemone` as a `score` question with
+  the rubric `irrelevant / partially relevant / directly answers`; 8 requests concurrently.
+- **BGE scoring:** the whole pool goes to `/v1/rerank` in one request. The raw relevance score is
+  min-max normalised per query and blended with the normalised cosine score; 0.3 measured best,
+  while 1.0 is pure reranking.
 - **Fail open:** a timeout, non-200 response, or malformed answer returns the original cosine
   order and logs a warning. The agent never loses results because the reranker is down.
 - **Scope:** only the two search tools. `read_document` and `query_rows` keep their existing
   behaviour.
 
+One caveat: `search_text` candidates carry a uniform text-match score of 1.0, so the blend
+degenerates to pure BGE ordering on that path. The ranking benchmark below covers vector search;
+text search keeps the same admin switch but was not separately benchmarked.
+
 The implementation lives in:
 
-- `app/retrieval/rerank.py` — Laya adapter, scoring, concurrency, fallback.
-- `app/retrieval/context.py` — candidate over-fetch and rerank for both search paths.
+- `app/retrieval/rerank.py` — Laya pointwise and BGE bulk/blend adapters, fallback.
+- `app/retrieval/context.py` — candidate over-fetch, provider dispatch, rerank for both search paths.
+- `app/core/config.py` — `RETRIV_RERANK_BASE_URL`.
 - `app/routes/admin.py` — `GET/PUT /v1/admin/retrieval` and `POST /v1/admin/retrieval/test`.
 - `web/src/components/AdminRerank.tsx` — the admin card.
 - `alembic/versions/0004_retrieval_settings.py` — the singleton settings table.
+- `alembic/versions/0005_rerank_provider.py` — provider and blend columns.
+- `scripts/benchmark_bge_reranker.py` — the BGE benchmark.
 
-## LM Studio requirements
+## Reranker servers
+
+### Laya (LM Studio)
 
 Laya must be loaded with a physical batch large enough for the passage batch. On the test machine
 the default `physical_batch_size = 512` produced HTTP 500s for multi-candidate requests; loading it
@@ -47,7 +62,23 @@ curl -s http://127.0.0.1:1234/api/v1/models/load \
 The adapter uses the same base URL and key as the embedding model, because one LM Studio instance
 serves both Qwen embeddings and Laya decisions.
 
-## Benchmark
+### BGE (llama.cpp)
+
+`bge-reranker-v2-m3` is served by llama.cpp, not LM Studio. The physical batch must cover the
+candidate pool: the default 512 failed with HTTP 500 on a 30-document request. The measured command
+is:
+
+```bash
+llama-server \
+  -m ~/.lmstudio/models/gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf \
+  --reranking -b 4096 -ub 4096 --host 127.0.0.1 --port 8099 --no-webui
+```
+
+It exposes `POST /v1/rerank` with `{model, query, documents[]}` and returns one
+`relevance_score` per document. Set `RETRIV_RERANK_BASE_URL` to that server; no API key is used
+for the local endpoint.
+
+## Laya benchmark
 
 Method:
 
@@ -118,9 +149,70 @@ because they contain document passages.
   has to reorder a list that already contains the answer. A small decision head did not learn that
   ordering.
 
+## BGE cross-encoder benchmark
+
+Method:
+
+- **Same 64 questions** as the Laya run: 4 real chat questions plus the 60-question golden set.
+- **Three relevance levels**, because a single-chunk label is too harsh for a reranker:
+  - **chunk** — the exact cited/generated chunk;
+  - **section** — any chunk in the same document whose section path matches the label's section
+    (a prefix counts, so a parent section is answerable);
+  - **document** — any chunk in the same document.
+- Each question retrieves **30 cosine candidates**; BGE scores the same pool in one `/v1/rerank`
+  request with 1,200 characters per passage.
+- Harness: `scripts/benchmark_bge_reranker.py`; raw output:
+  [`bge-reranker-2026-11-11.json`](bge-reranker-2026-11-11.json). The 16-question held-out subset
+  is in [`bge-reranker-heldout-2026-11-11.json`](bge-reranker-heldout-2026-11-11.json).
+
+### Results (64 questions)
+
+| Level | Ranker | MRR | nDCG@10 | recall@12 |
+|---|---|---:|---:|---:|
+| Chunk | Cosine | 0.707 | 0.758 | 95.3% |
+| Chunk | BGE, pure rerank | 0.629 | 0.655 | 79.7% |
+| Chunk | **BGE 0.3 blend** | **0.762** | **0.788** | 93.8% |
+| Section | Cosine | 0.728 | 0.696 | 95.3% |
+| Section | BGE, pure rerank | 0.723 | 0.656 | 85.9% |
+| Section | **BGE 0.3 blend** | **0.787** | **0.733** | **95.3%** |
+| Document | Cosine | 0.894 | 0.742 | 100% |
+| Document | **BGE, pure rerank** | **0.940** | **0.775** | 100% |
+| Document | BGE 0.3 blend | 0.922 | 0.764 | 100% |
+
+**Pure BGE is not shippable as a replacement.** It improves the first relevant rank, especially at
+document level, but it demotes answers out of the retrieval window: chunk recall falls from 95% to
+80%, and section recall from 95% to 86%. A better first hit is not worth losing a source entirely.
+
+**The 0.3 blend passes the gate.** At section level it improves MRR by **+0.059** and nDCG@10 by
+**+0.037** with **no recall loss**. At chunk level it improves MRR by **+0.055** and nDCG@10 by
+**+0.030**, giving up **one** query's recall (Activision net-income, rank 9 → 22); that chunk's
+section still survives in the top 12. At document level it improves MRR by +0.028 and nDCG@10 by
++0.022. The gains also hold on the golden-only subset (chunk MRR 0.721 → 0.771, section 0.743 →
+0.798) and on the four real chat questions (chunk/section MRR 0.500 → 0.625).
+
+Per-query at section level: **12 wins, 4 losses, 48 ties**; at document level 5 wins, 0 losses, 59
+ties. The result is not driven by one or two lucky questions.
+
+Latency for a 30-document request: **p50 369 ms, p95 496 ms** on the local GPU, no API cost. The
+blend has the same latency as pure BGE because it reuses the same scores.
+
+The gate used for this decision was: MRR +0.05 or nDCG@10 +5 pp, recall@12 regression no worse
+than 2 pp, and p95 under ~500 ms. The blend passes on MRR (+0.055 chunk, +0.059 section), recall
+(−1.5 pp chunk, 0 at section/document), and p95 (496 ms). The nDCG gain is +3.0–3.7 pp, below the
+5 pp alternative, so the MRR clause is what carries it.
+
 ## Reproduce
 
 ```bash
+# 0. Start the BGE server (the physical batch must cover 30 documents)
+llama-server \
+  -m ~/.lmstudio/models/gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf \
+  --reranking -b 4096 -ub 4096 --host 127.0.0.1 --port 8099 --no-webui
+
+# 0b. Benchmark BGE at chunk, section and document relevance (read-only)
+uv run python scripts/benchmark_bge_reranker.py --all \
+  --out docs/reranker/bge-reranker-2026-11-11.json
+
 # 1. Benchmark cosine vs zero-shot Laya (read-only)
 uv run python scripts/benchmark_rerank.py \
   --out docs/reranker/benchmark-2026-11-11.json
@@ -139,15 +231,27 @@ laya-train --data docs/reranker/training/train-noul.jsonl \
 
 ## Decision
 
-Keep the reranker **off**. Cosine Qwen3 retrieval remains the production path. The admin toggle,
-adapter, and benchmark stay in place so a future model or a better fine-tune can be evaluated
-without changing the hot path. If this is revisited, the next experiments should be:
+Keep the reranker **off by default**, with **BGE at blend 0.3** as the provider to enable when a
+deployment wants a second stage:
 
-1. A larger, cleaner labelled set, ideally with real user questions and graded relevance; Jev free
-   is the leading candidate to retest on it.
-2. Same-document hard negatives to remove document-name shortcuts.
-3. Full encoder fine-tuning (not head-only) or a cross-encoder such as `bge-reranker-v2-m3`.
-4. A two-stage blend rather than replacing cosine order.
+- **Laya zero-shot and the head-only fine-tunes are rejected.** Both lose to cosine on every
+  aggregate ranking metric.
+- **Jev free is rejected for now.** It improves the four real-chat questions but loses on the
+  synthetic golden majority, and paying for it is not justified by that sample.
+- **Pure BGE is rejected.** It raises document-level ranking but costs 15 pp of chunk recall.
+- **BGE at 0.3 is accepted.** It improves MRR and nDCG at chunk and section level, leaves section
+  recall untouched, and adds ~370 ms p50 / ~500 ms p95 locally with no API cost.
+
+The default stays off because 500 ms p95 is a real latency cost and the real-chat sample is still
+only four questions. The admin card exposes the provider, model, and blend weight, so a deployment
+can turn it on, tune the weight, and fall back to cosine by clearing the toggle.
+
+Remaining experiments, in order:
+
+1. A larger real-question set (50–100) from chat history, labelled at section/document level.
+2. Benchmark `search_text`, where uniform match scores make the blend behave as pure BGE.
+3. Ablate passage length (1,200 vs full), candidate pool (20/30/50), and BGE FP16 vs Q8.
+4. Compare a learned fusion or RRF against the fixed 0.3 min-max blend.
 
 ## Jev 1.13 free (OpenCode Zen)
 
@@ -177,9 +281,8 @@ Jev free is clearly stronger than Laya on this corpus (all-query MRR 0.485 vs La
 **beats cosine on the four real chat questions** (MRR 0.583 vs 0.500, nDCG@10 0.471 vs 0.333). It
 still loses to cosine on the twelve golden questions and on the combined set.
 
-Four real questions is not enough to turn the feature on. The signal is promising enough to keep
-Jev free as the leading external candidate, but the default stays off until a larger real-question
-set confirms the chat result.
+Four real questions is not enough to turn the feature on. At that point Jev free was the leading
+external candidate; the BGE result above supersedes it for the default recommendation.
 
 ### Pointwise audit
 

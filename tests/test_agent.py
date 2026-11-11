@@ -1258,18 +1258,24 @@ async def test_retrieval_settings_default_off_and_save_tests_laya(
     from app.api.schemas import RetrievalTestResult
     from app.db.models import RetrievalSetting as Row
 
-    async def fake_test(settings: Any, model: str) -> RetrievalTestResult:
+    async def fake_test(
+        settings: Any, provider: str, model: str
+    ) -> RetrievalTestResult:
         del settings
+        assert provider == "laya"
         return RetrievalTestResult(ok=True, model=model, latency_ms=7, score=1.5)
 
-    monkeypatch.setattr("app.routes.admin._test_laya", fake_test)
+    monkeypatch.setattr("app.routes.admin._test_rerank", fake_test)
     headers = await _admin_headers(client)
 
     before = await client.get("/v1/admin/retrieval", headers=headers)
     assert before.status_code == 200, before.text
     assert before.json()["rerank_enabled"] is False
+    assert before.json()["rerank_provider"] == "laya"
     assert before.json()["rerank_model"] == "laya"
+    assert before.json()["rerank_blend"] == 1.0
     assert before.json()["rerank_candidates"] == 30
+    assert before.json()["rerank_base_url"].startswith("http")
 
     response = await client.put(
         "/v1/admin/retrieval",
@@ -1286,6 +1292,8 @@ async def test_retrieval_settings_default_off_and_save_tests_laya(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["rerank_enabled"] is True
+    assert body["rerank_provider"] == "laya"
+    assert body["rerank_blend"] == 1.0
     assert body["last_test_ok"] is True
     assert body["last_test_ms"] == 7
     assert body["last_test_error"] is None
@@ -1294,4 +1302,55 @@ async def test_retrieval_settings_default_off_and_save_tests_laya(
         row = await session.get(Row, 1)
     assert row is not None
     assert row.rerank_enabled is True
+    assert row.rerank_provider == "laya"
+    assert row.rerank_blend == 1.0
     assert row.rerank_concurrency == 8
+
+
+async def test_retrieval_settings_save_bge_provider(
+    client: httpx.AsyncClient,
+    entities: Any,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The BGE provider persists its blend weight and tests the rerank endpoint."""
+    from app.api.schemas import RetrievalTestResult
+    from app.db.models import RetrievalSetting as Row
+
+    seen: dict[str, str] = {}
+
+    async def fake_test(
+        settings: Any, provider: str, model: str
+    ) -> RetrievalTestResult:
+        del settings
+        seen.update(provider=provider, model=model)
+        return RetrievalTestResult(ok=True, model=model, latency_ms=3, score=8.0)
+
+    monkeypatch.setattr("app.routes.admin._test_rerank", fake_test)
+    headers = await _admin_headers(client)
+
+    response = await client.put(
+        "/v1/admin/retrieval",
+        json={
+            "rerank_enabled": True,
+            "rerank_provider": "bge",
+            "rerank_model": "bge-reranker-v2-m3",
+            "rerank_blend": 0.3,
+            "rerank_candidates": 30,
+            "rerank_concurrency": 8,
+            "rerank_min_score": None,
+            "rerank_timeout_ms": 10_000,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["rerank_provider"] == "bge"
+    assert body["rerank_blend"] == 0.3
+    assert seen == {"provider": "bge", "model": "bge-reranker-v2-m3"}
+
+    async with db_session_factory() as session:
+        row = await session.get(Row, 1)
+    assert row is not None
+    assert row.rerank_provider == "bge"
+    assert row.rerank_blend == 0.3
