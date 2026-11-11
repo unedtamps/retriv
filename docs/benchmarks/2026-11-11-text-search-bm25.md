@@ -225,3 +225,12 @@ RETRIV_DATABASE_URL="$PARADEDB_TEST_URL" \
    the new behaviour.
 6. If the image swap is not justified, keep `ILIKE` and accept the long-query
    gap; built-in FTS is not a good middle ground here.
+
+## Live switch
+
+The development compose stack now uses
+`paradedb/paradedb:17-v0.26.2` with a fresh volume
+(`retriv-api_postgres_data_paradedb`). The pre-ParadeDB volume
+(`retriv-api_postgres_data`) is retained for rollback. The BM25 index is
+created by migration `0006_bm25_index`; the application code still uses
+`ILIKE` until `search_text` is switched to the exact-first hybrid.

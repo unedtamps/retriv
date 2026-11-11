@@ -77,10 +77,10 @@ x-worker-environment: &worker-environment
 
 services:
   postgres:
-    # pgvector build of postgres 17: chunk_embeddings.embedding is a
-    # vector(2000) column with an HNSW index, so the vector store is the
-    # database the ledger already lived in rather than a second service.
-    image: pgvector/pgvector:pg17
+    # ParadeDB ships pg_search (BM25) and pgvector in one Postgres image.
+    # chunk_embeddings.embedding is a vector(2000) column with an HNSW index,
+    # and search_text can use a BM25 index without a separate search service.
+    image: paradedb/paradedb:17-v0.26.2
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
@@ -92,7 +92,11 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # The pre-ParadeDB volume is intentionally not mounted here; it stays
+      # available for rollback. The dump/restore into this fresh volume is the
+      # tested upgrade path because the image carries a different pgvector
+      # build than the old one.
+      - postgres_data_paradedb:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:7432:5432"
     networks:
@@ -226,5 +230,7 @@ networks:
         - subnet: ${RETRIV_DOCKER_SUBNET:-10.254.0.0/24}
 
 volumes:
+  # Kept as the rollback copy of the pre-ParadeDB database.
   postgres_data:
+  postgres_data_paradedb:
   clamav_data:
