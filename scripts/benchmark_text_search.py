@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -56,6 +56,24 @@ from app.db.models import (  # noqa: E402
 from app.retrieval.context import ContextRetriever  # noqa: E402
 
 LEVELS = ("chunk", "section", "document")
+METHODS = (
+    "exact",
+    "bm25",
+    "hybrid",
+    "fts_en",
+    "fts_simple",
+    "hybrid_fts_en",
+    "hybrid_fts_simple",
+)
+LATENCIES = (
+    "ilike",
+    "bm25",
+    "hybrid",
+    "fts_en",
+    "fts_simple",
+    "hybrid_fts_en",
+    "hybrid_fts_simple",
+)
 TOKEN_RE = re.compile(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*")
 STOPWORDS = frozenset(
     """
@@ -370,7 +388,69 @@ def mine_term_queries(
     return queries
 
 
+def merge_exact_first(
+    exact_ids: list[str],
+    ranked_ids: list[str],
+    limit: int,
+) -> list[str]:
+    merged = list(exact_ids)
+    seen = set(merged)
+    for chunk_id in ranked_ids:
+        if chunk_id not in seen:
+            merged.append(chunk_id)
+            seen.add(chunk_id)
+        if len(merged) >= limit:
+            break
+    return merged[:limit]
+
+
+async def search_fts(
+    factory: async_sessionmaker,
+    query: str,
+    workspace_ids: list[UUID],
+    limit: int,
+    *,
+    configuration: str,
+) -> list[str]:
+    """Rank the scoped chunks with Postgres FTS, OR-ing the query terms.
+
+    ``websearch_to_tsquery`` treats whitespace as AND, which makes a long
+    question return nothing. Joining the tokens with ``or`` keeps the query
+    permissive, which is the closest built-in analogue to BM25's term summing.
+    """
+    tokens = tokenize(query)
+    if not tokens:
+        return []
+    document_vector = func.to_tsvector(configuration, DocumentChunk.text)
+    text_query = func.websearch_to_tsquery(configuration, " or ".join(tokens))
+    rank = func.ts_rank_cd(document_vector, text_query)
+    statement = (
+        select(DocumentChunk.id)
+        .join(Document, Document.id == DocumentChunk.document_id)
+        .where(
+            exists().where(
+                DocumentWorkspace.document_id == DocumentChunk.document_id,
+                DocumentWorkspace.workspace_id.in_(workspace_ids),
+                DocumentWorkspace.deleted_at.is_(None),
+            ),
+            Document.deleted_at.is_(None),
+            Document.active_processing_run_id == DocumentChunk.processing_run_id,
+            document_vector.op("@@")(text_query),
+        )
+        .order_by(
+            rank.desc(),
+            DocumentChunk.document_id,
+            DocumentChunk.ordinal,
+        )
+        .limit(limit)
+    )
+    async with factory() as session:
+        rows = (await session.execute(statement)).all()
+    return [str(row.id) for row in rows]
+
+
 async def evaluate(
+    factory: async_sessionmaker,
     retriever: ContextRetriever,
     chunks: list[Chunk],
     queries: list[Query],
@@ -396,21 +476,29 @@ async def evaluate(
         bm25_ms = (time.perf_counter() - started) * 1000
         bm25_ids = bm25_all[:limit]
 
-        seen = set(exact_ids)
-        hybrid_ids = list(exact_ids)
-        if len(hybrid_ids) < limit:
-            for chunk_id in bm25_all:
-                if chunk_id not in seen:
-                    hybrid_ids.append(chunk_id)
-                    seen.add(chunk_id)
-                if len(hybrid_ids) >= limit:
-                    break
+        started = time.perf_counter()
+        fts_en_ids = await search_fts(
+            factory, text, list(query.workspaces), limit, configuration="english"
+        )
+        fts_en_ms = (time.perf_counter() - started) * 1000
+
+        started = time.perf_counter()
+        fts_simple_ids = await search_fts(
+            factory, text, list(query.workspaces), limit, configuration="simple"
+        )
+        fts_simple_ms = (time.perf_counter() - started) * 1000
 
         labels = [by_id[chunk_id] for chunk_id in query.relevant if chunk_id in by_id]
         method_ids = {
             "exact": exact_ids,
             "bm25": bm25_ids,
-            "hybrid": hybrid_ids,
+            "hybrid": merge_exact_first(exact_ids, bm25_all, limit),
+            "fts_en": fts_en_ids,
+            "fts_simple": fts_simple_ids,
+            "hybrid_fts_en": merge_exact_first(exact_ids, fts_en_ids, limit),
+            "hybrid_fts_simple": merge_exact_first(
+                exact_ids, fts_simple_ids, limit
+            ),
         }
         rows.append(
             {
@@ -429,6 +517,10 @@ async def evaluate(
                     "ilike": exact_ms,
                     "bm25": bm25_ms,
                     "hybrid": exact_ms + bm25_ms,
+                    "fts_en": fts_en_ms,
+                    "fts_simple": fts_simple_ms,
+                    "hybrid_fts_en": exact_ms + fts_en_ms,
+                    "hybrid_fts_simple": exact_ms + fts_simple_ms,
                 },
             }
         )
@@ -449,7 +541,7 @@ async def evaluate(
         if not subset:
             continue
         summary[split] = {}
-        for method in ("exact", "bm25", "hybrid"):
+        for method in METHODS:
             summary[split][method] = {}
             for level in LEVELS:
                 results = [
@@ -461,7 +553,7 @@ async def evaluate(
                 ]
                 summary[split][method][level] = summarize(results)
         summary[split]["latency_ms"] = {}
-        for method in ("ilike", "bm25", "hybrid"):
+        for method in LATENCIES:
             values = [
                 row["latency_ms"][method]  # type: ignore[index]
                 for row in subset
@@ -476,7 +568,7 @@ async def evaluate(
             method: statistics.fmean(
                 [1.0 if row["zero"][method] else 0.0 for row in subset]  # type: ignore[index]
             )
-            for method in ("exact", "bm25", "hybrid")
+            for method in METHODS
         }
 
     return {
@@ -516,6 +608,7 @@ async def run(args: argparse.Namespace) -> int:
             await session.commit()
     try:
         evaluation = await evaluate(
+            factory,
             retriever,
             chunks,
             all_queries + identifiers + terms,
@@ -535,6 +628,12 @@ async def run(args: argparse.Namespace) -> int:
         "config": {
             "candidates": args.limit,
             "bm25": {"k1": 1.5, "b": 0.75, "stopwords": True},
+            "postgres_fts": {
+                "configurations": ["english", "simple"],
+                "query": "websearch_to_tsquery with OR-joined tokens",
+                "rank": "ts_rank_cd",
+                "expression_index": False,
+            },
             "tokenizer": TOKEN_RE.pattern,
             "chat_queries": str(chat_path),
             "golden_queries": str(golden_path),
@@ -564,7 +663,7 @@ def print_summary(payload: dict[str, object]) -> None:
             f"{'chunk R@12':>11} {'section MRR':>12} {'section R@12':>13} "
             f"{'zero':>7}"
         )
-        for method in ("exact", "bm25", "hybrid"):
+        for method in METHODS:
             data = summary[split][method]  # type: ignore[index]
             zero = summary[split]["zero_result_rate"][method]  # type: ignore[index]
             print(
