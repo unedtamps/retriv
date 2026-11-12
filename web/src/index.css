@@ -659,12 +659,9 @@
 }
 
 .pdf-scroll {
-  display: flex;
+  display: block;
   flex: 1;
   min-height: 0;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 18px;
@@ -672,8 +669,8 @@
 
 .pdf-page-shell {
   position: relative;
-  flex: none;
-  max-width: 100%;
+  overflow: hidden;
+  margin: 0 auto 16px;
   background: #ffffff;
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.24),
@@ -690,8 +687,62 @@
   height: auto;
 }
 
+/*
+ * The transparent text layer PDF.js builds over the canvas. Without it the
+ * viewer is an image: selection and copy have no DOM text to act on.
+ */
+.pdf-text-layer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  overflow: clip;
+  color-scheme: only light;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+}
+
+.pdf-text-layer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer ::selection {
+  background: rgb(0 90 255 / 0.25);
+}
+
 .pdf-highlight {
   position: absolute;
+  z-index: 1;
   border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
   border-radius: 2px;
   background: color-mix(in srgb, var(--color-accent) 26%, transparent);
@@ -701,6 +752,7 @@
 
 .pdf-loading {
   position: absolute;
+  z-index: 3;
   inset: 0;
   display: flex;
   align-items: center;
@@ -722,6 +774,7 @@
 
 .pdf-page-error {
   position: absolute;
+  z-index: 3;
   inset: 12px;
   align-self: start;
 }

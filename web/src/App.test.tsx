@@ -19,6 +19,9 @@ vi.mock('./lib/pdf', () => ({
     height: 800,
     cancel: vi.fn(),
   })),
+  renderPdfTextLayer: vi.fn(async () => ({
+    cancel: vi.fn(),
+  })),
 }))
 
 const admin: CurrentUser = {
@@ -988,6 +991,7 @@ describe('dashboard application', () => {
     expect(await within(viewer).findByLabelText('Page number')).toHaveValue(2)
     expect(within(viewer).getByText('of 3')).toBeInTheDocument()
     expect(within(viewer).getAllByTestId('pdf-canvas')).toHaveLength(3)
+    expect(within(viewer).getAllByTestId('pdf-text-layer')).toHaveLength(3)
     await waitFor(() => expect(viewer.querySelector('.pdf-highlight')).not.toBeNull())
     const highlight = viewer.querySelector('.pdf-highlight') as HTMLElement
     expect(highlight.style.left).toBe('10%')

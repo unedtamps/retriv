@@ -1,5 +1,6 @@
 import {
   GlobalWorkerOptions,
+  TextLayer,
   getDocument,
   type PDFDocumentProxy,
   type RenderTask,
@@ -16,6 +17,10 @@ export interface LoadedPdf {
 export interface RenderedPdfPage {
   width: number
   height: number
+  cancel: () => void
+}
+
+export interface RenderedTextLayer {
   cancel: () => void
 }
 
@@ -62,4 +67,32 @@ export async function renderPdfPage(
     height: viewport.height,
     cancel: () => task.cancel(),
   }
+}
+
+/**
+ * Lay the selectable text over the canvas.
+ *
+ * PDF.js renders glyphs as transparent spans positioned over the page. Without
+ * this layer the viewer is just an image: reading works, selecting and copying
+ * do not.
+ */
+export async function renderPdfTextLayer(
+  pdf: PDFDocumentProxy,
+  pageNumber: number,
+  container: HTMLDivElement,
+  scale: number,
+): Promise<RenderedTextLayer> {
+  const page = await pdf.getPage(pageNumber)
+  const viewport = page.getViewport({ scale })
+  container.replaceChildren()
+  container.style.setProperty('--total-scale-factor', String(scale))
+  container.style.setProperty('--scale-round-x', '1px')
+  container.style.setProperty('--scale-round-y', '1px')
+  const layer = new TextLayer({
+    textContentSource: page.streamTextContent(),
+    container,
+    viewport,
+  })
+  await layer.render()
+  return { cancel: () => layer.cancel() }
 }

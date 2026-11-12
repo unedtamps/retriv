@@ -14,7 +14,12 @@ import {
 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import { loadDocument } from '../lib/documentCache'
-import { loadPdf, renderPdfPage, type LoadedPdf } from '../lib/pdf'
+import {
+  loadPdf,
+  renderPdfPage,
+  renderPdfTextLayer,
+  type LoadedPdf,
+} from '../lib/pdf'
 import type { DocumentUpload, Workspace } from '../types'
 
 export interface PdfHighlightRegion {
@@ -71,6 +76,7 @@ function PdfPageView({
   const [error, setError] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const textLayerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const node = wrapperRef.current
@@ -90,8 +96,10 @@ function PdfPageView({
   useEffect(() => {
     if (!visible || canvasRef.current === null) return
     const canvas = canvasRef.current
+    const textContainer = textLayerRef.current
     let cancelled = false
     let cancel: (() => void) | null = null
+    let cancelText: (() => void) | null = null
     renderPdfPage(pdf, pageNumber, canvas, scale)
       .then((rendered) => {
         cancel = rendered.cancel
@@ -105,9 +113,20 @@ function PdfPageView({
       .catch((caught: unknown) => {
         if (!cancelled) setError(getErrorMessage(caught))
       })
+    if (textContainer !== null) {
+      renderPdfTextLayer(pdf, pageNumber, textContainer, scale)
+        .then((rendered) => {
+          cancelText = rendered.cancel
+          if (cancelled) rendered.cancel()
+        })
+        .catch(() => {
+          // The canvas remains readable when a malformed text layer fails.
+        })
+    }
     return () => {
       cancelled = true
       if (cancel !== null) cancel()
+      if (cancelText !== null) cancelText()
     }
   }, [visible, pdf, pageNumber, scale])
 
@@ -130,6 +149,13 @@ function PdfPageView({
     >
       {visible ? (
         <canvas ref={canvasRef} className="pdf-canvas" data-testid="pdf-canvas" />
+      ) : null}
+      {visible ? (
+        <div
+          ref={textLayerRef}
+          className="pdf-text-layer"
+          data-testid="pdf-text-layer"
+        />
       ) : null}
       {visible
         ? pageHighlights.map((region, index) => (
