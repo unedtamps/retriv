@@ -10,6 +10,8 @@ import { ChatSidebar } from './ChatSidebar'
 import { ChatProcessingBanner } from './ChatProcessingBanner'
 
 const SIDEBAR_KEY = 'retriv.chat.sidebar'
+/** Distance from the bottom that still counts as "following the stream". */
+const FOLLOW_THRESHOLD_PX = 48
 
 const SUGGESTIONS = [
   'What is in this workspace?',
@@ -103,16 +105,31 @@ export function AgentChatPage({
   })
   const [historyOpen, setHistoryOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const followRef = useRef(true)
   const turns = useMemo(() => groupTurns(items), [items])
   const empty = items.length === 0
   const closeHistory = useCallback(() => setHistoryOpen(false), [])
   const activeRun: ProcessingRun | null =
     runs.runs.find((run) => run.workspace_id === workspace.id) ?? null
 
-  useEffect(() => {
+  const scrollToBottom = useCallback(() => {
     const scroller = scrollRef.current
     if (scroller !== null) scroller.scrollTop = scroller.scrollHeight
-  }, [items, busy])
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    const scroller = scrollRef.current
+    if (scroller === null) return
+    const distance =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+    followRef.current = distance <= FOLLOW_THRESHOLD_PX
+  }, [])
+
+  useEffect(() => {
+    // Streaming updates only follow the bottom while the user is already
+    // there. Scrolling up hands control back to the reader.
+    if (followRef.current) scrollToBottom()
+  }, [items, busy, scrollToBottom])
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? 'open' : 'collapsed')
@@ -125,12 +142,17 @@ export function AgentChatPage({
     return () => document.body.classList.remove('chat-viewport')
   }, [])
 
+  const sendMessage = () => {
+    followRef.current = true
+    void send()
+  }
+
   const composer = (
     <form
       className="chat-composer"
       onSubmit={(event) => {
         event.preventDefault()
-        void send()
+        sendMessage()
       }}
     >
       <textarea
@@ -197,6 +219,7 @@ export function AgentChatPage({
               className="chat-new-task"
               aria-label="New task"
               onClick={() => {
+                followRef.current = true
                 newConversation()
                 setHistoryOpen(false)
               }}
@@ -207,7 +230,12 @@ export function AgentChatPage({
           </div>
         )}
 
-        <div ref={scrollRef} data-testid="chat-transcript" className="chat-scroll">
+        <div
+          ref={scrollRef}
+          data-testid="chat-transcript"
+          className="chat-scroll"
+          onScroll={handleScroll}
+        >
           <div className="chat-column">
             {activeRun === null ? null : <ChatProcessingBanner run={activeRun} />}
 

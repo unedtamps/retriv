@@ -1011,6 +1011,33 @@ describe('dashboard application', () => {
     expect(transcript.querySelector('.animate-pulse')).toBeNull()
   })
 
+  it('leaves the transcript where the reader scrolled while the answer streams', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi(admin, [workspace], undefined, {}, {}, {}, {}, { holdBeforeFinalMs: 750 })
+    const user = userEvent.setup()
+    writeSessionToken('member-token')
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+
+    const transcript = await screen.findByTestId('chat-transcript')
+    Object.defineProperty(transcript, 'scrollHeight', {
+      configurable: true,
+      value: 1200,
+    })
+    Object.defineProperty(transcript, 'clientHeight', {
+      configurable: true,
+      value: 500,
+    })
+    transcript.scrollTop = 0
+    fireEvent.scroll(transcript)
+
+    expect(await screen.findByText(/The workspace holds one report\./)).toBeInTheDocument()
+    expect(transcript.scrollTop).toBe(0)
+  })
+
   it('does not abort the first message of a new chat while the draft promotes', async () => {
     window.history.replaceState(null, '', '/dashboard?view=chat')
     installApi(admin, [workspace], undefined, {}, {}, {}, {}, { holdBeforeFinalMs: 500 })
