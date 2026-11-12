@@ -20,7 +20,7 @@ import {
   renderPdfTextLayer,
   type LoadedPdf,
 } from '../lib/pdf'
-import type { DocumentUpload, PageTextLine, Workspace } from '../types'
+import type { DocumentUpload, Workspace } from '../types'
 
 export interface PdfHighlightRegion {
   /** 1-based page number. */
@@ -60,7 +60,7 @@ function PdfPageView({
   scale,
   defaultSize,
   highlights,
-  ocrLines,
+  eager,
   scrollRoot,
 }: {
   pdf: LoadedPdf['pdf']
@@ -68,17 +68,26 @@ function PdfPageView({
   scale: number
   defaultSize: PageSize
   highlights: PdfHighlightRegion[]
-  ocrLines: PageTextLine[]
+  eager: boolean
   scrollRoot: RefObject<HTMLDivElement | null>
 }) {
   const [visible, setVisible] = useState(
-    () => typeof IntersectionObserver === 'undefined',
+    () => eager || typeof IntersectionObserver === 'undefined',
   )
+  const [wasEager, setWasEager] = useState(eager)
+
+  // A page can become the current one through the toolbar or a citation. Render
+  // it even when the observer is late, unsupported, or rooted unexpectedly.
+  if (eager !== wasEager) {
+    setWasEager(eager)
+    if (eager) setVisible(true)
+  }
   const [size, setSize] = useState<PageSize | null>(null)
   const [error, setError] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const textLayerRef = useRef<HTMLDivElement>(null)
+  const renderedRef = useRef(false)
 
   useEffect(() => {
     const node = wrapperRef.current
@@ -100,35 +109,33 @@ function PdfPageView({
     const canvas = canvasRef.current
     const textContainer = textLayerRef.current
     let cancelled = false
-    let cancel: (() => void) | null = null
-    let cancelText: (() => void) | null = null
-    renderPdfPage(pdf, pageNumber, canvas, scale)
+    renderedRef.current = false
+    const pageRender = renderPdfPage(pdf, pageNumber, canvas, scale)
+    pageRender.promise
       .then((rendered) => {
-        cancel = rendered.cancel
-        if (cancelled) {
-          rendered.cancel()
-          return
-        }
+        if (cancelled) return
+        renderedRef.current = true
         setSize({ width: rendered.width, height: rendered.height })
         setError(null)
       })
       .catch((caught: unknown) => {
-        if (!cancelled) setError(getErrorMessage(caught))
+        if (cancelled || renderedRef.current) return
+        if (caught instanceof Error && caught.name === 'RenderingCancelledException') {
+          return
+        }
+        setError(getErrorMessage(caught))
       })
-    if (textContainer !== null) {
-      renderPdfTextLayer(pdf, pageNumber, textContainer, scale)
-        .then((rendered) => {
-          cancelText = rendered.cancel
-          if (cancelled) rendered.cancel()
-        })
-        .catch(() => {
-          // The canvas remains readable when a malformed text layer fails.
-        })
-    }
+    const textLayer =
+      textContainer === null
+        ? null
+        : renderPdfTextLayer(pdf, pageNumber, textContainer, scale)
+    textLayer?.promise.catch(() => {
+      // The canvas remains readable when a malformed text layer fails.
+    })
     return () => {
       cancelled = true
-      if (cancel !== null) cancel()
-      if (cancelText !== null) cancelText()
+      pageRender.cancel()
+      textLayer?.cancel()
     }
   }, [visible, pdf, pageNumber, scale])
 
@@ -159,29 +166,7 @@ function PdfPageView({
           data-testid="pdf-text-layer"
         />
       ) : null}
-      {visible && ocrLines.length > 0 ? (
-        <div className="pdf-ocr-layer" data-testid="pdf-ocr-layer">
-          {ocrLines.map((line, index) => {
-            const [x0, y0, x1, y1] = line.bbox
-            const lineHeight = (y1 - y0) * pageHeight
-            return (
-              <span
-                key={index}
-                style={{
-                  left: `${x0 * 100}%`,
-                  top: `${y0 * 100}%`,
-                  width: `${(x1 - x0) * 100}%`,
-                  height: `${(y1 - y0) * 100}%`,
-                  fontSize: `${Math.max(6, lineHeight * 0.8)}px`,
-                  lineHeight: 1,
-                }}
-              >
-                {line.text}
-              </span>
-            )
-          })}
-        </div>
-      ) : null}
+
       {visible
         ? pageHighlights.map((region, index) => (
             <span
@@ -233,7 +218,6 @@ export function DocumentPdfPreview({
   const [defaultSize, setDefaultSize] = useState<PageSize>(FALLBACK_PAGE_SIZE)
   const [zoom, setZoom] = useState(DEFAULT_ZOOM)
   const [error, setError] = useState<string | null>(null)
-  const [ocrPages, setOcrPages] = useState<Record<number, PageTextLine[]>>({})
   const [lastPageProp, setLastPageProp] = useState(page)
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollFrame = useRef<number | null>(null)
@@ -283,27 +267,6 @@ export function DocumentPdfPreview({
     return () => {
       mounted = false
       if (loaded !== null) void loaded.destroy()
-    }
-  }, [document, workspace.id, onUnauthorized])
-
-  useEffect(() => {
-    let mounted = true
-    api
-      .getDocumentTextLayer(workspace.id, document.id)
-      .then(({ pages }) => {
-        if (!mounted) return
-        setOcrPages(
-          Object.fromEntries(
-            pages.map((pageLayer) => [pageLayer.page_no, pageLayer.lines]),
-          ),
-        )
-      })
-      .catch((caught: unknown) => {
-        if (mounted && isUnauthorized(caught)) onUnauthorized()
-        // A document without OCR lowers to the ordinary canvas/text layer.
-      })
-    return () => {
-      mounted = false
     }
   }, [document, workspace.id, onUnauthorized])
 
@@ -472,7 +435,7 @@ export function DocumentPdfPreview({
                 scale={zoom}
                 defaultSize={defaultSize}
                 highlights={highlights}
-                ocrLines={ocrPages[pageNumber] ?? []}
+                eager={pageNumber === currentPage}
                 scrollRoot={scrollRef}
               />
             )

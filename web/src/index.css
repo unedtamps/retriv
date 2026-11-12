@@ -740,31 +740,6 @@
   background: rgb(0 90 255 / 0.25);
 }
 
-/* Selectable OCR text for scanned pages, positioned from provenance boxes. */
-.pdf-ocr-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.pdf-ocr-layer span {
-  position: absolute;
-  overflow: hidden;
-  color: transparent;
-  white-space: nowrap;
-  cursor: text;
-  pointer-events: auto;
-  -webkit-user-select: text;
-  user-select: text;
-  transform-origin: 0 0;
-}
-
-.pdf-ocr-layer ::selection {
-  background: rgb(0 90 255 / 0.25);
-}
-
 .pdf-highlight {
   position: absolute;
   z-index: 1;

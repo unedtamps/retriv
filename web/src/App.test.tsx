@@ -14,12 +14,12 @@ vi.mock('./lib/pdf', () => ({
     pdf: { numPages: 3 },
     destroy: vi.fn(async () => undefined),
   })),
-  renderPdfPage: vi.fn(async () => ({
-    width: 600,
-    height: 800,
+  renderPdfPage: vi.fn(() => ({
+    promise: Promise.resolve({ width: 600, height: 800 }),
     cancel: vi.fn(),
   })),
-  renderPdfTextLayer: vi.fn(async () => ({
+  renderPdfTextLayer: vi.fn(() => ({
+    promise: Promise.resolve(),
     cancel: vi.fn(),
   })),
 }))
@@ -243,24 +243,6 @@ function installApi(
       return new Response(await body.arrayBuffer(), {
         status: 200,
         headers: { 'Content-Type': body.type || 'application/pdf' },
-      })
-    }
-    const textLayer = url.match(
-      /^\/v1\/workspaces\/[^/]+\/documents\/[^/]+\/text-layer$/,
-    )
-    if (textLayer !== null && (init?.method === undefined || init.method === 'GET')) {
-      return json({
-        pages: [
-          {
-            page_no: 2,
-            lines: [
-              {
-                text: 'Scanned cited line',
-                bbox: [0.1, 0.6, 0.5, 0.65],
-              },
-            ],
-          },
-        ],
       })
     }
     const chunkRegions = url.match(
@@ -1010,7 +992,6 @@ describe('dashboard application', () => {
     expect(await within(viewer).findByText('of 3')).toBeInTheDocument()
     expect(within(viewer).getAllByTestId('pdf-canvas')).toHaveLength(3)
     expect(within(viewer).getAllByTestId('pdf-text-layer')).toHaveLength(3)
-    expect(await within(viewer).findByText('Scanned cited line')).toBeInTheDocument()
     await waitFor(() => expect(viewer.querySelector('.pdf-highlight')).not.toBeNull())
     const highlight = viewer.querySelector('.pdf-highlight') as HTMLElement
     expect(highlight.style.left).toBe('10%')
