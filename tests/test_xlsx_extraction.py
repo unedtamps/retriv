@@ -4,8 +4,8 @@ A workbook is a folder of tables and a few pictures. These tests pin the
 three contracts at once: every tabular sheet lands in the row store under
 its own name, a header that took two merged rows comes out as composed
 column names, and the pictures and charts a CSV cannot carry are described
-by the vision stage and served as image rows -- while Qdrant stays empty,
-exactly as it does for a CSV.
+by the vision stage and served as image rows -- while the embedding ledger
+stays empty, exactly as it does for a CSV.
 """
 
 import json
@@ -203,7 +203,7 @@ async def test_xlsx_visuals_are_described_and_stored(
 
     The chart is re-rendered from the series the file references, so the
     vision stage sees the graph a reader sees. The description is stored
-    beside the picture and the document's Qdrant presence stays empty,
+    beside the picture and the document's embedding ledger stays empty,
     exactly as for a CSV.
     """
     storage = FakeStorage()

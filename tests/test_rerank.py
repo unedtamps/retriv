@@ -1,4 +1,4 @@
-"""The optional Laya reranker: ordering, threshold and fail-open behaviour."""
+"""The optional Laya and BGE rerankers: ordering, blending and fail-open."""
 
 import json
 from uuid import uuid4

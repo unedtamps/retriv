@@ -31,8 +31,6 @@ from app.processing.service import (
 )
 from tests.conftest import SeededEntities
 
-pytestmark = pytest.mark.asyncio
-
 
 def new_document(workspace_id: UUID, media_type: str = PDF_MEDIA_TYPE) -> Document:
     import hashlib

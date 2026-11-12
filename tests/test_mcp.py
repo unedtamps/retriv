@@ -50,7 +50,6 @@ from app.retrieval.sql import (
     RowQuery,
     RowQueryError,
     RowQueryResult,
-    RowResult,
 )
 from app.sections import encode_section_key
 from app.security.api_keys import hash_api_key, mint_api_key
@@ -207,18 +206,6 @@ def make_source(workspace_id: UUID, *, text: str = "hello") -> ContextSource:
         section_path=[],
         page_numbers=[],
         text=text,
-    )
-
-
-def make_row(document_id: UUID, workspace_id: UUID) -> RowResult:
-    return RowResult(
-        chunk_id=uuid4(),
-        workspace_id=workspace_id,
-        document_id=document_id,
-        processing_run_id=uuid4(),
-        row_number=1,
-        data={"name": "a"},
-        columns=["name"],
     )
 
 

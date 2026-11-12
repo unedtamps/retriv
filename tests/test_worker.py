@@ -80,8 +80,6 @@ from tests.document_samples import (
     csv_with_bom_bytes,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 class FakeStorage(ArtifactStorage):
     def __init__(self) -> None:
@@ -1870,12 +1868,6 @@ async def wait_until(
             return
         await asyncio.sleep(0.02)
     raise AssertionError(f"timed out: {message}")
-
-
-async def run_reached(
-    session_factory: async_sessionmaker[AsyncSession], run_id: UUID, status: str
-) -> bool:
-    return await run_status(session_factory, run_id) == status
 
 
 async def test_a_second_document_starts_parsing_while_the_first_is_still_indexing(

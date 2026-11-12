@@ -6,15 +6,12 @@ over that scope rather than a way around it.
 """
 
 import httpx
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import WorkspaceMembership
 from tests.conftest import SeededEntities
 from tests.document_samples import pdf_bytes
-
-pytestmark = pytest.mark.asyncio
 
 
 async def upload(

@@ -123,26 +123,6 @@ def office_archive(
     return output.getvalue()
 
 
-def xlsx_bytes() -> bytes:
-    """A valid but now-unsupported spreadsheet.
-
-    Kept so the API can be tested refusing it. It used to be the third
-    accepted upload type, which is why it still needs a sample: the
-    validator accepted it and the extractor then failed, so an upload that
-    returned 202 was guaranteed to break later.
-    """
-    content_types = b"""<?xml version="1.0" encoding="UTF-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Override PartName="/xl/workbook.xml"
-    ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-</Types>"""
-    return office_archive(
-        content_types,
-        "xl/workbook.xml",
-        b'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
-    )
-
-
 def landmark_pdf_bytes() -> bytes:
     """Two pages whose headings are landmarks set in body type."""
     document = pymupdf.open()

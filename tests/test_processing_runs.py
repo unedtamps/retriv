@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import httpx
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -26,8 +25,6 @@ from app.db.models import (
     WorkspaceMembership,
 )
 from tests.conftest import SeededEntities
-
-pytestmark = pytest.mark.asyncio
 
 
 async def seed_run(

@@ -647,9 +647,9 @@ async def test_delete_marks_the_document_and_queues_the_cleanup(
 ) -> None:
     """The row survives the request.
 
-    The worker needs the embedding ledger to find the Qdrant points, so
-    the document is only removed once that cleanup has happened. The
-    raw object goes immediately because nothing downstream needs it.
+    The worker needs the embedding ledger to remove the vectors, so the
+    document is only removed once that cleanup has happened. The raw object
+    goes immediately because nothing downstream needs it.
     """
     content = pdf_bytes()
     created = await upload(client, auth_headers, entities.finance.id, "report.pdf", content)
