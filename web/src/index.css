@@ -714,6 +714,7 @@
 .pdf-text-layer :is(span, br) {
   position: absolute;
   color: transparent;
+  -webkit-text-fill-color: transparent;
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
@@ -737,6 +738,10 @@
 }
 
 .pdf-text-layer ::selection {
+  /* The canvas below already carries the visible glyphs. Leaving the text
+   * layer transparent while selected avoids a second, white copy on top. */
+  color: transparent;
+  -webkit-text-fill-color: transparent;
   background: rgb(0 90 255 / 0.25);
 }
 
