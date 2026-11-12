@@ -5,6 +5,14 @@ import type { AgentChatSource } from '../types'
 
 const MarkdownText = lazy(() => import('./MarkdownText').then((m) => ({ default: m.MarkdownText })))
 
+export interface CitationTarget {
+  documentId: string
+  workspaceId?: string
+  filename: string
+  page?: number
+  ordinal?: number
+}
+
 interface ChatAnswerCardProps {
   calls: ToolStep[]
   texts: string[]
@@ -12,6 +20,7 @@ interface ChatAnswerCardProps {
   streaming: boolean
   busy: boolean
   errors: string[]
+  onOpenSource?: (target: CitationTarget) => void
 }
 
 interface SourceRef {
@@ -20,6 +29,7 @@ interface SourceRef {
   ordinal?: number
   page?: number
   documentId?: string
+  workspaceId?: string
 }
 
 const SOURCE_LINE = /^\[(\d+)\]\s+filename=("(?:\\.|[^"\\])*")(.*)$/gm
@@ -38,14 +48,16 @@ function parseSources(calls: ToolStep[]): SourceRef[] {
       }
       const rest = match[3]
       const ordinalMatch = /\bordinal=(\d+)/.exec(rest)
-      const pageMatch = /\bpages=(\d+)/.exec(rest)
+      const pageMatch = /\b(?:page_number|pages)=(\d+)/.exec(rest)
       const documentMatch = /\bdocument_id=([0-9a-fA-F-]{36})/.exec(rest)
+      const workspaceMatch = /\bworkspace_id=([0-9a-fA-F-]{36})/.exec(rest)
       const source: SourceRef = {
         index,
         filename,
         ordinal: ordinalMatch === null ? undefined : Number.parseInt(ordinalMatch[1], 10),
         page: pageMatch === null ? undefined : Number.parseInt(pageMatch[1], 10),
         documentId: documentMatch?.[1],
+        workspaceId: workspaceMatch?.[1],
       }
       const key = `${source.documentId ?? source.filename}:${source.ordinal ?? source.index}`
       if (seen.has(key)) continue
@@ -64,6 +76,7 @@ function serverSources(sources: AgentChatSource[]): SourceRef[] {
       ordinal: source.ordinal,
       page: source.page_numbers?.[0],
       documentId: source.document_id,
+      workspaceId: source.workspace_id,
     }))
     .sort((left, right) => left.index - right.index)
 }
@@ -71,6 +84,17 @@ function serverSources(sources: AgentChatSource[]): SourceRef[] {
 function documentRef(source: SourceRef | undefined): string | null {
   if (source?.documentId === undefined) return null
   return `DOC-${source.documentId.replaceAll('-', '').slice(-4).toUpperCase()}`
+}
+
+function citationTarget(source: SourceRef): CitationTarget | null {
+  if (source.documentId === undefined) return null
+  return {
+    documentId: source.documentId,
+    workspaceId: source.workspaceId,
+    filename: source.filename,
+    page: source.page,
+    ordinal: source.ordinal,
+  }
 }
 
 function citationLocation(source: SourceRef): string {
@@ -115,6 +139,7 @@ export function ChatAnswerCard({
   streaming,
   busy,
   errors,
+  onOpenSource,
 }: ChatAnswerCardProps) {
   const [trailOpen, setTrailOpen] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(false)
@@ -279,16 +304,41 @@ export function ChatAnswerCard({
 
           {sourcesOpen ? (
             <div className="chat-citations" aria-label="Cited sources">
-              {sources.map((source) => (
-                <span
-                  className="chat-citation"
-                  id={`${citationPrefix}-${source.index}`}
-                  key={`${source.documentId ?? source.filename}-${source.ordinal ?? source.index}`}
-                >
-                  <span className="chat-citation-index">[{source.index}]</span>
-                  {source.filename}, {citationLocation(source)}
-                </span>
-              ))}
+              {sources.map((source) => {
+                const target = citationTarget(source)
+                const label = `${source.filename}, ${citationLocation(source)}`
+                const content = (
+                  <>
+                    <span className="chat-citation-index">[{source.index}]</span>
+                    {label}
+                  </>
+                )
+                const key = `${source.documentId ?? source.filename}-${source.ordinal ?? source.index}`
+                if (target === null || onOpenSource === undefined) {
+                  return (
+                    <span
+                      className="chat-citation"
+                      id={`${citationPrefix}-${source.index}`}
+                      key={key}
+                    >
+                      {content}
+                    </span>
+                  )
+                }
+                return (
+                  <button
+                    type="button"
+                    className="chat-citation chat-citation-open"
+                    id={`${citationPrefix}-${source.index}`}
+                    key={key}
+                    title={`Open ${source.filename}`}
+                    aria-label={`Open ${label}`}
+                    onClick={() => onOpenSource(target)}
+                  >
+                    {content}
+                  </button>
+                )
+              })}
             </div>
           ) : null}
         </div>

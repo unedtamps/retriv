@@ -122,6 +122,11 @@ def collect_pdf_images(
                         caption=_page_caption(page.markdown),
                         width=width,
                         height=height,
+                        bbox=_normalized_page_bbox(
+                            pdf,
+                            page.page_no,
+                            (figure.x0, figure.y0, figure.x1, figure.y1),
+                        ),
                     )
                 )
             continue
@@ -153,6 +158,9 @@ def collect_pdf_images(
                     caption=_page_caption(page.markdown),
                     width=width,
                     height=height,
+                    bbox=_normalized_page_bbox(
+                        pdf, page.page_no, info["bbox"]
+                    ),
                 )
             )
             refs.append(ref)
@@ -223,9 +231,33 @@ def collect_vector_charts(
                     caption=_page_caption(page.markdown),
                     width=width,
                     height=height,
+                    bbox=_normalized_page_bbox(
+                        pdf,
+                        page.page_no,
+                        (region.x0, region.y0, region.x1, region.y1),
+                    ),
                 )
             )
     return images
+
+
+def _normalized_page_bbox(
+    pdf: pymupdf.Document,
+    page_no: int,
+    bbox: tuple[float, float, float, float],
+) -> tuple[float, float, float, float] | None:
+    page = pdf[page_no - 1]
+    width = page.rect.width
+    height = page.rect.height
+    if width <= 0 or height <= 0:
+        return None
+    x0, y0, x1, y1 = bbox
+    return (
+        max(0.0, min(1.0, x0 / width)),
+        max(0.0, min(1.0, y0 / height)),
+        max(0.0, min(1.0, x1 / width)),
+        max(0.0, min(1.0, y1 / height)),
+    )
 
 
 def _chart_regions(pdf: pymupdf.Document, page_no: int) -> list[pymupdf.Rect]:

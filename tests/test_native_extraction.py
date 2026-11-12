@@ -14,12 +14,15 @@ from typing import Any
 import pytest
 
 from app.documents.validation import DOCX_MEDIA_TYPE, PDF_MEDIA_TYPE
+from app.extraction import markdown_ir
 from app.extraction.base import ExtractionResult
 from app.extraction.chunker import MarkdownChunker
 from app.extraction.docx_ir import build_docx_blocks
 from app.extraction.images import picture_marker, picture_refs
 from app.extraction.markdown_ir import (
     DocumentBlock,
+    PageLine,
+    SourceRegion,
     parse_markdown_blocks,
     promote_landmarks,
 )
@@ -201,6 +204,77 @@ def test_a_docx_chunk_has_no_pages_and_an_empty_section_key_at_the_top() -> None
 
     assert chunks[0].page_numbers == []
     assert chunks[0].provenance["page_regions"] == []
+
+
+def test_chunk_provenance_carries_normalized_source_regions() -> None:
+    region = SourceRegion(
+        page_no=2,
+        bbox=(0.1, 0.2, 0.5, 0.3),
+    )
+    chunks = a_chunker().chunk(
+        [
+            DocumentBlock(
+                kind="text",
+                text="A cited paragraph.",
+                page_no=2,
+                regions=(region,),
+            )
+        ]
+    )
+
+    assert chunks[0].provenance["regions"] == [
+        {
+            "page_no": 2,
+            "bbox": [0.1, 0.2, 0.5, 0.3],
+            "kind": "text",
+            "ref": "",
+            "anchor": "",
+            "text": "",
+        }
+    ]
+
+
+def test_page_lines_attach_to_the_block_that_contains_their_text() -> None:
+    blocks = parse_markdown_blocks(
+        "A cited paragraph.\n",
+        page_no=2,
+        lines=(
+            PageLine(
+                text="A cited paragraph.",
+                page_no=2,
+                bbox=(0.1, 0.2, 0.5, 0.3),
+            ),
+        ),
+    )
+
+    assert blocks[0].regions[0].page_no == 2
+    assert blocks[0].regions[0].bbox == (0.1, 0.2, 0.5, 0.3)
+
+
+def test_ocr_lines_keep_normalized_boxes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pymupdf
+
+    class FakeOcr:
+        def read(self, pixmap: pymupdf.Pixmap) -> list[tuple[float, float, float, float, str]]:
+            del pixmap
+            return [
+                (10.0, 20.0, 100.0, 30.0, "Hello"),
+                (120.0, 20.0, 80.0, 30.0, "world"),
+                (10.0, 80.0, 100.0, 30.0, "Second"),
+            ]
+
+    monkeypatch.setattr(markdown_ir, "_ocr_engine", lambda: FakeOcr())
+    with pymupdf.open(stream=scanned_pdf_bytes(), filetype="pdf") as pdf:
+        lines = markdown_ir.ocr_page_lines(pdf, 0)
+
+    assert [line.text for line in lines] == ["Hello world", "Second"]
+    for line in lines:
+        assert line.bbox is not None
+        x0, y0, x1, y1 = line.bbox
+        assert 0 <= x0 < x1 <= 1
+        assert 0 <= y0 < y1 <= 1
 
 
 def test_an_image_block_becomes_a_marker_line() -> None:
@@ -617,6 +691,48 @@ def test_a_picture_only_table_still_lifts_its_picture(tmp_path: Path) -> None:
 
     assert len(result.images) == 1
     assert any(picture_refs(c.text) for c in result.chunks)
+
+
+def test_docx_blocks_carry_order_anchors_into_chunks(tmp_path: Path) -> None:
+    import docx
+
+    document = docx.Document()
+    document.add_paragraph("First paragraph.")
+    document.add_paragraph("Second paragraph.")
+    buffer = BytesIO()
+    document.save(buffer)
+    path = write_sample(tmp_path, buffer.getvalue(), "anchors.docx")
+
+    blocks, _images = build_docx_blocks(path, image_render_scale=2.0)
+    assert [block.regions[0].anchor for block in blocks] == [
+        "docx-0",
+        "docx-1",
+    ]
+
+    result = an_extractor().extract(path, media_type=DOCX_MEDIA_TYPE)
+    regions = [
+        region
+        for chunk in result.chunks
+        for region in chunk.provenance.get("regions", [])
+    ]
+    assert regions == [
+        {
+            "page_no": None,
+            "bbox": None,
+            "kind": "docx-block",
+            "ref": "",
+            "anchor": "docx-0",
+            "text": "",
+        },
+        {
+            "page_no": None,
+            "bbox": None,
+            "kind": "docx-block",
+            "ref": "",
+            "anchor": "docx-1",
+            "text": "",
+        },
+    ]
 
 
 def test_docx_heading_styles_map_to_their_own_level(tmp_path: Path) -> None:

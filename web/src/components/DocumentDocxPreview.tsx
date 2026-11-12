@@ -9,6 +9,8 @@ interface DocumentDocxPreviewProps {
   document: DocumentUpload
   workspace: Workspace
   onUnauthorized: () => void
+  /** Block anchors such as ``docx-12`` from the cited chunk. */
+  anchors?: string[]
 }
 
 /**
@@ -28,6 +30,7 @@ export function DocumentDocxPreview({
   document,
   workspace,
   onUnauthorized,
+  anchors = [],
 }: DocumentDocxPreviewProps) {
   const [markup, setMarkup] = useState<string | null>(() => cachedDocxMarkup(document.sha256))
   const [error, setError] = useState<string | null>(null)
@@ -64,7 +67,38 @@ export function DocumentDocxPreview({
     // The chrome goes last so its rules win every specificity tie against the
     // stylesheet that came with the document.
     root.innerHTML = `${markup}${SHELL_STYLES}`
-  }, [markup])
+
+    // docx-preview does not preserve source paragraph IDs. The extractor
+    // numbered text and tables in body order, so the rendered paragraphs and
+    // tables are tagged in the same order. Empty paragraphs are skipped, as
+    // they were in extraction.
+    const elements = [
+      ...root.querySelectorAll<HTMLElement>(
+        'section.retriv-docx p, section.retriv-docx table',
+      ),
+    ].filter(
+      (element) =>
+        element.tagName === 'TABLE' ||
+        (element.closest('table') === null &&
+          (element.textContent ?? '').trim() !== ''),
+    )
+    elements.forEach((element, index) =>
+      element.setAttribute('data-docx-index', String(index)),
+    )
+
+    const targets = anchors.flatMap((anchor) => {
+      const match = /^docx-(\d+)$/.exec(anchor)
+      if (match === null) return []
+      const target = elements[Number.parseInt(match[1], 10)]
+      if (target === undefined) return []
+      target.classList.add('docx-cited')
+      return [target]
+    })
+    targets[0]?.scrollIntoView?.({ block: 'center' })
+    return () => {
+      for (const target of targets) target.classList.remove('docx-cited')
+    }
+  }, [markup, anchors])
 
   if (error !== null) {
     return (
@@ -147,6 +181,12 @@ const SHELL_STYLES = `
 }
 .retriv-docx-wrapper > section.retriv-docx a:hover {
   color: #164a83;
+}
+.retriv-docx-wrapper > section.retriv-docx .docx-cited {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  scroll-margin-top: 24px;
 }
 @media (prefers-reduced-motion: no-preference) {
   .retriv-docx-wrapper > section.retriv-docx {

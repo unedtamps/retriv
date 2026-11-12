@@ -603,6 +603,201 @@
   box-shadow: none;
 }
 
+/* PDF.js viewer: one page at a time, with provenance rectangles on top. */
+.pdf-viewer {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--color-paper);
+}
+
+.pdf-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+  padding: 7px 10px;
+}
+
+.pdf-page-count,
+.pdf-zoom {
+  display: flex;
+  min-width: 6.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--color-ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.pdf-page-input {
+  width: 3.2rem;
+  border: 1px solid var(--color-line);
+  border-radius: 2px;
+  background: var(--color-paper);
+  padding: 2px 3px;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: center;
+}
+
+.pdf-page-input:disabled {
+  opacity: 0.6;
+}
+
+.pdf-zoom {
+  min-width: 3.2rem;
+}
+
+.pdf-toolbar-spacer {
+  flex: 1;
+}
+
+.pdf-scroll {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+}
+
+.pdf-page-shell {
+  position: relative;
+  overflow: hidden;
+  margin: 0 auto 16px;
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.24),
+    0 14px 36px rgb(0 0 0 / 0.2);
+}
+
+.pdf-page-shell[data-page] {
+  scroll-margin-top: 12px;
+}
+
+.pdf-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/*
+ * The transparent text layer PDF.js builds over the canvas. Without it the
+ * viewer is an image: selection and copy have no DOM text to act on.
+ */
+.pdf-text-layer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  overflow: clip;
+  color-scheme: only light;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+}
+
+.pdf-text-layer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer ::selection {
+  /* The canvas below already carries the visible glyphs. Leaving the text
+   * layer transparent while selected avoids a second, white copy on top. */
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: rgb(0 90 255 / 0.25);
+}
+
+.pdf-highlight {
+  position: absolute;
+  z-index: 1;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.pdf-loading {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--color-paper) 82%, transparent);
+  color: var(--color-ink-muted);
+  font-size: 0.8rem;
+}
+
+.pdf-loading-full {
+  position: static;
+  flex: 1;
+}
+
+.pdf-error {
+  margin: 18px;
+}
+
+.pdf-page-error {
+  position: absolute;
+  z-index: 4;
+  inset: 12px;
+  align-self: start;
+}
+
+@media (max-width: 640px) {
+  .pdf-scroll {
+    padding: 10px;
+  }
+
+  .pdf-toolbar {
+    padding: 6px 8px;
+  }
+
+  .pdf-page-count {
+    min-width: 5.5rem;
+  }
+}
+
 @keyframes document-focus-tint {
   0% {
     background-color: var(--color-accent-soft);
@@ -1289,6 +1484,22 @@ body.chat-viewport {
   line-height: 1.3;
   color: var(--color-chat-muted);
   transition: border-color 150ms, background-color 150ms;
+}
+
+.chat-citation-open {
+  cursor: pointer;
+  text-align: left;
+}
+
+.chat-citation-open:hover {
+  border-color: var(--color-chat-line-strong);
+  background: var(--color-chat-soft);
+  color: var(--color-chat-ink);
+}
+
+.chat-citation-open:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .chat-citation-index {

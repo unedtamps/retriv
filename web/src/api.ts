@@ -11,11 +11,13 @@ import type {
   RetrievalSettings,
   RetrievalTestResult,
   RetrievalUpdate,
+  ChunkRegions,
   CreatedApiKey,
   CreatedUser,
   CurrentUser,
   DocumentList,
   DocumentSearchResponse,
+  DocumentTextLayer,
   DocumentUpload,
   GeneratedPassword,
   MemberCandidateList,
@@ -366,6 +368,52 @@ export const api = {
     const search = query.toString()
     return request<DocumentList>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents${search === '' ? '' : `?${search}`}`,
+      { signal },
+    )
+  },
+
+  /**
+   * One document's metadata.
+   *
+   * Used when a chat citation names a document the current documents page has
+   * not loaded, so the source chip can still open the viewer.
+   */
+  getDocument(
+    workspaceId: string,
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentUpload> {
+    return request<DocumentUpload>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+      { signal },
+    )
+  },
+
+  /**
+   * The source regions behind one cited chunk, for the PDF overlay.
+   */
+  getChunkRegions(
+    workspaceId: string,
+    documentId: string,
+    ordinal: number,
+    signal?: AbortSignal,
+  ): Promise<ChunkRegions> {
+    return request<ChunkRegions>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/chunks/${ordinal}/regions`,
+      { signal },
+    )
+  },
+
+  /**
+   * OCR text lines for scanned pages, used when the PDF has no text layer.
+   */
+  getDocumentTextLayer(
+    workspaceId: string,
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentTextLayer> {
+    return request<DocumentTextLayer>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/text-layer`,
       { signal },
     )
   },

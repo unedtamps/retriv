@@ -96,6 +96,33 @@ export interface DocumentList {
   limit: number
 }
 
+export interface DocumentSourceRegion {
+  page_no: number | null
+  bbox: [number, number, number, number] | null
+  kind: string
+  ref: string
+  anchor: string
+  text: string
+}
+
+export interface ChunkRegions {
+  regions: DocumentSourceRegion[]
+}
+
+export interface PageTextLine {
+  text: string
+  bbox: [number, number, number, number]
+}
+
+export interface PageTextLayer {
+  page_no: number
+  lines: PageTextLine[]
+}
+
+export interface DocumentTextLayer {
+  pages: PageTextLayer[]
+}
+
 export interface ProcessingRun {
   id: string
   workspace_id: string

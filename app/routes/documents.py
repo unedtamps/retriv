@@ -22,10 +22,23 @@ from app.api.dependencies import (
     UploadWorkspaceContext,
     WorkspaceContext,
 )
-from app.api.schemas import DocumentListResponse, DocumentResponse
+from app.api.schemas import (
+    ChunkRegionsResponse,
+    DocumentListResponse,
+    DocumentResponse,
+    DocumentSourceRegion,
+    DocumentTextLayerResponse,
+    PageTextLayer,
+    PageTextLine,
+)
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
-from app.db.models import Document, DocumentWorkspace, ProcessingRun
+from app.db.models import (
+    Document,
+    DocumentChunk,
+    DocumentWorkspace,
+    ProcessingRun,
+)
 from app.db.session import get_session
 from app.documents.json_protocol import (
     JsonLimits,
@@ -240,6 +253,138 @@ async def get_document_metadata(
 ) -> DocumentResponse:
     run = await load_active_run(session, document.document)
     return document_response(document.document, document.link, run)
+
+
+@router.get(
+    "/{document_id}/chunks/{ordinal}/regions",
+    response_model=ChunkRegionsResponse,
+)
+async def get_chunk_regions(
+    document: DocumentContext,
+    ordinal: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ChunkRegionsResponse:
+    """The source regions a chunk was extracted from.
+
+    The chat citation already carries the document and chunk ordinal. This
+    route keeps the viewer independent of retrieval's row shape: it can ask for
+    the regions only when a PDF is actually opened.
+    """
+    provenance = await session.scalar(
+        select(DocumentChunk.provenance).where(
+            DocumentChunk.document_id == document.document.id,
+            DocumentChunk.processing_run_id
+            == document.document.active_processing_run_id,
+            DocumentChunk.ordinal == ordinal,
+        )
+    )
+    if provenance is None:
+        raise AppError(
+            status_code=404,
+            code="chunk_not_found",
+            title="Chunk not found",
+            detail="The cited chunk does not exist in the active document run.",
+        )
+    regions: list[DocumentSourceRegion] = []
+    for entry in provenance.get("regions", []):
+        if not isinstance(entry, dict):
+            continue
+        anchor = entry.get("anchor")
+        if isinstance(anchor, str) and anchor.strip() != "":
+            regions.append(
+                DocumentSourceRegion(
+                    kind=str(entry.get("kind", "docx-block")),
+                    ref=str(entry.get("ref", "")),
+                    anchor=anchor,
+                )
+            )
+            continue
+        page_no = entry.get("page_no")
+        bbox = entry.get("bbox")
+        if (
+            not isinstance(page_no, int)
+            or page_no < 1
+            or not isinstance(bbox, (list, tuple))
+            or len(bbox) != 4
+            or not all(isinstance(value, (int, float)) for value in bbox)
+        ):
+            continue
+        x0, y0, x1, y1 = (float(value) for value in bbox)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        regions.append(
+            DocumentSourceRegion(
+                page_no=page_no,
+                bbox=(x0, y0, x1, y1),
+                kind=str(entry.get("kind", "text")),
+                ref=str(entry.get("ref", "")),
+                text=str(entry.get("text", "")),
+            )
+        )
+    return ChunkRegionsResponse(regions=regions)
+
+
+@router.get(
+    "/{document_id}/text-layer",
+    response_model=DocumentTextLayerResponse,
+)
+async def get_document_text_layer(
+    document: DocumentContext,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DocumentTextLayerResponse:
+    """OCR lines for scanned pages, reconstructed from chunk provenance.
+
+    Born-digital pages already have PDF.js's own text layer; this route is
+    only the fallback for pages whose words came from OCR. Bounding boxes are
+    normalized so the viewer can place the text over the page it belongs to.
+    """
+    provenances = (
+        await session.scalars(
+            select(DocumentChunk.provenance).where(
+                DocumentChunk.document_id == document.document.id,
+                DocumentChunk.processing_run_id
+                == document.document.active_processing_run_id,
+            )
+        )
+    ).all()
+    pages: dict[int, dict[tuple[float, float, float, float], PageTextLine]] = {}
+    for provenance in provenances:
+        for entry in provenance.get("regions", []):
+            if not isinstance(entry, dict) or entry.get("kind") != "ocr":
+                continue
+            text = entry.get("text")
+            page_no = entry.get("page_no")
+            bbox = entry.get("bbox")
+            if (
+                not isinstance(text, str)
+                or text.strip() == ""
+                or not isinstance(page_no, int)
+                or page_no < 1
+                or not isinstance(bbox, (list, tuple))
+                or len(bbox) != 4
+                or not all(isinstance(value, (int, float)) for value in bbox)
+            ):
+                continue
+            x0, y0, x1, y1 = (float(value) for value in bbox)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            page = pages.setdefault(page_no, {})
+            page[(x0, y0, x1, y1)] = PageTextLine(
+                text=text,
+                bbox=(x0, y0, x1, y1),
+            )
+    return DocumentTextLayerResponse(
+        pages=[
+            PageTextLayer(
+                page_no=page_no,
+                lines=sorted(
+                    page.values(),
+                    key=lambda line: (line.bbox[1], line.bbox[0]),
+                ),
+            )
+            for page_no, page in sorted(pages.items())
+        ]
+    )
 
 
 @router.get("/{document_id}/download")

@@ -23,6 +23,8 @@ import { AdminRerank } from './AdminRerank'
 import { AdminUserPanel } from './AdminUserPanel'
 import { AdminWorkspacesPage } from './AdminWorkspaces'
 import { AgentChatPage } from './AgentChatPage'
+import type { CitationTarget } from './ChatAnswerCard'
+import type { PdfHighlightRegion } from './DocumentPdfPreview'
 import { useAgentConversation } from '../hooks/useAgentConversation'
 import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
@@ -80,7 +82,14 @@ export function Dashboard({
   const [focusDocumentId, setFocusDocumentId] = useState<string | null>(null)
   const [reindexingId, setReindexingId] = useState<string | null>(null)
   const [reindexTarget, setReindexTarget] = useState<DocumentUpload | null>(null)
-  const [viewTarget, setViewTarget] = useState<DocumentUpload | null>(null)
+  const [viewer, setViewer] = useState<{
+    document: DocumentUpload
+    workspace: Workspace
+    page?: number
+    ordinal?: number
+    highlights?: PdfHighlightRegion[]
+    anchors?: string[]
+  } | null>(null)
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DocumentUpload | null>(null)
@@ -111,6 +120,97 @@ export function Dashboard({
 
   function showNotice(message: string, tone: 'success' | 'error' = 'success') {
     setNotice({ message, tone })
+  }
+
+  /**
+   * Open the document behind a chat citation.
+   *
+   * The chat page already knows the workspace, but the documents hook is the
+   * cheap path when it has the row. A citation can outlive the current page of
+   * that hook, so fall back to the single-document endpoint before giving up.
+   */
+  async function openCitation(target: CitationTarget) {
+    const workspace =
+      workspaces.find((entry) => entry.id === target.workspaceId) ??
+      selectedWorkspace
+    if (workspace === null) {
+      showNotice('The cited document is not in a workspace you can open.', 'error')
+      return
+    }
+    if (!workspace.can_download) {
+      showNotice('You do not have permission to open documents in this workspace.', 'error')
+      return
+    }
+    const show = (document: DocumentUpload) => {
+      setViewer({
+        document,
+        workspace,
+        page: target.page,
+        ordinal: target.ordinal,
+      })
+      if (target.ordinal === undefined) return
+      void api
+        .getChunkRegions(workspace.id, document.id, target.ordinal)
+        .then(({ regions }) => {
+          const highlights = regions.flatMap((region) => {
+            const bbox = region.bbox
+            if (region.page_no === null || bbox === null) return []
+            if (
+              region.page_no < 1 ||
+              bbox[2] <= bbox[0] ||
+              bbox[3] <= bbox[1]
+            ) {
+              return []
+            }
+            return [
+              {
+                page: region.page_no,
+                x: bbox[0],
+                y: bbox[1],
+                width: bbox[2] - bbox[0],
+                height: bbox[3] - bbox[1],
+              },
+            ]
+          })
+          const anchors = regions
+            .map((region) => region.anchor)
+            .filter((anchor) => anchor !== '')
+          setViewer((current) =>
+            current !== null &&
+            current.document.id === document.id &&
+            current.workspace.id === workspace.id &&
+            current.ordinal === target.ordinal
+              ? { ...current, highlights, anchors }
+              : current,
+          )
+        })
+        .catch((caught: unknown) => {
+          if (isUnauthorized(caught)) onUnauthorized()
+          // A chunk from an older run has no regions; the page still opens.
+        })
+    }
+    const loaded = documents.data?.items.find(
+      (document) =>
+        document.id === target.documentId && document.workspace_id === workspace.id,
+    )
+    if (loaded !== undefined) {
+      show(loaded)
+      return
+    }
+    try {
+      const document = await api.getDocument(workspace.id, target.documentId)
+      show(document)
+    } catch (caught) {
+      if (isUnauthorized(caught)) {
+        onUnauthorized()
+        return
+      }
+      showNotice(
+        getErrorMessage(caught) ||
+          'The cited document is no longer available in this workspace.',
+        'error',
+      )
+    }
   }
 
   function selectView(view: DashboardView) {
@@ -284,7 +384,12 @@ export function Dashboard({
       ) : selectedWorkspace === null ? (
         <EmptyWorkspace onCreate={isAdmin ? () => setCreateWorkspaceOpen(true) : undefined} />
       ) : activeView === 'chat' && !adminMode && hasMembership ? (
-        <AgentChatPage conversation={conversation} runs={runs} workspace={selectedWorkspace} />
+        <AgentChatPage
+          conversation={conversation}
+          runs={runs}
+          workspace={selectedWorkspace}
+          onOpenSource={(target) => void openCitation(target)}
+        />
       ) : activeView === 'documents' ? (
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}
@@ -295,7 +400,11 @@ export function Dashboard({
           reindexingId={reindexingId}
           onReindex={setReindexTarget}
           canView={selectedWorkspace.can_download}
-          onView={setViewTarget}
+          onView={(document) => {
+            if (selectedWorkspace !== null) {
+              setViewer({ document, workspace: selectedWorkspace })
+            }
+          }}
           onUpload={openUpload}
           onDeleteDocument={setDeleteTarget}
         />
@@ -379,12 +488,15 @@ export function Dashboard({
         onConfirm={deleteDocument}
       />
 
-      {viewTarget === null || selectedWorkspace === null ? null : (
+      {viewer === null ? null : (
         <DocumentViewerDrawer
-          document={viewTarget}
-          workspace={selectedWorkspace}
+          document={viewer.document}
+          workspace={viewer.workspace}
+          page={viewer.page}
+          highlights={viewer.highlights}
+          anchors={viewer.anchors}
           onUnauthorized={onUnauthorized}
-          onClose={() => setViewTarget(null)}
+          onClose={() => setViewer(null)}
         />
       )}
 

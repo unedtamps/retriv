@@ -7,6 +7,23 @@ import { buildDocx, DOCX_MEDIA_TYPE } from './test/docxFixture'
 import { loadChatHistory } from './lib/chatHistoryStore'
 import type { AgentChatSource, CurrentUser, Workspace } from './types'
 
+// jsdom has no canvas/PDF.js worker. The viewer's shell, page controls and
+// citation page target are still exercised against this small fake document.
+vi.mock('./lib/pdf', () => ({
+  loadPdf: vi.fn(async () => ({
+    pdf: { numPages: 3 },
+    destroy: vi.fn(async () => undefined),
+  })),
+  renderPdfPage: vi.fn(() => ({
+    promise: Promise.resolve({ width: 600, height: 800 }),
+    cancel: vi.fn(),
+  })),
+  renderPdfTextLayer: vi.fn(() => ({
+    promise: Promise.resolve(),
+    cancel: vi.fn(),
+  })),
+}))
+
 const admin: CurrentUser = {
   id: 'user-admin',
   username: 'admin',
@@ -226,6 +243,29 @@ function installApi(
       return new Response(await body.arrayBuffer(), {
         status: 200,
         headers: { 'Content-Type': body.type || 'application/pdf' },
+      })
+    }
+    const chunkRegions = url.match(
+      /^\/v1\/workspaces\/[^/]+\/documents\/[^/]+\/chunks\/\d+\/regions$/,
+    )
+    if (chunkRegions !== null && (init?.method === undefined || init.method === 'GET')) {
+      return json({
+        regions: [
+          {
+            page_no: 2,
+            bbox: [0.1, 0.2, 0.5, 0.3],
+            kind: 'text',
+            ref: '',
+            anchor: '',
+          },
+          {
+            page_no: null,
+            bbox: null,
+            kind: 'docx-block',
+            ref: '',
+            anchor: 'docx-0',
+          },
+        ],
       })
     }
     const documentDelete = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)$/)
@@ -902,6 +942,76 @@ describe('dashboard application', () => {
     expect(screen.queryByText(/report\.pdf, page 2/)).not.toBeInTheDocument()
   })
 
+  it('opens a cited document at its page when the source chip is clicked', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    writeSessionToken('member-token')
+    const cited = {
+      id: '11111111-1111-1111-1111-111111111111',
+      workspace_id: workspace.id,
+      original_filename: 'report.pdf',
+      detected_media_type: 'application/pdf',
+      size_bytes: 2048,
+      sha256: 'a'.repeat(64),
+      status: 'ready',
+      created_by_user_id: 'user-owner',
+      created_at: '2026-09-24T08:00:00Z',
+      duplicate: false,
+      row_count: 0,
+    }
+    installApi(admin, [workspace], undefined, {}, {
+      list: { items: [cited], total: 1, offset: 0, limit: 50 },
+    }, {}, {}, {
+      final: 'Net revenue rose by a tenth [1].',
+      sources: [
+        {
+          index: 1,
+          document_id: cited.id,
+          workspace_id: workspace.id,
+          filename: cited.original_filename,
+          ordinal: 3,
+          page_numbers: [2],
+          section_path: ['Revenue'],
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'How did revenue move?')
+    await user.keyboard('{Enter}')
+
+    await user.click(await screen.findByRole('link', { name: '[1]' }))
+    const chip = await screen.findByRole('button', {
+      name: /report\.pdf, page 2/,
+    })
+    await user.click(chip)
+
+    const viewer = await screen.findByRole('dialog', { name: 'report.pdf' })
+    expect(await within(viewer).findByLabelText('Page number')).toHaveValue(2)
+    expect(await within(viewer).findByText('of 3')).toBeInTheDocument()
+    expect(within(viewer).getAllByTestId('pdf-canvas')).toHaveLength(3)
+    expect(within(viewer).getAllByTestId('pdf-text-layer')).toHaveLength(3)
+    await waitFor(() => expect(viewer.querySelector('.pdf-highlight')).not.toBeNull())
+    const highlight = viewer.querySelector('.pdf-highlight') as HTMLElement
+    expect(highlight.style.left).toBe('10%')
+    expect(highlight.style.top).toBe('20%')
+    expect(highlight.style.width).toBe('40%')
+    expect(Number.parseFloat(highlight.style.height)).toBeCloseTo(10)
+
+    await user.click(within(viewer).getByRole('button', { name: 'Next page' }))
+    await waitFor(() =>
+      expect(within(viewer).getByLabelText('Page number')).toHaveValue(3),
+    )
+    await user.click(within(viewer).getByRole('button', { name: 'Previous page' }))
+    await waitFor(() =>
+      expect(within(viewer).getByLabelText('Page number')).toHaveValue(2),
+    )
+
+    await user.click(within(viewer).getByRole('button', { name: 'Zoom in' }))
+    expect(within(viewer).getByText('150%')).toBeInTheDocument()
+  })
+
   it('shows every tool call, not only the first', async () => {
     window.history.replaceState(null, '', '/dashboard?view=chat')
     installApi(admin, [workspace], undefined, {}, {}, {}, {}, {
@@ -959,6 +1069,33 @@ describe('dashboard application', () => {
     const transcript = screen.getByTestId('chat-transcript')
     expect(within(transcript).getByText(/The workspace holds one report\./)).toBeInTheDocument()
     expect(transcript.querySelector('.animate-pulse')).toBeNull()
+  })
+
+  it('leaves the transcript where the reader scrolled while the answer streams', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    installApi(admin, [workspace], undefined, {}, {}, {}, {}, { holdBeforeFinalMs: 750 })
+    const user = userEvent.setup()
+    writeSessionToken('member-token')
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+
+    const transcript = await screen.findByTestId('chat-transcript')
+    Object.defineProperty(transcript, 'scrollHeight', {
+      configurable: true,
+      value: 1200,
+    })
+    Object.defineProperty(transcript, 'clientHeight', {
+      configurable: true,
+      value: 500,
+    })
+    transcript.scrollTop = 0
+    fireEvent.scroll(transcript)
+
+    expect(await screen.findByText(/The workspace holds one report\./)).toBeInTheDocument()
+    expect(transcript.scrollTop).toBe(0)
   })
 
   it('does not abort the first message of a new chat while the draft promotes', async () => {
@@ -1844,6 +1981,68 @@ describe('dashboard application', () => {
 
     await waitFor(() =>
       expect(preview.shadowRoot?.textContent).toContain('Business Case Answer Sheet'),
+    )
+  })
+
+  it('scrolls to and highlights the cited Word block', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    writeSessionToken('member-token')
+    const docx = await buildDocx('Cited paragraph')
+    installApi(admin, [workspace], undefined, {}, {
+      list: {
+        items: [
+          {
+            id: 'document-docx',
+            workspace_id: workspace.id,
+            original_filename: 'brief.docx',
+            detected_media_type: DOCX_MEDIA_TYPE,
+            size_bytes: docx.size,
+            sha256: 'f'.repeat(64),
+            status: 'ready',
+            created_by_user_id: 'user-owner',
+            created_at: '2026-09-24T08:00:00Z',
+            duplicate: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+      downloadBlob: docx,
+    }, {}, {}, {
+      final: 'See the cited paragraph [1].',
+      sources: [
+        {
+          index: 1,
+          document_id: 'document-docx',
+          workspace_id: workspace.id,
+          filename: 'brief.docx',
+          ordinal: 7,
+          section_path: [],
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'What does the brief say?')
+    await user.keyboard('{Enter}')
+
+    await user.click(await screen.findByRole('link', { name: '[1]' }))
+    await user.click(
+      await screen.findByRole('button', { name: /brief\.docx, source 1/ }),
+    )
+
+    const viewer = await screen.findByRole('dialog', { name: 'brief.docx' })
+    const preview = await within(viewer).findByTestId('docx-preview', {}, {
+      timeout: 5000,
+    })
+    await waitFor(() =>
+      expect(preview.shadowRoot?.textContent).toContain('Cited paragraph'),
+    )
+    await waitFor(() =>
+      expect(preview.shadowRoot?.querySelector('.docx-cited')).not.toBeNull(),
     )
   })
 
