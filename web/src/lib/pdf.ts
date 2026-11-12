@@ -37,7 +37,12 @@ export interface PdfTextLayerHandle {
  * owns ``destroy``; the document proxy does not.
  */
 export async function loadPdf(data: ArrayBuffer): Promise<LoadedPdf> {
-  const task = getDocument({ data })
+  const task = getDocument({
+    data,
+    // JPEG2000 scans are decoded by OpenJPEG's WASM build. Without this
+    // directory PDF.js silently leaves those pages blank.
+    wasmUrl: `${import.meta.env.BASE_URL}pdfjs/wasm/`,
+  })
   const pdf = await task.promise
   return { pdf, destroy: () => task.destroy() }
 }
