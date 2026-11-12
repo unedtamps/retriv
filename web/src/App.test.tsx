@@ -902,6 +902,56 @@ describe('dashboard application', () => {
     expect(screen.queryByText(/report\.pdf, page 2/)).not.toBeInTheDocument()
   })
 
+  it('opens a cited document at its page when the source chip is clicked', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    writeSessionToken('member-token')
+    const cited = {
+      id: '11111111-1111-1111-1111-111111111111',
+      workspace_id: workspace.id,
+      original_filename: 'report.pdf',
+      detected_media_type: 'application/pdf',
+      size_bytes: 2048,
+      sha256: 'a'.repeat(64),
+      status: 'ready',
+      created_by_user_id: 'user-owner',
+      created_at: '2026-09-24T08:00:00Z',
+      duplicate: false,
+      row_count: 0,
+    }
+    installApi(admin, [workspace], undefined, {}, {
+      list: { items: [cited], total: 1, offset: 0, limit: 50 },
+    }, {}, {}, {
+      final: 'Net revenue rose by a tenth [1].',
+      sources: [
+        {
+          index: 1,
+          document_id: cited.id,
+          workspace_id: workspace.id,
+          filename: cited.original_filename,
+          ordinal: 3,
+          page_numbers: [2],
+          section_path: ['Revenue'],
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'How did revenue move?')
+    await user.keyboard('{Enter}')
+
+    await user.click(await screen.findByRole('link', { name: '[1]' }))
+    const chip = await screen.findByRole('button', {
+      name: /report\.pdf, page 2/,
+    })
+    await user.click(chip)
+
+    const viewer = await screen.findByRole('dialog', { name: 'report.pdf' })
+    const frame = await within(viewer).findByTitle('report.pdf')
+    expect(frame).toHaveAttribute('src', expect.stringContaining('#page=2'))
+  })
+
   it('shows every tool call, not only the first', async () => {
     window.history.replaceState(null, '', '/dashboard?view=chat')
     installApi(admin, [workspace], undefined, {}, {}, {}, {}, {

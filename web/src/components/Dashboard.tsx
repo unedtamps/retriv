@@ -23,6 +23,7 @@ import { AdminRerank } from './AdminRerank'
 import { AdminUserPanel } from './AdminUserPanel'
 import { AdminWorkspacesPage } from './AdminWorkspaces'
 import { AgentChatPage } from './AgentChatPage'
+import type { CitationTarget } from './ChatAnswerCard'
 import { useAgentConversation } from '../hooks/useAgentConversation'
 import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
@@ -80,7 +81,11 @@ export function Dashboard({
   const [focusDocumentId, setFocusDocumentId] = useState<string | null>(null)
   const [reindexingId, setReindexingId] = useState<string | null>(null)
   const [reindexTarget, setReindexTarget] = useState<DocumentUpload | null>(null)
-  const [viewTarget, setViewTarget] = useState<DocumentUpload | null>(null)
+  const [viewer, setViewer] = useState<{
+    document: DocumentUpload
+    workspace: Workspace
+    page?: number
+  } | null>(null)
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DocumentUpload | null>(null)
@@ -111,6 +116,49 @@ export function Dashboard({
 
   function showNotice(message: string, tone: 'success' | 'error' = 'success') {
     setNotice({ message, tone })
+  }
+
+  /**
+   * Open the document behind a chat citation.
+   *
+   * The chat page already knows the workspace, but the documents hook is the
+   * cheap path when it has the row. A citation can outlive the current page of
+   * that hook, so fall back to the single-document endpoint before giving up.
+   */
+  async function openCitation(target: CitationTarget) {
+    const workspace =
+      workspaces.find((entry) => entry.id === target.workspaceId) ??
+      selectedWorkspace
+    if (workspace === null) {
+      showNotice('The cited document is not in a workspace you can open.', 'error')
+      return
+    }
+    if (!workspace.can_download) {
+      showNotice('You do not have permission to open documents in this workspace.', 'error')
+      return
+    }
+    const loaded = documents.data?.items.find(
+      (document) =>
+        document.id === target.documentId && document.workspace_id === workspace.id,
+    )
+    if (loaded !== undefined) {
+      setViewer({ document: loaded, workspace, page: target.page })
+      return
+    }
+    try {
+      const document = await api.getDocument(workspace.id, target.documentId)
+      setViewer({ document, workspace, page: target.page })
+    } catch (caught) {
+      if (isUnauthorized(caught)) {
+        onUnauthorized()
+        return
+      }
+      showNotice(
+        getErrorMessage(caught) ||
+          'The cited document is no longer available in this workspace.',
+        'error',
+      )
+    }
   }
 
   function selectView(view: DashboardView) {
@@ -284,7 +332,12 @@ export function Dashboard({
       ) : selectedWorkspace === null ? (
         <EmptyWorkspace onCreate={isAdmin ? () => setCreateWorkspaceOpen(true) : undefined} />
       ) : activeView === 'chat' && !adminMode && hasMembership ? (
-        <AgentChatPage conversation={conversation} runs={runs} workspace={selectedWorkspace} />
+        <AgentChatPage
+          conversation={conversation}
+          runs={runs}
+          workspace={selectedWorkspace}
+          onOpenSource={(target) => void openCitation(target)}
+        />
       ) : activeView === 'documents' ? (
         <WorkspaceDocumentsPage
           workspace={selectedWorkspace}
@@ -295,7 +348,11 @@ export function Dashboard({
           reindexingId={reindexingId}
           onReindex={setReindexTarget}
           canView={selectedWorkspace.can_download}
-          onView={setViewTarget}
+          onView={(document) => {
+            if (selectedWorkspace !== null) {
+              setViewer({ document, workspace: selectedWorkspace })
+            }
+          }}
           onUpload={openUpload}
           onDeleteDocument={setDeleteTarget}
         />
@@ -379,12 +436,13 @@ export function Dashboard({
         onConfirm={deleteDocument}
       />
 
-      {viewTarget === null || selectedWorkspace === null ? null : (
+      {viewer === null ? null : (
         <DocumentViewerDrawer
-          document={viewTarget}
-          workspace={selectedWorkspace}
+          document={viewer.document}
+          workspace={viewer.workspace}
+          page={viewer.page}
           onUnauthorized={onUnauthorized}
-          onClose={() => setViewTarget(null)}
+          onClose={() => setViewer(null)}
         />
       )}
 

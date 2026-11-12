@@ -13,6 +13,8 @@ interface DocumentViewerDrawerProps {
   workspace: Workspace
   onUnauthorized: () => void
   onClose: () => void
+  /** The PDF page a citation points at; ignored by the other previews. */
+  page?: number
 }
 
 const DOCX_MEDIA_TYPE =
@@ -32,6 +34,7 @@ export function DocumentViewerDrawer({
   workspace,
   onUnauthorized,
   onClose,
+  page,
 }: DocumentViewerDrawerProps) {
   const [loaded, setLoaded] = useState<DocumentFile | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -157,7 +160,7 @@ export function DocumentViewerDrawer({
           </div>
         ) : isPdf ? (
           <iframe
-            src={file.url}
+            src={page !== undefined && page > 0 ? `${file.url}#page=${page}` : file.url}
             title={document.original_filename}
             className="h-full w-full border-0 bg-surface"
           />

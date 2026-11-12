@@ -1291,6 +1291,22 @@ body.chat-viewport {
   transition: border-color 150ms, background-color 150ms;
 }
 
+.chat-citation-open {
+  cursor: pointer;
+  text-align: left;
+}
+
+.chat-citation-open:hover {
+  border-color: var(--color-chat-line-strong);
+  background: var(--color-chat-soft);
+  color: var(--color-chat-ink);
+}
+
+.chat-citation-open:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .chat-citation-index {
   margin-right: 4px;
   color: var(--color-chat-ink);

@@ -371,6 +371,23 @@ export const api = {
   },
 
   /**
+   * One document's metadata.
+   *
+   * Used when a chat citation names a document the current documents page has
+   * not loaded, so the source chip can still open the viewer.
+   */
+  getDocument(
+    workspaceId: string,
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentUpload> {
+    return request<DocumentUpload>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+      { signal },
+    )
+  },
+
+  /**
    * Returns 204 as soon as the delete is accepted; the worker removes the
    * vectors and the row afterwards. Documents already being deleted are
    * excluded from listDocuments, so a removed row does not come back.

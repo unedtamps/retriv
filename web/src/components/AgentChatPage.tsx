@@ -4,7 +4,7 @@ import type { AgentConversation, ChatItem, ToolStep } from '../hooks/useAgentCon
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import type { AgentChatSource, ProcessingRun, Workspace } from '../types'
 import { useIsDesktop } from '../hooks/useIsDesktop'
-import { ChatAnswerCard } from './ChatAnswerCard'
+import { ChatAnswerCard, type CitationTarget } from './ChatAnswerCard'
 import { ChatHistoryDrawer } from './ChatHistoryDrawer'
 import { ChatSidebar } from './ChatSidebar'
 import { ChatProcessingBanner } from './ChatProcessingBanner'
@@ -88,10 +88,12 @@ export function AgentChatPage({
   conversation,
   runs,
   workspace,
+  onOpenSource,
 }: {
   conversation: AgentConversation
   runs: ProcessingRuns
   workspace: Workspace
+  onOpenSource?: (target: CitationTarget) => void
 }) {
   const { items, draft, setDraft, busy, send, stop, newConversation } = conversation
   const isDesktop = useIsDesktop()
@@ -252,6 +254,7 @@ export function AgentChatPage({
                         streaming={turn.streaming}
                         busy={isLiveTurn}
                         errors={turn.errors}
+                        onOpenSource={onOpenSource}
                       />
                     ) : null}
                   </div>
