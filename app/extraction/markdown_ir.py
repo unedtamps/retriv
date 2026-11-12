@@ -14,7 +14,7 @@ path only labels what the file itself made obvious.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +98,32 @@ _pin_onnx_threads()
 
 
 @dataclass(frozen=True)
+class SourceRegion:
+    """A normalized page region a chunk came from.
+
+    Coordinates are relative to the rendered page box in the range 0..1.
+    Normalizing at extraction time keeps the viewer independent of DPI,
+    zoom, and whether the page came from a text layer or a raster/OCR pass.
+    """
+
+    page_no: int
+    bbox: tuple[float, float, float, float]
+    kind: str = "text"
+    ref: str = ""
+
+
+@dataclass(frozen=True)
+class PageLine:
+    """One line read from a page, with the box it occupied if known."""
+
+    text: str
+    page_no: int
+    bbox: tuple[float, float, float, float] | None = None
+    kind: str = "text"
+    ref: str = ""
+
+
+@dataclass(frozen=True)
 class PageIR:
     """One page's markdown and how it was read."""
 
@@ -113,6 +139,8 @@ class PageIR:
     is shown -- without them the whole page would go to the model, and most
     of those calls would be answered with "nothing here".
     """
+    lines: tuple[PageLine, ...] = ()
+    """The page's text lines, with normalized boxes when the reader had them."""
 
 
 @dataclass(frozen=True)
@@ -124,6 +152,7 @@ class DocumentBlock:
     page_no: int
     level: int = 0
     ref: str = ""
+    regions: tuple[SourceRegion, ...] = ()
 
 
 def build_pdf_pages(
@@ -160,15 +189,17 @@ def build_pdf_pages(
             page_no = index + 1
             is_scan = len(text) < scan_text_threshold
             if is_scan:
+                lines = ocr_page_lines(pdf, index)
                 pages.append(
                     PageIR(
                         page_no=page_no,
                         markdown="\n".join(
-                            promote_landmarks(ocr_page_text(pdf, index).splitlines())
+                            promote_landmarks([line.text for line in lines])
                         ),
                         is_scan=True,
                         text_layer_chars=len(text),
                         figures=_page_figures(pdf, index, figures),
+                        lines=tuple(lines),
                     )
                 )
             else:
@@ -179,6 +210,7 @@ def build_pdf_pages(
                         markdown="\n".join(promote_landmarks(markdown.splitlines())),
                         is_scan=False,
                         text_layer_chars=len(text),
+                        lines=tuple(_pdf_text_lines(pdf[index], page_no)),
                     )
                 )
         return pages, pdf.page_count
@@ -225,39 +257,101 @@ def _markdown_for_text_pages(
     return by_page
 
 
+def _pdf_text_lines(page: pymupdf.Page, page_no: int) -> list[PageLine]:
+    """The text layer's lines with normalized boxes.
+
+    PyMuPDF reports coordinates in page points with the origin at the top
+    left. Dividing by the page box turns them into the same 0..1 space the
+    OCR path uses, so the viewer can draw either source without knowing which
+    one produced a chunk.
+    """
+    width = page.rect.width or 1.0
+    height = page.rect.height or 1.0
+    lines: list[PageLine] = []
+    for block in page.get_text("dict").get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            text = "".join(
+                str(span.get("text", "")) for span in line.get("spans", [])
+            ).strip()
+            bbox = line.get("bbox")
+            if not text or not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            x0, y0, x1, y1 = (float(value) for value in bbox)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            lines.append(
+                PageLine(
+                    text=text,
+                    page_no=page_no,
+                    bbox=(x0 / width, y0 / height, x1 / width, y1 / height),
+                )
+            )
+    return lines
+
+
 def ocr_page_text(pdf: pymupdf.Document, page_index: int) -> str:
-    """One scanned page as text lines, read from its raster by OCR.
+    """One scanned page as text lines, read from its raster by OCR."""
+    return "\n".join(line.text for line in ocr_page_lines(pdf, page_index))
+
+
+def ocr_page_lines(pdf: pymupdf.Document, page_index: int) -> list[PageLine]:
+    """One scanned page as lines, with their normalized OCR boxes.
 
     The reader reports where on the page each fragment sits, so the lines are
     rebuilt top to bottom and left to right: a two-column statement keeps its
-    rows intact instead of interleaving its halves.
+    rows intact instead of interleaving its halves. The fragment boxes are
+    kept as the union of each line's boxes; this is the provenance the PDF
+    viewer needs and it does not depend on the text existing in the PDF.
     """
     pixmap = pdf[page_index].get_pixmap(dpi=OCR_DPI)
     fragments = _ocr_engine().read(pixmap)
     if not fragments:
-        return ""
+        return []
+    width = pixmap.width or 1.0
+    height = pixmap.height or 1.0
     heights = sorted(fragment[3] for fragment in fragments)
     median_height = heights[len(heights) // 2] or 12.0
     fragments.sort(key=lambda fragment: fragment[1] + fragment[3])
-    lines: list[str] = []
-    current: list[tuple[float, str]] = []
+    lines: list[PageLine] = []
+    current: list[tuple[float, float, float, float, str]] = []
     line_center = 0.0
-    for left, top, _width, height, text in fragments:
-        center = top + height / 2
+    for fragment in fragments:
+        left, top, _width, fragment_height, _text = fragment
+        center = top + fragment_height / 2
         if current and center - line_center > median_height * 0.6:
-            lines.append(_line_text(current))
+            lines.append(_ocr_line(current, page_index + 1, width, height))
             current = []
         if not current:
             line_center = center
-        current.append((left, text))
+        current.append(fragment)
     if current:
-        lines.append(_line_text(current))
-    return "\n".join(lines)
+        lines.append(_ocr_line(current, page_index + 1, width, height))
+    return lines
 
 
-def _line_text(fragments: list[tuple[float, str]]) -> str:
-    fragments.sort(key=lambda fragment: fragment[0])
-    return " ".join(text for _, text in fragments).strip()
+def _ocr_line(
+    fragments: list[tuple[float, float, float, float, str]],
+    page_no: int,
+    page_width: float,
+    page_height: float,
+) -> PageLine:
+    ordered = sorted(fragments, key=lambda fragment: fragment[0])
+    left = min(fragment[0] for fragment in fragments)
+    top = min(fragment[1] for fragment in fragments)
+    right = max(fragment[0] + fragment[2] for fragment in fragments)
+    bottom = max(fragment[1] + fragment[3] for fragment in fragments)
+    return PageLine(
+        text=" ".join(fragment[4] for fragment in ordered).strip(),
+        page_no=page_no,
+        bbox=(
+            left / page_width,
+            top / page_height,
+            right / page_width,
+            bottom / page_height,
+        ),
+    )
 
 
 class _RapidOcr:
@@ -351,8 +445,19 @@ def _landmark_level(line: str) -> int | None:
     return None
 
 
-def parse_markdown_blocks(markdown: str, page_no: int) -> list[DocumentBlock]:
-    """One page's markdown as the block stream, in the order written."""
+def parse_markdown_blocks(
+    markdown: str,
+    page_no: int,
+    lines: tuple[PageLine, ...] = (),
+) -> list[DocumentBlock]:
+    """One page's markdown as the block stream, in the order written.
+
+    ``lines`` are the page's text lines with boxes. They are matched back to
+    the blocks by normalized text after parsing; a markdown table or a
+    synthesized heading does not match a single line, so a block with no
+    match simply keeps an empty region list and the viewer falls back to the
+    page.
+    """
     blocks: list[DocumentBlock] = []
     paragraph: list[str] = []
     table: list[str] = []
@@ -396,7 +501,52 @@ def parse_markdown_blocks(markdown: str, page_no: int) -> list[DocumentBlock]:
         paragraph.append(_MARKUP_PATTERN.sub("", stripped))
     flush_paragraph()
     flush_table()
-    return blocks
+    return _attach_regions(blocks, lines)
+
+
+def _normalized_text(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def _attach_regions(
+    blocks: list[DocumentBlock],
+    lines: tuple[PageLine, ...],
+) -> list[DocumentBlock]:
+    """Match page lines to blocks and attach their boxes.
+
+    The match is deliberately conservative: a line shorter than four
+    characters is ignored, and only a substring match counts. A block with
+    no match keeps no regions instead of claiming the whole page.
+    """
+    available = [
+        (_normalized_text(line.text), line)
+        for line in lines
+        if line.bbox is not None and len(_normalized_text(line.text)) >= 4
+    ]
+    if not available:
+        return blocks
+    result: list[DocumentBlock] = []
+    for block in blocks:
+        block_text = _normalized_text(block.text)
+        matches: list[SourceRegion] = []
+        seen: set[tuple[int, tuple[float, float, float, float]]] = set()
+        for line_text, line in available:
+            if line_text not in block_text and block_text not in line_text:
+                continue
+            key = (line.page_no, line.bbox)  # type: ignore[arg-type]
+            if key in seen or line.bbox is None:
+                continue
+            seen.add(key)
+            matches.append(
+                SourceRegion(
+                    page_no=line.page_no,
+                    bbox=line.bbox,
+                    kind=line.kind,
+                    ref=line.ref,
+                )
+            )
+        result.append(replace(block, regions=tuple(matches)) if matches else block)
+    return result
 
 
 def _heading_block(marks: str, text: str, page_no: int) -> DocumentBlock:
@@ -421,6 +571,7 @@ def insert_image_blocks(
     pages: list[PageIR],
     blocks: list[DocumentBlock],
     image_refs_by_page: dict[int, list[str]],
+    image_regions: dict[str, SourceRegion] | None = None,
 ) -> list[DocumentBlock]:
     """Place picture markers into the block stream.
 
@@ -439,7 +590,13 @@ def insert_image_blocks(
     for page in pages:
         result.extend(by_page.get(page.page_no, []))
         for ref in image_refs_by_page.get(page.page_no, []):
+            region = image_regions.get(ref) if image_regions is not None else None
             result.append(
-                DocumentBlock(kind="image", text=picture_marker(ref), page_no=page.page_no)
+                DocumentBlock(
+                    kind="image",
+                    text=picture_marker(ref),
+                    page_no=page.page_no,
+                    regions=(region,) if region is not None else (),
+                )
             )
     return result

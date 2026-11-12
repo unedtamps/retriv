@@ -24,6 +24,7 @@ import { AdminUserPanel } from './AdminUserPanel'
 import { AdminWorkspacesPage } from './AdminWorkspaces'
 import { AgentChatPage } from './AgentChatPage'
 import type { CitationTarget } from './ChatAnswerCard'
+import type { PdfHighlightRegion } from './DocumentPdfPreview'
 import { useAgentConversation } from '../hooks/useAgentConversation'
 import { ApiKeysPanel } from './ApiKeysPanel'
 import { AppShell } from './AppShell'
@@ -85,6 +86,8 @@ export function Dashboard({
     document: DocumentUpload
     workspace: Workspace
     page?: number
+    ordinal?: number
+    highlights?: PdfHighlightRegion[]
   } | null>(null)
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -137,17 +140,56 @@ export function Dashboard({
       showNotice('You do not have permission to open documents in this workspace.', 'error')
       return
     }
+    const show = (document: DocumentUpload) => {
+      setViewer({
+        document,
+        workspace,
+        page: target.page,
+        ordinal: target.ordinal,
+      })
+      if (target.ordinal === undefined) return
+      void api
+        .getChunkRegions(workspace.id, document.id, target.ordinal)
+        .then(({ regions }) => {
+          const highlights = regions
+            .filter(
+              (region) =>
+                region.page_no > 0 &&
+                region.bbox[2] > region.bbox[0] &&
+                region.bbox[3] > region.bbox[1],
+            )
+            .map((region) => ({
+              page: region.page_no,
+              x: region.bbox[0],
+              y: region.bbox[1],
+              width: region.bbox[2] - region.bbox[0],
+              height: region.bbox[3] - region.bbox[1],
+            }))
+          setViewer((current) =>
+            current !== null &&
+            current.document.id === document.id &&
+            current.workspace.id === workspace.id &&
+            current.ordinal === target.ordinal
+              ? { ...current, highlights }
+              : current,
+          )
+        })
+        .catch((caught: unknown) => {
+          if (isUnauthorized(caught)) onUnauthorized()
+          // A chunk from an older run has no regions; the page still opens.
+        })
+    }
     const loaded = documents.data?.items.find(
       (document) =>
         document.id === target.documentId && document.workspace_id === workspace.id,
     )
     if (loaded !== undefined) {
-      setViewer({ document: loaded, workspace, page: target.page })
+      show(loaded)
       return
     }
     try {
       const document = await api.getDocument(workspace.id, target.documentId)
-      setViewer({ document, workspace, page: target.page })
+      show(document)
     } catch (caught) {
       if (isUnauthorized(caught)) {
         onUnauthorized()
@@ -441,6 +483,7 @@ export function Dashboard({
           document={viewer.document}
           workspace={viewer.workspace}
           page={viewer.page}
+          highlights={viewer.highlights}
           onUnauthorized={onUnauthorized}
           onClose={() => setViewer(null)}
         />

@@ -11,6 +11,7 @@ import type {
   RetrievalSettings,
   RetrievalTestResult,
   RetrievalUpdate,
+  ChunkRegions,
   CreatedApiKey,
   CreatedUser,
   CurrentUser,
@@ -383,6 +384,21 @@ export const api = {
   ): Promise<DocumentUpload> {
     return request<DocumentUpload>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+      { signal },
+    )
+  },
+
+  /**
+   * The source regions behind one cited chunk, for the PDF overlay.
+   */
+  getChunkRegions(
+    workspaceId: string,
+    documentId: string,
+    ordinal: number,
+    signal?: AbortSignal,
+  ): Promise<ChunkRegions> {
+    return request<ChunkRegions>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/chunks/${ordinal}/regions`,
       { signal },
     )
   },

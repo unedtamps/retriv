@@ -22,10 +22,20 @@ from app.api.dependencies import (
     UploadWorkspaceContext,
     WorkspaceContext,
 )
-from app.api.schemas import DocumentListResponse, DocumentResponse
+from app.api.schemas import (
+    ChunkRegionsResponse,
+    DocumentListResponse,
+    DocumentResponse,
+    DocumentSourceRegion,
+)
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
-from app.db.models import Document, DocumentWorkspace, ProcessingRun
+from app.db.models import (
+    Document,
+    DocumentChunk,
+    DocumentWorkspace,
+    ProcessingRun,
+)
 from app.db.session import get_session
 from app.documents.json_protocol import (
     JsonLimits,
@@ -240,6 +250,64 @@ async def get_document_metadata(
 ) -> DocumentResponse:
     run = await load_active_run(session, document.document)
     return document_response(document.document, document.link, run)
+
+
+@router.get(
+    "/{document_id}/chunks/{ordinal}/regions",
+    response_model=ChunkRegionsResponse,
+)
+async def get_chunk_regions(
+    document: DocumentContext,
+    ordinal: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ChunkRegionsResponse:
+    """The source regions a chunk was extracted from.
+
+    The chat citation already carries the document and chunk ordinal. This
+    route keeps the viewer independent of retrieval's row shape: it can ask for
+    the regions only when a PDF is actually opened.
+    """
+    provenance = await session.scalar(
+        select(DocumentChunk.provenance).where(
+            DocumentChunk.document_id == document.document.id,
+            DocumentChunk.processing_run_id
+            == document.document.active_processing_run_id,
+            DocumentChunk.ordinal == ordinal,
+        )
+    )
+    if provenance is None:
+        raise AppError(
+            status_code=404,
+            code="chunk_not_found",
+            title="Chunk not found",
+            detail="The cited chunk does not exist in the active document run.",
+        )
+    regions: list[DocumentSourceRegion] = []
+    for entry in provenance.get("regions", []):
+        if not isinstance(entry, dict):
+            continue
+        page_no = entry.get("page_no")
+        bbox = entry.get("bbox")
+        if (
+            not isinstance(page_no, int)
+            or page_no < 1
+            or not isinstance(bbox, (list, tuple))
+            or len(bbox) != 4
+            or not all(isinstance(value, (int, float)) for value in bbox)
+        ):
+            continue
+        x0, y0, x1, y1 = (float(value) for value in bbox)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        regions.append(
+            DocumentSourceRegion(
+                page_no=page_no,
+                bbox=(x0, y0, x1, y1),
+                kind=str(entry.get("kind", "text")),
+                ref=str(entry.get("ref", "")),
+            )
+        )
+    return ChunkRegionsResponse(regions=regions)
 
 
 @router.get("/{document_id}/download")

@@ -14,6 +14,7 @@ from app.db.models import (
     RUN_FAILED,
     RUN_QUEUED,
     Document,
+    DocumentChunk,
     DocumentWorkspace,
     ProcessingRun,
 )
@@ -170,6 +171,79 @@ async def test_document_cannot_be_read_through_another_workspace(
 
     assert response.status_code == 404
     assert response.json()["code"] == "document_not_found"
+
+
+async def test_cited_chunk_regions_are_scoped_to_the_active_document_run(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from uuid import uuid4
+
+    created = await upload(
+        client,
+        auth_headers,
+        entities.finance.id,
+        "report.pdf",
+        pdf_bytes(),
+    )
+    document_id = UUID(created.json()["id"])
+    async with db_session_factory() as session:
+        document = await session.get(Document, document_id)
+        assert document is not None
+        run = await session.scalar(
+            select(ProcessingRun).where(
+                ProcessingRun.document_id == document.id,
+                ProcessingRun.job_kind == JOB_EXTRACT,
+            )
+        )
+        assert run is not None
+        document.active_processing_run_id = run.id
+        session.add(
+            DocumentChunk(
+                id=uuid4(),
+                origin_workspace_id=entities.finance.id,
+                document_id=document.id,
+                processing_run_id=run.id,
+                ordinal=4,
+                text="Cited prose.",
+                token_count=2,
+                content_hash=hashlib.sha256(b"Cited prose.").hexdigest(),
+                section_path=["Results"],
+                section_key="",
+                is_heading_only=False,
+                page_numbers=[2],
+                provenance={
+                    "regions": [
+                        {
+                            "page_no": 2,
+                            "bbox": [0.1, 0.2, 0.5, 0.3],
+                            "kind": "text",
+                            "ref": "",
+                        }
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+    response = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}/chunks/4/regions",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "regions": [
+            {
+                "page_no": 2,
+                "bbox": [0.1, 0.2, 0.5, 0.3],
+                "kind": "text",
+                "ref": "",
+            }
+        ]
+    }
 
 
 async def test_document_cannot_be_deleted_through_another_workspace(

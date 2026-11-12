@@ -34,6 +34,7 @@ from app.extraction.images_native import (
 from app.extraction.layout import DEFAULT_MIN_SCORE, LayoutFigureFinder
 from app.extraction.markdown_ir import (
     DocumentBlock,
+    SourceRegion,
     assemble_markdown,
     build_pdf_pages,
     insert_image_blocks,
@@ -131,8 +132,25 @@ class NativeMarkdownExtractor:
             )
         blocks: list[DocumentBlock] = []
         for page in pages:
-            blocks.extend(parse_markdown_blocks(page.markdown, page.page_no))
-        blocks = insert_image_blocks(pages, blocks, image_refs_by_page(images))
+            blocks.extend(
+                parse_markdown_blocks(page.markdown, page.page_no, page.lines)
+            )
+        image_regions = {
+            image.ref: SourceRegion(
+                page_no=image.page_number,
+                bbox=image.bbox,
+                kind="figure",
+                ref=image.ref,
+            )
+            for image in images
+            if image.bbox is not None and image.page_number > 0
+        }
+        blocks = insert_image_blocks(
+            pages,
+            blocks,
+            image_refs_by_page(images),
+            image_regions,
+        )
         return self._result(
             blocks,
             images,

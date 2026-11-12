@@ -205,6 +205,19 @@ class DocumentListResponse(BaseModel):
     limit: int
 
 
+class DocumentSourceRegion(BaseModel):
+    """One normalized page region a chunk was extracted from."""
+
+    page_no: int = Field(ge=1)
+    bbox: tuple[float, float, float, float]
+    kind: str = "text"
+    ref: str = ""
+
+
+class ChunkRegionsResponse(BaseModel):
+    regions: list[DocumentSourceRegion] = Field(default_factory=list)
+
+
 class ProcessingRunSummary(BaseModel):
     id: UUID
     workspace_id: UUID

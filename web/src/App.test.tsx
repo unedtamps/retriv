@@ -242,6 +242,21 @@ function installApi(
         headers: { 'Content-Type': body.type || 'application/pdf' },
       })
     }
+    const chunkRegions = url.match(
+      /^\/v1\/workspaces\/[^/]+\/documents\/[^/]+\/chunks\/\d+\/regions$/,
+    )
+    if (chunkRegions !== null && (init?.method === undefined || init.method === 'GET')) {
+      return json({
+        regions: [
+          {
+            page_no: 2,
+            bbox: [0.1, 0.2, 0.5, 0.3],
+            kind: 'text',
+            ref: '',
+          },
+        ],
+      })
+    }
     const documentDelete = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)$/)
     if (documentDelete !== null && init?.method === 'DELETE') {
       documents.deleted?.push(documentDelete[1])
@@ -965,6 +980,12 @@ describe('dashboard application', () => {
     expect(await within(viewer).findByLabelText('Page number')).toHaveValue(2)
     expect(within(viewer).getByText('of 3')).toBeInTheDocument()
     expect(within(viewer).getByTestId('pdf-canvas')).toBeInTheDocument()
+    await waitFor(() => expect(viewer.querySelector('.pdf-highlight')).not.toBeNull())
+    const highlight = viewer.querySelector('.pdf-highlight') as HTMLElement
+    expect(highlight.style.left).toBe('10%')
+    expect(highlight.style.top).toBe('20%')
+    expect(highlight.style.width).toBe('40%')
+    expect(Number.parseFloat(highlight.style.height)).toBeCloseTo(10)
 
     await user.click(within(viewer).getByRole('button', { name: 'Next page' }))
     await waitFor(() =>
