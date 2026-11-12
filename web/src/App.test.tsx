@@ -253,6 +253,14 @@ function installApi(
             bbox: [0.1, 0.2, 0.5, 0.3],
             kind: 'text',
             ref: '',
+            anchor: '',
+          },
+          {
+            page_no: null,
+            bbox: null,
+            kind: 'docx-block',
+            ref: '',
+            anchor: 'docx-0',
           },
         ],
       })
@@ -979,7 +987,7 @@ describe('dashboard application', () => {
     const viewer = await screen.findByRole('dialog', { name: 'report.pdf' })
     expect(await within(viewer).findByLabelText('Page number')).toHaveValue(2)
     expect(within(viewer).getByText('of 3')).toBeInTheDocument()
-    expect(within(viewer).getByTestId('pdf-canvas')).toBeInTheDocument()
+    expect(within(viewer).getAllByTestId('pdf-canvas')).toHaveLength(3)
     await waitFor(() => expect(viewer.querySelector('.pdf-highlight')).not.toBeNull())
     const highlight = viewer.querySelector('.pdf-highlight') as HTMLElement
     expect(highlight.style.left).toBe('10%')
@@ -1969,6 +1977,68 @@ describe('dashboard application', () => {
 
     await waitFor(() =>
       expect(preview.shadowRoot?.textContent).toContain('Business Case Answer Sheet'),
+    )
+  })
+
+  it('scrolls to and highlights the cited Word block', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    writeSessionToken('member-token')
+    const docx = await buildDocx('Cited paragraph')
+    installApi(admin, [workspace], undefined, {}, {
+      list: {
+        items: [
+          {
+            id: 'document-docx',
+            workspace_id: workspace.id,
+            original_filename: 'brief.docx',
+            detected_media_type: DOCX_MEDIA_TYPE,
+            size_bytes: docx.size,
+            sha256: 'f'.repeat(64),
+            status: 'ready',
+            created_by_user_id: 'user-owner',
+            created_at: '2026-09-24T08:00:00Z',
+            duplicate: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+      downloadBlob: docx,
+    }, {}, {}, {
+      final: 'See the cited paragraph [1].',
+      sources: [
+        {
+          index: 1,
+          document_id: 'document-docx',
+          workspace_id: workspace.id,
+          filename: 'brief.docx',
+          ordinal: 7,
+          section_path: [],
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'What does the brief say?')
+    await user.keyboard('{Enter}')
+
+    await user.click(await screen.findByRole('link', { name: '[1]' }))
+    await user.click(
+      await screen.findByRole('button', { name: /brief\.docx, source 1/ }),
+    )
+
+    const viewer = await screen.findByRole('dialog', { name: 'brief.docx' })
+    const preview = await within(viewer).findByTestId('docx-preview', {}, {
+      timeout: 5000,
+    })
+    await waitFor(() =>
+      expect(preview.shadowRoot?.textContent).toContain('Cited paragraph'),
+    )
+    await waitFor(() =>
+      expect(preview.shadowRoot?.querySelector('.docx-cited')).not.toBeNull(),
     )
   })
 

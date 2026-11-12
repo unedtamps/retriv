@@ -24,6 +24,8 @@ interface DocumentViewerDrawerProps {
   page?: number
   /** Provenance regions to draw over the PDF page. */
   highlights?: PdfHighlightRegion[]
+  /** DOCX block anchors to scroll to and highlight. */
+  anchors?: string[]
 }
 
 const DOCX_MEDIA_TYPE =
@@ -45,6 +47,7 @@ export function DocumentViewerDrawer({
   onClose,
   page,
   highlights,
+  anchors,
 }: DocumentViewerDrawerProps) {
   const [loaded, setLoaded] = useState<DocumentFile | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -146,6 +149,7 @@ export function DocumentViewerDrawer({
           <DocumentDocxPreview
             document={document}
             workspace={workspace}
+            anchors={anchors}
             onUnauthorized={onUnauthorized}
           />
         ) : isJson ? (

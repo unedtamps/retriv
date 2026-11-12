@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react'
 import {
   ChevronLeft,
   ChevronRight,
@@ -27,22 +33,139 @@ interface DocumentPdfPreviewProps {
   onUnauthorized: () => void
   /** Page to open first, used by a citation. */
   page?: number
-  /** Provenance regions to draw over the current page. */
+  /** Provenance regions to draw over the pages. */
   highlights?: PdfHighlightRegion[]
+}
+
+interface PageSize {
+  width: number
+  height: number
 }
 
 const DEFAULT_ZOOM = 1.25
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 3
 const ZOOM_STEP = 0.25
+const FALLBACK_PAGE_SIZE: PageSize = { width: 612, height: 792 }
+const PAGE_RENDER_MARGIN = '600px 0px'
+
+function PdfPageView({
+  pdf,
+  pageNumber,
+  scale,
+  defaultSize,
+  highlights,
+  scrollRoot,
+}: {
+  pdf: LoadedPdf['pdf']
+  pageNumber: number
+  scale: number
+  defaultSize: PageSize
+  highlights: PdfHighlightRegion[]
+  scrollRoot: RefObject<HTMLDivElement | null>
+}) {
+  const [visible, setVisible] = useState(
+    () => typeof IntersectionObserver === 'undefined',
+  )
+  const [size, setSize] = useState<PageSize | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const node = wrapperRef.current
+    if (node === null || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.target === node) setVisible(entry.isIntersecting)
+        }
+      },
+      { root: scrollRoot.current, rootMargin: PAGE_RENDER_MARGIN },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [scrollRoot])
+
+  useEffect(() => {
+    if (!visible || canvasRef.current === null) return
+    const canvas = canvasRef.current
+    let cancelled = false
+    let cancel: (() => void) | null = null
+    renderPdfPage(pdf, pageNumber, canvas, scale)
+      .then((rendered) => {
+        cancel = rendered.cancel
+        if (cancelled) {
+          rendered.cancel()
+          return
+        }
+        setSize({ width: rendered.width, height: rendered.height })
+        setError(null)
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setError(getErrorMessage(caught))
+      })
+    return () => {
+      cancelled = true
+      if (cancel !== null) cancel()
+    }
+  }, [visible, pdf, pageNumber, scale])
+
+  const pageWidth = (size?.width ?? defaultSize.width * scale)
+  const pageHeight = (size?.height ?? defaultSize.height * scale)
+  const pageHighlights = highlights.filter(
+    (region) => region.page === pageNumber,
+  )
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="pdf-page-shell"
+      data-page={pageNumber}
+      aria-label={`Page ${pageNumber}`}
+      style={{
+        width: `${pageWidth}px`,
+        aspectRatio: `${pageWidth} / ${pageHeight}`,
+      }}
+    >
+      {visible ? (
+        <canvas ref={canvasRef} className="pdf-canvas" data-testid="pdf-canvas" />
+      ) : null}
+      {visible
+        ? pageHighlights.map((region, index) => (
+            <span
+              className="pdf-highlight"
+              key={index}
+              style={{
+                left: `${region.x * 100}%`,
+                top: `${region.y * 100}%`,
+                width: `${region.width * 100}%`,
+                height: `${region.height * 100}%`,
+              }}
+            />
+          ))
+        : null}
+      {visible && size === null && error === null ? (
+        <div className="pdf-loading" role="status">
+          <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+          Rendering page {pageNumber}…
+        </div>
+      ) : null}
+      {error !== null ? (
+        <p className="error-note pdf-page-error" role="alert">
+          Page {pageNumber}: {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 /**
- * A PDF rendered by PDF.js instead of the browser's built-in frame.
+ * A continuous PDF rendered by PDF.js.
  *
- * The native viewer can jump to a page, but it cannot draw application-owned
- * highlights. PDF.js gives us the page canvas, so provenance rectangles can be
- * added without searching the PDF's text layer -- OCR and VLM text need not
- * exist in the file for the region overlay to be correct.
+ * Pages are placeholders until they approach the viewport, so a long filing
+ * does not allocate a canvas per page. The scroll container is the source of
+ * truth for the current page; the toolbar only moves that scroll position.
  */
 export function DocumentPdfPreview({
   document,
@@ -56,16 +179,15 @@ export function DocumentPdfPreview({
   const [currentPage, setCurrentPage] = useState(() =>
     page === undefined ? 1 : Math.max(1, page),
   )
+  const [defaultSize, setDefaultSize] = useState<PageSize>(FALLBACK_PAGE_SIZE)
   const [zoom, setZoom] = useState(DEFAULT_ZOOM)
-  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(
-    null,
-  )
   const [error, setError] = useState<string | null>(null)
   const [lastPageProp, setLastPageProp] = useState(page)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollFrame = useRef<number | null>(null)
 
-  // Adjusting state during render is the documented React escape hatch for a
-  // prop that arrives from outside (a second citation click on the same PDF).
+  // A second citation can change the target page while the same document is
+  // open. Adjust during render instead of reloading the whole PDF.
   if (page !== lastPageProp) {
     setLastPageProp(page)
     setCurrentPage(page === undefined ? 1 : Math.max(1, page))
@@ -74,13 +196,12 @@ export function DocumentPdfPreview({
   useEffect(() => {
     let mounted = true
     let loaded: LoadedPdf | null = null
-
     loadDocument(document, () =>
       api.fetchDocumentBlob(workspace.id, document.id),
     )
       .then(({ blob }) => blob.arrayBuffer())
       .then((bytes) => loadPdf(bytes))
-      .then((next) => {
+      .then(async (next) => {
         loaded = next
         if (!mounted) {
           void next.destroy()
@@ -91,6 +212,15 @@ export function DocumentPdfPreview({
         setCurrentPage((value) =>
           Math.min(Math.max(1, value), next.pdf.numPages),
         )
+        try {
+          const first = await next.pdf.getPage(1)
+          const viewport = first.getViewport({ scale: 1 })
+          if (mounted) {
+            setDefaultSize({ width: viewport.width, height: viewport.height })
+          }
+        } catch {
+          // The fallback page box is enough until the first page renders.
+        }
       })
       .catch((caught: unknown) => {
         if (!mounted) return
@@ -104,35 +234,55 @@ export function DocumentPdfPreview({
     }
   }, [document, workspace.id, onUnauthorized])
 
-  useEffect(() => {
-    if (loadedPdf === null) return
-    const canvas = canvasRef.current
-    if (canvas === null) return
-    let cancelled = false
-    let cancel: (() => void) | null = null
-    renderPdfPage(loadedPdf.pdf, currentPage, canvas, zoom)
-      .then((rendered) => {
-        cancel = rendered.cancel
-        if (cancelled) {
-          rendered.cancel()
-          return
-        }
-        setPageSize({ width: rendered.width, height: rendered.height })
-        setError(null)
-      })
-      .catch((caught: unknown) => {
-        if (cancelled) return
-        setError(getErrorMessage(caught))
-      })
-    return () => {
-      cancelled = true
-      if (cancel !== null) cancel()
-    }
-  }, [loadedPdf, currentPage, zoom])
+  const scrollToPage = useCallback((target: number) => {
+    const container = scrollRef.current
+    if (container === null) return
+    const node = container.querySelector<HTMLElement>(`[data-page="${target}"]`)
+    node?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+  }, [])
 
-  const pageHighlights = highlights.filter(
-    (region) => region.page === currentPage,
-  )
+  useEffect(() => {
+    if (loadedPdf === null || pageCount === 0) return
+    const frame = window.requestAnimationFrame(() => scrollToPage(currentPage))
+    return () => window.cancelAnimationFrame(frame)
+    // currentPage is intentionally read, not a dependency: user page actions
+    // already scroll themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedPdf, pageCount, page, scrollToPage])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => scrollToPage(currentPage))
+    return () => window.cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom])
+
+  useEffect(() => {
+    return () => {
+      if (scrollFrame.current !== null) {
+        window.cancelAnimationFrame(scrollFrame.current)
+      }
+    }
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    if (scrollFrame.current !== null) return
+    scrollFrame.current = window.requestAnimationFrame(() => {
+      scrollFrame.current = null
+      const container = scrollRef.current
+      if (container === null) return
+      const top = container.getBoundingClientRect().top
+      let next = 1
+      for (const element of container.querySelectorAll<HTMLElement>('[data-page]')) {
+        const pageTop = element.getBoundingClientRect().top - top
+        if (pageTop <= container.clientHeight * 0.35) {
+          next = Number(element.dataset.page ?? next)
+        } else {
+          break
+        }
+      }
+      setCurrentPage(next)
+    })
+  }, [])
 
   const commitPage = (input: HTMLInputElement) => {
     const parsed = Number.parseInt(input.value, 10)
@@ -143,6 +293,17 @@ export function DocumentPdfPreview({
     const next = Math.min(Math.max(1, parsed), pageCount)
     input.value = String(next)
     setCurrentPage(next)
+    scrollToPage(next)
+  }
+
+  const goTo = (target: number) => {
+    const next = Math.min(Math.max(1, target), pageCount)
+    setCurrentPage(next)
+    scrollToPage(next)
+  }
+
+  const changeZoom = (next: number) => {
+    setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)))
   }
 
   return (
@@ -153,7 +314,7 @@ export function DocumentPdfPreview({
           className="btn-icon"
           aria-label="Previous page"
           disabled={loadedPdf === null || currentPage <= 1}
-          onClick={() => setCurrentPage((value) => Math.max(1, value - 1))}
+          onClick={() => goTo(currentPage - 1)}
         >
           <ChevronLeft aria-hidden="true" size={16} />
         </button>
@@ -184,9 +345,7 @@ export function DocumentPdfPreview({
           className="btn-icon"
           aria-label="Next page"
           disabled={loadedPdf === null || currentPage >= pageCount}
-          onClick={() =>
-            setCurrentPage((value) => Math.min(pageCount, value + 1))
-          }
+          onClick={() => goTo(currentPage + 1)}
         >
           <ChevronRight aria-hidden="true" size={16} />
         </button>
@@ -198,7 +357,7 @@ export function DocumentPdfPreview({
           className="btn-icon"
           aria-label="Zoom out"
           disabled={loadedPdf === null || zoom <= MIN_ZOOM}
-          onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))}
+          onClick={() => changeZoom(zoom - ZOOM_STEP)}
         >
           <ZoomOut aria-hidden="true" size={16} />
         </button>
@@ -208,7 +367,7 @@ export function DocumentPdfPreview({
           className="btn-icon"
           aria-label="Zoom in"
           disabled={loadedPdf === null || zoom >= MAX_ZOOM}
-          onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))}
+          onClick={() => changeZoom(zoom + ZOOM_STEP)}
         >
           <ZoomIn aria-hidden="true" size={16} />
         </button>
@@ -218,32 +377,32 @@ export function DocumentPdfPreview({
         <p className="error-note pdf-error" role="alert">
           {error}
         </p>
+      ) : loadedPdf === null ? (
+        <div className="pdf-loading pdf-loading-full" role="status">
+          <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+          Loading the PDF…
+        </div>
       ) : (
-        <div className="pdf-scroll">
-          <div
-            className="pdf-page-shell"
-            style={pageSize === null ? undefined : { width: `${pageSize.width}px` }}
-          >
-            <canvas ref={canvasRef} className="pdf-canvas" data-testid="pdf-canvas" />
-            {pageHighlights.map((region, index) => (
-              <span
-                className="pdf-highlight"
-                key={index}
-                style={{
-                  left: `${region.x * 100}%`,
-                  top: `${region.y * 100}%`,
-                  width: `${region.width * 100}%`,
-                  height: `${region.height * 100}%`,
-                }}
+        <div
+          ref={scrollRef}
+          className="pdf-scroll"
+          onScroll={handleScroll}
+          data-testid="pdf-scroll"
+        >
+          {Array.from({ length: pageCount }, (_, index) => {
+            const pageNumber = index + 1
+            return (
+              <PdfPageView
+                key={pageNumber}
+                pdf={loadedPdf.pdf}
+                pageNumber={pageNumber}
+                scale={zoom}
+                defaultSize={defaultSize}
+                highlights={highlights}
+                scrollRoot={scrollRef}
               />
-            ))}
-            {loadedPdf === null || pageSize === null ? (
-              <div className="pdf-loading" role="status">
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
-                Rendering the page…
-              </div>
-            ) : null}
-          </div>
+            )
+          })}
         </div>
       )}
     </div>

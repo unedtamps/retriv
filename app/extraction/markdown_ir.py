@@ -99,17 +99,17 @@ _pin_onnx_threads()
 
 @dataclass(frozen=True)
 class SourceRegion:
-    """A normalized page region a chunk came from.
+    """A normalized page region or a format-specific anchor.
 
-    Coordinates are relative to the rendered page box in the range 0..1.
-    Normalizing at extraction time keeps the viewer independent of DPI,
-    zoom, and whether the page came from a text layer or a raster/OCR pass.
+    PDF/OCR regions use page_no and bbox. DOCX and other structured formats
+    use ``anchor`` instead, because they have no reliable page coordinates.
     """
 
-    page_no: int
-    bbox: tuple[float, float, float, float]
+    page_no: int | None = None
+    bbox: tuple[float, float, float, float] | None = None
     kind: str = "text"
     ref: str = ""
+    anchor: str = ""
 
 
 @dataclass(frozen=True)

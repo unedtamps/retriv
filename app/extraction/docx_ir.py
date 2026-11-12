@@ -18,7 +18,7 @@ from docx.text.paragraph import Paragraph
 
 from app.extraction.base import ExtractedImage
 from app.extraction.images import fit_image_to_limit, picture_marker
-from app.extraction.markdown_ir import DocumentBlock
+from app.extraction.markdown_ir import DocumentBlock, SourceRegion
 from app.extraction.tables import row_wise_table_text
 
 _DOCX_IMAGE_MAX_EDGE = 1568
@@ -77,7 +77,35 @@ def build_docx_blocks(
             if text:
                 blocks.append(DocumentBlock(kind="table", text=text, page_no=0))
             take(_element_images(table._tbl, document, len(images)))
-    return blocks, images
+    return _with_anchors(blocks), images
+
+
+def _with_anchors(blocks: list[DocumentBlock]) -> list[DocumentBlock]:
+    """Number the text/tables in body order for the DOCX viewer.
+
+    DOCX has no pages, so the rendered preview maps these anchors to its
+    paragraph/table elements by order. Image blocks are left unanchored for
+    now; they need a separate image-element mapping.
+    """
+    anchored: list[DocumentBlock] = []
+    index = 0
+    for block in blocks:
+        if block.kind in {"text", "heading", "table"}:
+            anchored.append(
+                replace(
+                    block,
+                    regions=(
+                        SourceRegion(
+                            kind="docx-block",
+                            anchor=f"docx-{index}",
+                        ),
+                    ),
+                )
+            )
+            index += 1
+        else:
+            anchored.append(block)
+    return anchored
 
 
 def _bounded_image(image: ExtractedImage, max_bytes: int) -> ExtractedImage | None:

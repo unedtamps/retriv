@@ -659,8 +659,12 @@
 }
 
 .pdf-scroll {
+  display: flex;
   flex: 1;
   min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 18px;
@@ -668,12 +672,16 @@
 
 .pdf-page-shell {
   position: relative;
+  flex: none;
   max-width: 100%;
-  margin: 0 auto;
   background: #ffffff;
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.24),
     0 14px 36px rgb(0 0 0 / 0.2);
+}
+
+.pdf-page-shell[data-page] {
+  scroll-margin-top: 12px;
 }
 
 .pdf-canvas {
@@ -703,8 +711,19 @@
   font-size: 0.8rem;
 }
 
+.pdf-loading-full {
+  position: static;
+  flex: 1;
+}
+
 .pdf-error {
   margin: 18px;
+}
+
+.pdf-page-error {
+  position: absolute;
+  inset: 12px;
+  align-self: start;
 }
 
 @media (max-width: 640px) {

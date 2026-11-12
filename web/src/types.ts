@@ -97,10 +97,11 @@ export interface DocumentList {
 }
 
 export interface DocumentSourceRegion {
-  page_no: number
-  bbox: [number, number, number, number]
+  page_no: number | null
+  bbox: [number, number, number, number] | null
   kind: string
   ref: string
+  anchor: string
 }
 
 export interface ChunkRegions {

@@ -58,20 +58,35 @@ def _line_regions(
     """Unique source regions and image refs across a chunk's lines."""
     regions: list[dict[str, object]] = []
     source_refs: list[str] = []
-    seen: set[tuple[int, tuple[float, float, float, float], str, str]] = set()
+    seen: set[
+        tuple[
+            int | None,
+            tuple[float, float, float, float] | None,
+            str,
+            str,
+            str,
+        ]
+    ] = set()
     seen_refs: set[str] = set()
     for line in lines:
         for region in line.regions:
-            key = (region.page_no, region.bbox, region.kind, region.ref)
+            key = (
+                region.page_no,
+                region.bbox,
+                region.kind,
+                region.ref,
+                region.anchor,
+            )
             if key in seen:
                 continue
             seen.add(key)
             regions.append(
                 {
                     "page_no": region.page_no,
-                    "bbox": list(region.bbox),
+                    "bbox": list(region.bbox) if region.bbox is not None else None,
                     "kind": region.kind,
                     "ref": region.ref,
+                    "anchor": region.anchor,
                 }
             )
             if region.ref and region.ref not in seen_refs:
@@ -268,9 +283,10 @@ class MarkdownChunker:
         regions = [
             {
                 "page_no": region.page_no,
-                "bbox": list(region.bbox),
+                "bbox": list(region.bbox) if region.bbox is not None else None,
                 "kind": region.kind,
                 "ref": region.ref,
+                "anchor": region.anchor,
             }
             for region in block.regions
         ]

@@ -206,12 +206,13 @@ class DocumentListResponse(BaseModel):
 
 
 class DocumentSourceRegion(BaseModel):
-    """One normalized page region a chunk was extracted from."""
+    """One source region or block anchor a chunk was extracted from."""
 
-    page_no: int = Field(ge=1)
-    bbox: tuple[float, float, float, float]
+    page_no: int | None = Field(default=None, ge=1)
+    bbox: tuple[float, float, float, float] | None = None
     kind: str = "text"
     ref: str = ""
+    anchor: str = ""
 
 
 class ChunkRegionsResponse(BaseModel):

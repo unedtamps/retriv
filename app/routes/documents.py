@@ -286,6 +286,16 @@ async def get_chunk_regions(
     for entry in provenance.get("regions", []):
         if not isinstance(entry, dict):
             continue
+        anchor = entry.get("anchor")
+        if isinstance(anchor, str) and anchor.strip() != "":
+            regions.append(
+                DocumentSourceRegion(
+                    kind=str(entry.get("kind", "docx-block")),
+                    ref=str(entry.get("ref", "")),
+                    anchor=anchor,
+                )
+            )
+            continue
         page_no = entry.get("page_no")
         bbox = entry.get("bbox")
         if (

@@ -88,6 +88,7 @@ export function Dashboard({
     page?: number
     ordinal?: number
     highlights?: PdfHighlightRegion[]
+    anchors?: string[]
   } | null>(null)
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -151,26 +152,35 @@ export function Dashboard({
       void api
         .getChunkRegions(workspace.id, document.id, target.ordinal)
         .then(({ regions }) => {
-          const highlights = regions
-            .filter(
-              (region) =>
-                region.page_no > 0 &&
-                region.bbox[2] > region.bbox[0] &&
-                region.bbox[3] > region.bbox[1],
-            )
-            .map((region) => ({
-              page: region.page_no,
-              x: region.bbox[0],
-              y: region.bbox[1],
-              width: region.bbox[2] - region.bbox[0],
-              height: region.bbox[3] - region.bbox[1],
-            }))
+          const highlights = regions.flatMap((region) => {
+            const bbox = region.bbox
+            if (region.page_no === null || bbox === null) return []
+            if (
+              region.page_no < 1 ||
+              bbox[2] <= bbox[0] ||
+              bbox[3] <= bbox[1]
+            ) {
+              return []
+            }
+            return [
+              {
+                page: region.page_no,
+                x: bbox[0],
+                y: bbox[1],
+                width: bbox[2] - bbox[0],
+                height: bbox[3] - bbox[1],
+              },
+            ]
+          })
+          const anchors = regions
+            .map((region) => region.anchor)
+            .filter((anchor) => anchor !== '')
           setViewer((current) =>
             current !== null &&
             current.document.id === document.id &&
             current.workspace.id === workspace.id &&
             current.ordinal === target.ordinal
-              ? { ...current, highlights }
+              ? { ...current, highlights, anchors }
               : current,
           )
         })
@@ -484,6 +494,7 @@ export function Dashboard({
           workspace={viewer.workspace}
           page={viewer.page}
           highlights={viewer.highlights}
+          anchors={viewer.anchors}
           onUnauthorized={onUnauthorized}
           onClose={() => setViewer(null)}
         />

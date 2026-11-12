@@ -221,7 +221,12 @@ async def test_cited_chunk_regions_are_scoped_to_the_active_document_run(
                             "bbox": [0.1, 0.2, 0.5, 0.3],
                             "kind": "text",
                             "ref": "",
-                        }
+                        },
+                        {
+                            "kind": "docx-block",
+                            "anchor": "docx-4",
+                            "ref": "",
+                        },
                     ]
                 },
             )
@@ -241,7 +246,15 @@ async def test_cited_chunk_regions_are_scoped_to_the_active_document_run(
                 "bbox": [0.1, 0.2, 0.5, 0.3],
                 "kind": "text",
                 "ref": "",
-            }
+                "anchor": "",
+            },
+            {
+                "page_no": None,
+                "bbox": None,
+                "kind": "docx-block",
+                "ref": "",
+                "anchor": "docx-4",
+            },
         ]
     }
 

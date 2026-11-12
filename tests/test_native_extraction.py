@@ -228,6 +228,7 @@ def test_chunk_provenance_carries_normalized_source_regions() -> None:
             "bbox": [0.1, 0.2, 0.5, 0.3],
             "kind": "text",
             "ref": "",
+            "anchor": "",
         }
     ]
 
@@ -689,6 +690,34 @@ def test_a_picture_only_table_still_lifts_its_picture(tmp_path: Path) -> None:
 
     assert len(result.images) == 1
     assert any(picture_refs(c.text) for c in result.chunks)
+
+
+def test_docx_blocks_carry_order_anchors_into_chunks(tmp_path: Path) -> None:
+    import docx
+
+    document = docx.Document()
+    document.add_paragraph("First paragraph.")
+    document.add_paragraph("Second paragraph.")
+    buffer = BytesIO()
+    document.save(buffer)
+    path = write_sample(tmp_path, buffer.getvalue(), "anchors.docx")
+
+    blocks, _images = build_docx_blocks(path, image_render_scale=2.0)
+    assert [block.regions[0].anchor for block in blocks] == [
+        "docx-0",
+        "docx-1",
+    ]
+
+    result = an_extractor().extract(path, media_type=DOCX_MEDIA_TYPE)
+    regions = [
+        region
+        for chunk in result.chunks
+        for region in chunk.provenance.get("regions", [])
+    ]
+    assert regions == [
+        {"page_no": None, "bbox": None, "kind": "docx-block", "ref": "", "anchor": "docx-0"},
+        {"page_no": None, "bbox": None, "kind": "docx-block", "ref": "", "anchor": "docx-1"},
+    ]
 
 
 def test_docx_heading_styles_map_to_their_own_level(tmp_path: Path) -> None:
