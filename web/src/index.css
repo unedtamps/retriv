@@ -603,6 +603,124 @@
   box-shadow: none;
 }
 
+/* PDF.js viewer: one page at a time, with provenance rectangles on top. */
+.pdf-viewer {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--color-paper);
+}
+
+.pdf-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+  padding: 7px 10px;
+}
+
+.pdf-page-count,
+.pdf-zoom {
+  display: flex;
+  min-width: 6.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--color-ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.pdf-page-input {
+  width: 3.2rem;
+  border: 1px solid var(--color-line);
+  border-radius: 2px;
+  background: var(--color-paper);
+  padding: 2px 3px;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: center;
+}
+
+.pdf-page-input:disabled {
+  opacity: 0.6;
+}
+
+.pdf-zoom {
+  min-width: 3.2rem;
+}
+
+.pdf-toolbar-spacer {
+  flex: 1;
+}
+
+.pdf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+}
+
+.pdf-page-shell {
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.24),
+    0 14px 36px rgb(0 0 0 / 0.2);
+}
+
+.pdf-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pdf-highlight {
+  position: absolute;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.pdf-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--color-paper) 82%, transparent);
+  color: var(--color-ink-muted);
+  font-size: 0.8rem;
+}
+
+.pdf-error {
+  margin: 18px;
+}
+
+@media (max-width: 640px) {
+  .pdf-scroll {
+    padding: 10px;
+  }
+
+  .pdf-toolbar {
+    padding: 6px 8px;
+  }
+
+  .pdf-page-count {
+    min-width: 5.5rem;
+  }
+}
+
 @keyframes document-focus-tint {
   0% {
     background-color: var(--color-accent-soft);

@@ -7,6 +7,20 @@ import { buildDocx, DOCX_MEDIA_TYPE } from './test/docxFixture'
 import { loadChatHistory } from './lib/chatHistoryStore'
 import type { AgentChatSource, CurrentUser, Workspace } from './types'
 
+// jsdom has no canvas/PDF.js worker. The viewer's shell, page controls and
+// citation page target are still exercised against this small fake document.
+vi.mock('./lib/pdf', () => ({
+  loadPdf: vi.fn(async () => ({
+    pdf: { numPages: 3 },
+    destroy: vi.fn(async () => undefined),
+  })),
+  renderPdfPage: vi.fn(async () => ({
+    width: 600,
+    height: 800,
+    cancel: vi.fn(),
+  })),
+}))
+
 const admin: CurrentUser = {
   id: 'user-admin',
   username: 'admin',
@@ -948,8 +962,21 @@ describe('dashboard application', () => {
     await user.click(chip)
 
     const viewer = await screen.findByRole('dialog', { name: 'report.pdf' })
-    const frame = await within(viewer).findByTitle('report.pdf')
-    expect(frame).toHaveAttribute('src', expect.stringContaining('#page=2'))
+    expect(await within(viewer).findByLabelText('Page number')).toHaveValue(2)
+    expect(within(viewer).getByText('of 3')).toBeInTheDocument()
+    expect(within(viewer).getByTestId('pdf-canvas')).toBeInTheDocument()
+
+    await user.click(within(viewer).getByRole('button', { name: 'Next page' }))
+    await waitFor(() =>
+      expect(within(viewer).getByLabelText('Page number')).toHaveValue(3),
+    )
+    await user.click(within(viewer).getByRole('button', { name: 'Previous page' }))
+    await waitFor(() =>
+      expect(within(viewer).getByLabelText('Page number')).toHaveValue(2),
+    )
+
+    await user.click(within(viewer).getByRole('button', { name: 'Zoom in' }))
+    expect(within(viewer).getByText('150%')).toBeInTheDocument()
   })
 
   it('shows every tool call, not only the first', async () => {

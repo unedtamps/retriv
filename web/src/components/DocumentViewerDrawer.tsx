@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Download, ExternalLink, LoaderCircle, Maximize2, Minimize2 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import { cachedDocument, loadDocument, type DocumentFile } from '../lib/documentCache'
@@ -7,6 +7,13 @@ import { Dialog } from './Dialog'
 import { DocumentDocxPreview } from './DocumentDocxPreview'
 import { DocumentJsonPreview } from './DocumentJsonPreview'
 import { DocumentSheetPreview } from './DocumentSheetPreview'
+import type { PdfHighlightRegion } from './DocumentPdfPreview'
+
+const DocumentPdfPreview = lazy(() =>
+  import('./DocumentPdfPreview').then((module) => ({
+    default: module.DocumentPdfPreview,
+  })),
+)
 
 interface DocumentViewerDrawerProps {
   document: DocumentUpload
@@ -15,6 +22,8 @@ interface DocumentViewerDrawerProps {
   onClose: () => void
   /** The PDF page a citation points at; ignored by the other previews. */
   page?: number
+  /** Provenance regions to draw over the PDF page. */
+  highlights?: PdfHighlightRegion[]
 }
 
 const DOCX_MEDIA_TYPE =
@@ -35,6 +44,7 @@ export function DocumentViewerDrawer({
   onUnauthorized,
   onClose,
   page,
+  highlights,
 }: DocumentViewerDrawerProps) {
   const [loaded, setLoaded] = useState<DocumentFile | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -159,11 +169,26 @@ export function DocumentViewerDrawer({
             Loading preview…
           </div>
         ) : isPdf ? (
-          <iframe
-            src={page !== undefined && page > 0 ? `${file.url}#page=${page}` : file.url}
-            title={document.original_filename}
-            className="h-full w-full border-0 bg-surface"
-          />
+          <Suspense
+            fallback={
+              <div
+                className="flex h-full items-center justify-center gap-2 text-sm text-ink-muted"
+                role="status"
+              >
+                <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+                Loading the PDF viewer…
+              </div>
+            }
+          >
+            <DocumentPdfPreview
+              key={`${workspace.id}:${document.id}`}
+              document={document}
+              workspace={workspace}
+              page={page}
+              highlights={highlights}
+              onUnauthorized={onUnauthorized}
+            />
+          </Suspense>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <p className="text-sm font-medium text-ink">No inline preview for this file type</p>
