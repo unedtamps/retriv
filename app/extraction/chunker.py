@@ -65,6 +65,7 @@ def _line_regions(
             str,
             str,
             str,
+            str,
         ]
     ] = set()
     seen_refs: set[str] = set()
@@ -76,6 +77,7 @@ def _line_regions(
                 region.kind,
                 region.ref,
                 region.anchor,
+                region.text,
             )
             if key in seen:
                 continue
@@ -87,6 +89,7 @@ def _line_regions(
                     "kind": region.kind,
                     "ref": region.ref,
                     "anchor": region.anchor,
+                    "text": region.text,
                 }
             )
             if region.ref and region.ref not in seen_refs:
@@ -287,6 +290,7 @@ class MarkdownChunker:
                 "kind": region.kind,
                 "ref": region.ref,
                 "anchor": region.anchor,
+                "text": region.text,
             }
             for region in block.regions
         ]

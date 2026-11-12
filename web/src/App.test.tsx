@@ -245,6 +245,24 @@ function installApi(
         headers: { 'Content-Type': body.type || 'application/pdf' },
       })
     }
+    const textLayer = url.match(
+      /^\/v1\/workspaces\/[^/]+\/documents\/[^/]+\/text-layer$/,
+    )
+    if (textLayer !== null && (init?.method === undefined || init.method === 'GET')) {
+      return json({
+        pages: [
+          {
+            page_no: 2,
+            lines: [
+              {
+                text: 'Scanned cited line',
+                bbox: [0.1, 0.6, 0.5, 0.65],
+              },
+            ],
+          },
+        ],
+      })
+    }
     const chunkRegions = url.match(
       /^\/v1\/workspaces\/[^/]+\/documents\/[^/]+\/chunks\/\d+\/regions$/,
     )
@@ -989,9 +1007,10 @@ describe('dashboard application', () => {
 
     const viewer = await screen.findByRole('dialog', { name: 'report.pdf' })
     expect(await within(viewer).findByLabelText('Page number')).toHaveValue(2)
-    expect(within(viewer).getByText('of 3')).toBeInTheDocument()
+    expect(await within(viewer).findByText('of 3')).toBeInTheDocument()
     expect(within(viewer).getAllByTestId('pdf-canvas')).toHaveLength(3)
     expect(within(viewer).getAllByTestId('pdf-text-layer')).toHaveLength(3)
+    expect(await within(viewer).findByText('Scanned cited line')).toBeInTheDocument()
     await waitFor(() => expect(viewer.querySelector('.pdf-highlight')).not.toBeNull())
     const highlight = viewer.querySelector('.pdf-highlight') as HTMLElement
     expect(highlight.style.left).toBe('10%')

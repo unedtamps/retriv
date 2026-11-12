@@ -110,6 +110,7 @@ class SourceRegion:
     kind: str = "text"
     ref: str = ""
     anchor: str = ""
+    text: str = ""
 
 
 @dataclass(frozen=True)
@@ -351,6 +352,7 @@ def _ocr_line(
             right / page_width,
             bottom / page_height,
         ),
+        kind="ocr",
     )
 
 
@@ -543,6 +545,7 @@ def _attach_regions(
                     bbox=line.bbox,
                     kind=line.kind,
                     ref=line.ref,
+                    text=line.text if line.kind == "ocr" else "",
                 )
             )
         result.append(replace(block, regions=tuple(matches)) if matches else block)

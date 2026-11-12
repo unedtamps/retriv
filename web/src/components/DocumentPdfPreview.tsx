@@ -20,7 +20,7 @@ import {
   renderPdfTextLayer,
   type LoadedPdf,
 } from '../lib/pdf'
-import type { DocumentUpload, Workspace } from '../types'
+import type { DocumentUpload, PageTextLine, Workspace } from '../types'
 
 export interface PdfHighlightRegion {
   /** 1-based page number. */
@@ -60,6 +60,7 @@ function PdfPageView({
   scale,
   defaultSize,
   highlights,
+  ocrLines,
   scrollRoot,
 }: {
   pdf: LoadedPdf['pdf']
@@ -67,6 +68,7 @@ function PdfPageView({
   scale: number
   defaultSize: PageSize
   highlights: PdfHighlightRegion[]
+  ocrLines: PageTextLine[]
   scrollRoot: RefObject<HTMLDivElement | null>
 }) {
   const [visible, setVisible] = useState(
@@ -157,6 +159,29 @@ function PdfPageView({
           data-testid="pdf-text-layer"
         />
       ) : null}
+      {visible && ocrLines.length > 0 ? (
+        <div className="pdf-ocr-layer" data-testid="pdf-ocr-layer">
+          {ocrLines.map((line, index) => {
+            const [x0, y0, x1, y1] = line.bbox
+            const lineHeight = (y1 - y0) * pageHeight
+            return (
+              <span
+                key={index}
+                style={{
+                  left: `${x0 * 100}%`,
+                  top: `${y0 * 100}%`,
+                  width: `${(x1 - x0) * 100}%`,
+                  height: `${(y1 - y0) * 100}%`,
+                  fontSize: `${Math.max(6, lineHeight * 0.8)}px`,
+                  lineHeight: 1,
+                }}
+              >
+                {line.text}
+              </span>
+            )
+          })}
+        </div>
+      ) : null}
       {visible
         ? pageHighlights.map((region, index) => (
             <span
@@ -208,6 +233,7 @@ export function DocumentPdfPreview({
   const [defaultSize, setDefaultSize] = useState<PageSize>(FALLBACK_PAGE_SIZE)
   const [zoom, setZoom] = useState(DEFAULT_ZOOM)
   const [error, setError] = useState<string | null>(null)
+  const [ocrPages, setOcrPages] = useState<Record<number, PageTextLine[]>>({})
   const [lastPageProp, setLastPageProp] = useState(page)
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollFrame = useRef<number | null>(null)
@@ -257,6 +283,27 @@ export function DocumentPdfPreview({
     return () => {
       mounted = false
       if (loaded !== null) void loaded.destroy()
+    }
+  }, [document, workspace.id, onUnauthorized])
+
+  useEffect(() => {
+    let mounted = true
+    api
+      .getDocumentTextLayer(workspace.id, document.id)
+      .then(({ pages }) => {
+        if (!mounted) return
+        setOcrPages(
+          Object.fromEntries(
+            pages.map((pageLayer) => [pageLayer.page_no, pageLayer.lines]),
+          ),
+        )
+      })
+      .catch((caught: unknown) => {
+        if (mounted && isUnauthorized(caught)) onUnauthorized()
+        // A document without OCR lowers to the ordinary canvas/text layer.
+      })
+    return () => {
+      mounted = false
     }
   }, [document, workspace.id, onUnauthorized])
 
@@ -425,6 +472,7 @@ export function DocumentPdfPreview({
                 scale={zoom}
                 defaultSize={defaultSize}
                 highlights={highlights}
+                ocrLines={ocrPages[pageNumber] ?? []}
                 scrollRoot={scrollRef}
               />
             )

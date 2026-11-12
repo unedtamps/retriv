@@ -213,10 +213,25 @@ class DocumentSourceRegion(BaseModel):
     kind: str = "text"
     ref: str = ""
     anchor: str = ""
+    text: str = ""
 
 
 class ChunkRegionsResponse(BaseModel):
     regions: list[DocumentSourceRegion] = Field(default_factory=list)
+
+
+class PageTextLine(BaseModel):
+    text: str
+    bbox: tuple[float, float, float, float]
+
+
+class PageTextLayer(BaseModel):
+    page_no: int
+    lines: list[PageTextLine] = Field(default_factory=list)
+
+
+class DocumentTextLayerResponse(BaseModel):
+    pages: list[PageTextLayer] = Field(default_factory=list)
 
 
 class ProcessingRunSummary(BaseModel):

@@ -27,6 +27,9 @@ from app.api.schemas import (
     DocumentListResponse,
     DocumentResponse,
     DocumentSourceRegion,
+    DocumentTextLayerResponse,
+    PageTextLayer,
+    PageTextLine,
 )
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
@@ -315,9 +318,73 @@ async def get_chunk_regions(
                 bbox=(x0, y0, x1, y1),
                 kind=str(entry.get("kind", "text")),
                 ref=str(entry.get("ref", "")),
+                text=str(entry.get("text", "")),
             )
         )
     return ChunkRegionsResponse(regions=regions)
+
+
+@router.get(
+    "/{document_id}/text-layer",
+    response_model=DocumentTextLayerResponse,
+)
+async def get_document_text_layer(
+    document: DocumentContext,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DocumentTextLayerResponse:
+    """OCR lines for scanned pages, reconstructed from chunk provenance.
+
+    Born-digital pages already have PDF.js's own text layer; this route is
+    only the fallback for pages whose words came from OCR. Bounding boxes are
+    normalized so the viewer can place the text over the page it belongs to.
+    """
+    provenances = (
+        await session.scalars(
+            select(DocumentChunk.provenance).where(
+                DocumentChunk.document_id == document.document.id,
+                DocumentChunk.processing_run_id
+                == document.document.active_processing_run_id,
+            )
+        )
+    ).all()
+    pages: dict[int, dict[tuple[float, float, float, float], PageTextLine]] = {}
+    for provenance in provenances:
+        for entry in provenance.get("regions", []):
+            if not isinstance(entry, dict) or entry.get("kind") != "ocr":
+                continue
+            text = entry.get("text")
+            page_no = entry.get("page_no")
+            bbox = entry.get("bbox")
+            if (
+                not isinstance(text, str)
+                or text.strip() == ""
+                or not isinstance(page_no, int)
+                or page_no < 1
+                or not isinstance(bbox, (list, tuple))
+                or len(bbox) != 4
+                or not all(isinstance(value, (int, float)) for value in bbox)
+            ):
+                continue
+            x0, y0, x1, y1 = (float(value) for value in bbox)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            page = pages.setdefault(page_no, {})
+            page[(x0, y0, x1, y1)] = PageTextLine(
+                text=text,
+                bbox=(x0, y0, x1, y1),
+            )
+    return DocumentTextLayerResponse(
+        pages=[
+            PageTextLayer(
+                page_no=page_no,
+                lines=sorted(
+                    page.values(),
+                    key=lambda line: (line.bbox[1], line.bbox[0]),
+                ),
+            )
+            for page_no, page in sorted(pages.items())
+        ]
+    )
 
 
 @router.get("/{document_id}/download")

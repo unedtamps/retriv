@@ -17,6 +17,7 @@ import type {
   CurrentUser,
   DocumentList,
   DocumentSearchResponse,
+  DocumentTextLayer,
   DocumentUpload,
   GeneratedPassword,
   MemberCandidateList,
@@ -399,6 +400,20 @@ export const api = {
   ): Promise<ChunkRegions> {
     return request<ChunkRegions>(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/chunks/${ordinal}/regions`,
+      { signal },
+    )
+  },
+
+  /**
+   * OCR text lines for scanned pages, used when the PDF has no text layer.
+   */
+  getDocumentTextLayer(
+    workspaceId: string,
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentTextLayer> {
+    return request<DocumentTextLayer>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/text-layer`,
       { signal },
     )
   },

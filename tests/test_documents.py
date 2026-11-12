@@ -227,6 +227,13 @@ async def test_cited_chunk_regions_are_scoped_to_the_active_document_run(
                             "anchor": "docx-4",
                             "ref": "",
                         },
+                        {
+                            "page_no": 2,
+                            "bbox": [0.2, 0.4, 0.6, 0.45],
+                            "kind": "ocr",
+                            "ref": "",
+                            "text": "OCR line",
+                        },
                     ]
                 },
             )
@@ -247,6 +254,7 @@ async def test_cited_chunk_regions_are_scoped_to_the_active_document_run(
                 "kind": "text",
                 "ref": "",
                 "anchor": "",
+                "text": "",
             },
             {
                 "page_no": None,
@@ -254,7 +262,35 @@ async def test_cited_chunk_regions_are_scoped_to_the_active_document_run(
                 "kind": "docx-block",
                 "ref": "",
                 "anchor": "docx-4",
+                "text": "",
             },
+            {
+                "page_no": 2,
+                "bbox": [0.2, 0.4, 0.6, 0.45],
+                "kind": "ocr",
+                "ref": "",
+                "anchor": "",
+                "text": "OCR line",
+            },
+        ]
+    }
+
+    text_layer = await client.get(
+        f"/v1/workspaces/{entities.finance.id}/documents/{document_id}/text-layer",
+        headers=auth_headers,
+    )
+    assert text_layer.status_code == 200, text_layer.text
+    assert text_layer.json() == {
+        "pages": [
+            {
+                "page_no": 2,
+                "lines": [
+                    {
+                        "text": "OCR line",
+                        "bbox": [0.2, 0.4, 0.6, 0.45],
+                    }
+                ],
+            }
         ]
     }
 

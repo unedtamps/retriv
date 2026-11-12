@@ -229,6 +229,7 @@ def test_chunk_provenance_carries_normalized_source_regions() -> None:
             "kind": "text",
             "ref": "",
             "anchor": "",
+            "text": "",
         }
     ]
 
@@ -715,8 +716,22 @@ def test_docx_blocks_carry_order_anchors_into_chunks(tmp_path: Path) -> None:
         for region in chunk.provenance.get("regions", [])
     ]
     assert regions == [
-        {"page_no": None, "bbox": None, "kind": "docx-block", "ref": "", "anchor": "docx-0"},
-        {"page_no": None, "bbox": None, "kind": "docx-block", "ref": "", "anchor": "docx-1"},
+        {
+            "page_no": None,
+            "bbox": None,
+            "kind": "docx-block",
+            "ref": "",
+            "anchor": "docx-0",
+            "text": "",
+        },
+        {
+            "page_no": None,
+            "bbox": None,
+            "kind": "docx-block",
+            "ref": "",
+            "anchor": "docx-1",
+            "text": "",
+        },
     ]
 
 

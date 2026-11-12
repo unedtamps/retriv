@@ -102,10 +102,25 @@ export interface DocumentSourceRegion {
   kind: string
   ref: string
   anchor: string
+  text: string
 }
 
 export interface ChunkRegions {
   regions: DocumentSourceRegion[]
+}
+
+export interface PageTextLine {
+  text: string
+  bbox: [number, number, number, number]
+}
+
+export interface PageTextLayer {
+  page_no: number
+  lines: PageTextLine[]
+}
+
+export interface DocumentTextLayer {
+  pages: PageTextLayer[]
 }
 
 export interface ProcessingRun {
