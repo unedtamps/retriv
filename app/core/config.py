@@ -223,7 +223,7 @@ class Settings(BaseSettings):
     sql_reader_password: SecretStr | None = None
 
     tracing_enabled: bool = False
-    tracing_endpoint: str = "http://127.0.0.1:4318/v1/traces"
+    tracing_endpoint: str = "http://127.0.0.1:14318/v1/traces"
     tracing_sample_ratio: float = Field(default=1.0, gt=0, le=1)
 
     @model_validator(mode="after")
