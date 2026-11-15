@@ -13,19 +13,6 @@ interface DocumentDocxPreviewProps {
   anchors?: string[]
 }
 
-/**
- * A Word document, laid out the way Word would lay it out.
- *
- * The rendered pages live inside a shadow root for two reasons: the stylesheet
- * that comes with the file describes generic selectors (`p`, `table`, `span`)
- * and would otherwise repaint the whole application, and the application's own
- * styles would otherwise wreck the page. Neither direction is wanted.
- *
- * Inside the shadow root the wrapper chrome still reads the application's
- * colour tokens -- custom properties inherit across a shadow boundary -- so the
- * surrounding surface follows the theme while the pages themselves stay paper
- * white, which is what a document is supposed to look like in either theme.
- */
 export function DocumentDocxPreview({
   document,
   workspace,
@@ -123,13 +110,6 @@ export function DocumentDocxPreview({
   return <div ref={hostRef} className="h-full w-full" data-testid="docx-preview" />
 }
 
-/**
- * Chrome for the rendered pages, inside the shadow root.
- *
- * `.retriv-docx-wrapper` and the page `section` are docx-preview's own class
- * names; the two-class selectors here beat its single-class rules regardless of
- * which stylesheet was inserted first.
- */
 const SHELL_STYLES = `
 <style>
 :host {

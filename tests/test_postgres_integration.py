@@ -139,8 +139,7 @@ async def test_concurrent_identical_uploads_converge_in_postgresql() -> None:
     """Two identical uploads race on the unique (workspace_id, sha256).
 
     One wins and returns 202; the other must not create a second document
-    or a second processing run. This is what the outbox used to paper
-    over; now a single constraint has to do it.
+    or a second processing run.
     """
     from tests.document_samples import pdf_bytes
 
@@ -597,11 +596,8 @@ async def test_rows_survive_the_limit_wrapper_and_render_with_column_names() -> 
 
     The statement is wrapped to enforce a result limit, which means the
     returned columns are the model's selection *plus* whatever `select *`
-    brings along. An earlier version rejected any row carrying a column it
-    did not expect, so every plain `select *` was silently discarded and the
-    tool returned nothing while reporting no error. SQLite cannot show this:
-    the wrapper, the JSONB round trip and row-level security are all
-    Postgres-only.
+    brings along. SQLite cannot show this: the wrapper, the JSONB round trip
+    and row-level security are all Postgres-only.
     """
     engine = create_async_engine(database_url())
     role = "rls_probe_run"
@@ -1055,19 +1051,6 @@ class UploadAndProcessStorage(InMemoryObjectStorage):
 
 
 async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
-    """The whole path, which nothing else covers.
-
-    The worker tests seed a document row directly, so they skip both the
-    upload route and the object store. This goes through them: POST the file,
-    see it in storage, run the worker over the real run it enqueued, and read
-    the rows back. A gap between what the API accepts and what the worker can
-    parse would be invisible otherwise -- which is exactly how XLSX shipped,
-    accepted by the validator and refused by the extractor.
-
-    Also the only place jsonb and the manifest round trip are exercised
-    together, and the only place the catalogue is checked against a file that
-    actually went through the pipeline.
-    """
     from tests.document_samples import csv_bytes
 
     engine = create_async_engine(database_url(), pool_pre_ping=True)
@@ -1175,15 +1158,6 @@ async def test_a_csv_uploaded_over_http_lands_in_storage_then_rows() -> None:
 
 
 async def test_an_xlsx_upload_lands_as_named_sheets_with_visuals() -> None:
-    """The workbook path end to end, which only a real Postgres can show.
-
-    XLSX was accepted once and then failed in the extractor, which is why
-    this upload goes all the way through before anything asserts: POST the
-    file, run the worker over the run it enqueued, and read back named
-    sheets with their rows and their described pictures. A gap between what
-    the API accepts and what the worker can parse would be invisible
-    otherwise -- it is exactly how XLSX shipped the first time.
-    """
     from tests.document_samples import xlsx_visual_bytes
 
     engine = create_async_engine(database_url(), pool_pre_ping=True)
@@ -1306,27 +1280,6 @@ async def test_an_xlsx_upload_lands_as_named_sheets_with_visuals() -> None:
 
 
 async def test_a_row_query_is_served_by_the_document_index() -> None:
-    """A statement naming one document must not scan every row in the table.
-
-    ``RowQuery`` rejects any statement that does not name a ``document_id``,
-    so this predicate is in every statement the tool will ever run. When the
-    column carried no index, each of those statements started with a
-    sequential scan whose cost grew with the whole workspace; the test below
-    fails if the index is dropped, because the plan goes back to a scan.
-
-    The seeding is deliberately lopsided in the direction a real workspace
-    grows in: the file being queried holds a small share of the table, and
-    most rows belong to other files. That is what makes an index worth
-    reaching for. An earlier version of this test did the opposite -- 2,000 of
-    2,005 rows in the queried file -- and correctly failed: when one file is
-    99% of the table, reading the whole table in order really is the cheaper
-    plan, and the planner is right to choose it. Protecting the index means
-    testing the case it exists for, not forcing it on a case it does not.
-
-    The assertion is on the plan rather than on a timing: a timing would pass
-    on a small table and fail on a loaded CI machine, and the thing being
-    protected is the access path, not the clock.
-    """
     engine = create_async_engine(database_url())
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:

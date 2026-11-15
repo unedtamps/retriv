@@ -11,12 +11,6 @@ interface CreateUserDialogProps {
   onClose: () => void
 }
 
-/**
- * Creating a user.
- *
- * This lived inside the user directory's file, which made that file two
- * things at once. Every other dialog in the app has its own file.
- */
 export function CreateUserDialog({
   open,
   onCreated,

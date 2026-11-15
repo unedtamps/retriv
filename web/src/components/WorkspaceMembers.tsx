@@ -26,16 +26,6 @@ interface WorkspaceMembersProps {
   onNotice: (message: string, tone?: 'success' | 'error') => void
 }
 
-/**
- * The access policy: who is in the workspace and what they may do.
- *
- * Membership role only. The API resolves document permissions through the
- * caller's membership with no platform-admin bypass, so offering an admin a
- * button here would render one that answers 404.
- *
- * Adding a member lives behind a dialog; the page itself is the list people
- * came here to read.
- */
 export function WorkspaceMembers({
   workspace,
   isAdmin,

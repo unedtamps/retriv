@@ -1,15 +1,6 @@
 import type { WorkBook } from 'xlsx'
 
 /**
- * Turning a CSV or a small workbook into markup the viewer can mount.
- *
- * Two formats, one contract: the file's bytes in, an HTML table out. CSV is
- * decoded from text, a workbook from its zip; both then go through the same
- * range clamp and the same sanitising step.
- *
- * The library is imported lazily so its ~300 KB never reaches a user who only
- * opens PDFs: the chunk is fetched the first time a spreadsheet is previewed.
- *
  * A workbook past `PREVIEW_ROW_LIMIT` is refused rather than rendered. Parsing
  * a 200k-row sheet costs ~3 s and ~200 MB of heap and produces tens of
  * megabytes of DOM, which is enough to freeze the tab; the viewer says so and
@@ -74,14 +65,6 @@ function rowCountOf(workbook: WorkBook, sheetName: string): number {
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
-/**
- * The markup for one sheet, clamped to the preview limit.
- *
- * The clamp rewrites the sheet's own `!ref` before rendering rather than
- * truncating the finished HTML: the library then emits only the rows asked for,
- * which is the difference between building 200k DOM rows and discarding them
- * and never building them at all.
- */
 function renderSheet(
   XLSX: typeof import('xlsx'),
   workbook: WorkBook,
@@ -117,7 +100,6 @@ async function loadXlsx(): Promise<typeof import('xlsx')> {
   return import('xlsx')
 }
 
-/** The preview of a spreadsheet file, or a refusal when it is too large. */
 export async function renderSheetPreview(
   key: string,
   blob: Blob,
@@ -149,7 +131,6 @@ export async function renderSheetPreview(
   return preview
 }
 
-/** The sheet names of a workbook, without rendering any of them. */
 export async function listSheets(blob: Blob, format: 'csv' | 'xlsx'): Promise<string[]> {
   const XLSX = await loadXlsx()
   const data = format === 'csv' ? await blob.text() : new Uint8Array(await blob.arrayBuffer())
@@ -164,15 +145,6 @@ function cacheKey(key: string, sheetName: string | undefined): string {
   return `${key}:${sheetName ?? ''}`
 }
 
-/**
- * The rendered markup with anything executable removed.
- *
- * The library escapes cell text, so a `<script>` in a cell arrives as text
- * rather than as a tag. This pass is the second line: it drops elements that a
- * future library version, an inline style, or a document-embedded hyperlink
- * could reintroduce, and it runs before the markup is ever assigned to the
- * viewer's DOM.
- */
 export function sanitizeSheetMarkup(markup: string): string {
   const template = document.createElement('template')
   template.innerHTML = markup

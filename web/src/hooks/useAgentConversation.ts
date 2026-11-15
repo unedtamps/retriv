@@ -35,21 +35,6 @@ export function historyOf(items: ChatItem[]): AgentChatHistoryMessage[] {
     .map((item) => ({ role: item.kind, content: item.text }))
 }
 
-/**
- * The conversation archive, owned above the page that shows it.
- *
- * The archive is held here rather than inside the chat page because the page
- * mounts and unmounts as the user moves between views, and a conversation
- * that died on every tab switch would make the tab useless. Every session is
- * also persisted to this browser's storage: the wire protocol replays the
- * recent history on each turn anyway, so what the client remembers is
- * exactly what a continuation needs -- the transcript and the session id the
- * model side keys its caching on. Switching back to an old session restores
- * both, which is what reattaches it to the model session that wrote it.
- *
- * `activeId === null` is the draft state: nothing typed yet, no session in
- * the archive. The first message promotes it into a stored session.
- */
 export function useAgentConversation(onUnauthorized: () => void) {
   const [history, setHistory] = useState<StoredChatHistory>(() => loadChatHistory())
   const active = useMemo(
@@ -65,18 +50,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
   // whole session lives for.
   const sessionIdRef = useRef<string>(crypto.randomUUID())
   const streamingRef = useRef(false)
-  // Bumped on every wholesale transcript replacement (switch, New chat,
-  // delete). A pending transcript->archive write captures the epoch when it
-  // is scheduled and skips itself if it changed: without this, a switch
-  // raced the write and the old conversation resurrected itself into the
-  // archive over the empty draft.
   const epochRef = useRef(0)
-
-  // Loading the archive is the mount-time items source; afterwards the
-  // session switcher is the only thing that replaces the transcript whole.
-  // The transcript's latest copy for callbacks: a session-context change has
-  // to flush it synchronously, and the render-scoped `items` would be stale
-  // by the time the debounced write was scheduled to run.
   const itemsRef = useRef(items)
   itemsRef.current = items
 
@@ -311,10 +285,6 @@ export function useAgentConversation(onUnauthorized: () => void) {
   const newConversation = () => {
     abortRef.current?.abort()
     commitTranscript(false)
-    // Cleared directly rather than through the activeId transition: from the
-    // draft state activeId is already null, and a no-op set would leave the
-    // draft's transcript on screen. The archive keeps the old session -- the
-    // sidebar still lists it, and its id is what a click restores.
     epochRef.current += 1
     loadDraft()
     setDraft('')

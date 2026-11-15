@@ -3,14 +3,6 @@ import { LoaderCircle } from 'lucide-react'
 import { getErrorMessage, isUnauthorized, retrievalAdmin } from '../api'
 import type { RetrievalSettings, RetrievalUpdate } from '../types'
 
-/**
- * The optional reranker, configured beside the chat model.
- *
- * Off by default: the retrieval path stays cosine-only until an admin turns
- * this on, and any failure at the reranker falls back to that same cosine
- * order. Laya is a pointwise decision model on the embedding server; BGE is a
- * local llama.cpp cross-encoder whose score is blended with cosine.
- */
 export function AdminRerank({
   onUnauthorized,
   onNotice,

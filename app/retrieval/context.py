@@ -551,14 +551,6 @@ class ContextRetriever:
     ) -> list[ContextSource]:
         """The nearest ``limit`` indexed chunks, servable by construction.
 
-        One statement does the work the two-store design split in two. The
-        join is the validation: a row can only come back if its document is
-        live, its run is the document's active one, its embedding is indexed
-        under the current profile with the configured dimensions, its hash
-        matches the chunk's, and a workspace link puts it inside the signed
-        scope. The payload metadata a Qdrant match used to carry and be
-        checked against is simply not needed -- the row is its own payload.
-
         The ordering is on raw cosine distance because that is what lets the
         planner use the HNSW index. The relevance floor is applied after the
         fetch, so the semantics match what Qdrant's were: the index returns

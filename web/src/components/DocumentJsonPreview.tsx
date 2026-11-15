@@ -56,13 +56,6 @@ function isEnvelope(value: unknown): value is JsonEnvelope {
   )
 }
 
-/**
- * A retriv-json payload, shown as its declared tables plus the raw envelope.
- *
- * The protocol makes this view deterministic: the columns come from the file,
- * not from a guess about the first record. Rendering is capped because a JSON
- * file can still be a large export even when it follows the protocol.
- */
 export function DocumentJsonPreview({
   document,
   workspace,

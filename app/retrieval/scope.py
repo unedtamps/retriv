@@ -1,13 +1,3 @@
-"""Scope helpers for the retrieval and MCP tool paths.
-
-The RS256 delegation token is gone: every entrypoint derives the workspace
-scope from the caller's own memberships and passes it straight down, so
-there is no signature to verify and no second service to trust.
-
-The cap stays. A scope wide enough to be worth rejecting is also a scope
-wide enough to be a denial-of-service risk against the vector search.
-"""
-
 from uuid import UUID
 
 from sqlalchemy import select

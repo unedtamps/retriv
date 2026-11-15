@@ -33,13 +33,6 @@ const DOCX_MEDIA_TYPE =
 const XLSX_MEDIA_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
-/**
- * The original document, rendered in place.
- *
- * The bytes are fetched once per document and kept, so closing and re-opening
- * the same file is instant and costs no request. A second open reads the
- * cached entry synchronously and never shows a spinner.
- */
 export function DocumentViewerDrawer({
   document,
   workspace,

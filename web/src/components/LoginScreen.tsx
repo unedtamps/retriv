@@ -8,13 +8,6 @@ interface LoginScreenProps {
   onLogin: (username: string, password: string) => Promise<void>
 }
 
-/**
- * The sign-in page.
- *
- * This is the one screen that keeps a dark panel. Everywhere else the app
- * is light, so the sign-in page is the only place a brand surface appears,
- * and it is the only place one earns its keep.
- */
 export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')

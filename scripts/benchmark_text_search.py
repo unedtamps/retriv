@@ -1,22 +1,6 @@
 #!/usr/bin/env python
 """Benchmark lexical search: current substring lookup vs BM25 vs a hybrid.
 
-The agent's ``search_text`` tool currently requires the whole query to appear as
-one contiguous, case-insensitive substring. That is precise for identifiers but
-useless for a long keyword string whose terms are present in a different order.
-
-This harness compares three lexical rankings over the same chunks:
-
-- ``ilike``  — the production ``ContextRetriever.search_text``;
-- ``bm25``   — Okapi BM25 over the chunk text, with stopwords removed;
-- ``hybrid`` — exact substring matches first, then BM25 for the rest.
-
-It runs the 64 retrieval questions as long lexical queries, plus two extra
-sets: identifiers mined from the corpus and synthetic non-contiguous term
-queries. The identifier set checks that a lexical upgrade does not lose the
-tool's original precision; the synthetic set is a capability check, not a
-quality claim.
-
 Usage::
 
     uv run python scripts/benchmark_text_search.py \

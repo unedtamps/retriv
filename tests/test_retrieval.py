@@ -490,18 +490,6 @@ async def test_an_empty_or_duplicated_scope_is_refused() -> None:
 
 
 async def test_a_heading_match_pulls_in_the_subtree_it_heads() -> None:
-    """The failure this exists for: a heading retrieved, its content did not.
-
-    A heading is short and topically concentrated, so it wins the similarity
-    comparison against the prose it introduces. On the UNDP regulations this produced
-    an answer asserting the article's content was absent from a document that
-    contained it.
-
-    The shape matters. The markdown extractor files the substance of "Pasal 16" under one section
-    per numbered sub-provision, so the article's own key is held by a single short
-    chunk and the prose lives at deeper keys that no amount of position-based
-    expansion reaches. Only a subtree query does.
-    """
     settings = make_settings().model_copy(
         update={
             "embedding_model": "test-embedding-model",
@@ -904,13 +892,6 @@ async def test_document_scoped_completion_stays_inside_that_document() -> None:
 
 
 async def test_completion_still_fires_when_the_search_fills_its_quota() -> None:
-    """The realistic case: a full page of matches must still leave room to complete.
-
-    ``limit`` bounds similarity matches, so when the search returns its whole quota
-    there is nothing left over under a naive reading -- yet that is precisely the
-    situation that produced the empty Article 16 answer. ``budget`` is what separates
-    the two, and no caller passed it, so the feature was unreachable in production.
-    """
     settings = make_settings().model_copy(
         update={
             "embedding_model": "test-embedding-model",
@@ -963,14 +944,6 @@ async def test_completion_still_fires_when_the_search_fills_its_quota() -> None:
 
 
 async def test_completion_is_off_when_no_budget_is_granted() -> None:
-    """The regression that made section completion dead code in production.
-
-    ``budget`` defaults to None, which collapses the cap onto ``limit``, so a search
-    that filled its quota had no room left. Every measured baseline recorded
-    ``expansion_only_hits: 0`` for exactly this reason. The cap must still hold when
-    a caller genuinely forgets to pass one -- the fix is that ``search_context``
-    passes ``max_context_sources``, not that the default quietly grows.
-    """
     settings = make_settings().model_copy(
         update={
             "embedding_model": "test-embedding-model",

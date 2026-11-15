@@ -100,19 +100,7 @@ def _jpeg_pixel_size(data: bytes) -> tuple[int, int] | None:
 def fit_image_to_limit(
     data: bytes, media_type: str, max_bytes: int, max_edge: int
 ) -> tuple[bytes, str] | None:
-    """The picture re-encoded under a byte cap, or ``None`` when it cannot be.
-
-    A picture is bounded by what a model can read, not by how large the file
-    happened to be: a 33 MB camera photo carries the same content as an 800 KB
-    render of it. So an oversized picture is shrunk -- in steps, keeping its
-    own format -- rather than dropped, which is what leaving the cap to the
-    collector would do: silently, with no marker and no row.
-
-    ``max_edge`` bounds the first attempt, because pixels are what a model
-    reads; the byte cap is then met by tightening quality. A picture that is
-    already inside both limits is returned untouched, so nothing is
-    decoded and re-encoded for no reason.
-    """
+    """The picture re-encoded under a byte cap, or ``None`` when it cannot be."""
     import pymupdf
 
     image_format = image_format_of(data)

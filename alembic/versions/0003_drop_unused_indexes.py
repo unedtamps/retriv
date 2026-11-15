@@ -1,19 +1,3 @@
-"""Drop indexes that no query uses.
-
-``ix_api_keys_key_prefix`` backed a display-only column; key authentication
-looks up ``key_hash``. ``ix_documents_origin_workspace_id`` and
-``ix_documents_origin_workspace_created`` covered a filter no query issues;
-the only select of ``origin_workspace_id`` is by ``sha256``.
-``ix_document_images_document`` duplicated the leading column of
-``uq_document_images_document_ref``. ``ix_document_rows_active_lookup``
-covered a filter the row-query path never issues; deletes by run use
-``uq_document_rows_run_sheet_row`` and reads filter by ``document_id``.
-
-Revision ID: 0003_drop_unused_indexes
-Revises: 0002_drop_access_jobs
-Create Date: 2026-11-09
-"""
-
 from collections.abc import Sequence
 
 from alembic import op

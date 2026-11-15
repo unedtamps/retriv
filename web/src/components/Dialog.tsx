@@ -97,12 +97,6 @@ export function Dialog({
   )
 }
 
-/**
- * The row of buttons at the foot of a dialog.
- *
- * Six dialogs had this row written out, each with its own gap and its own
- * border colour.
- */
 export function DialogActions({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-col-reverse gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-end sm:px-6">

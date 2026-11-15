@@ -9,11 +9,6 @@ interface RoleTilesProps {
   roles: WorkspaceRole[]
 }
 
-/**
- * The shared role picker: one tile per role, selected by click, saved by the
- * caller. The tiles only choose — every consumer decides when (or whether)
- * the change is committed, so no tile ever writes to the API itself.
- */
 export function RoleTiles({ label, labelId, value, onChange, roles }: RoleTilesProps) {
   return (
     <div>

@@ -3,16 +3,6 @@ import { LoaderCircle } from 'lucide-react'
 import { agentAdmin, getErrorMessage, isUnauthorized } from '../api'
 import type { AgentModelSettings, AgentProviderInfo } from '../types'
 
-/**
- * The one chat model every agent session uses, configured here.
- *
- * A built-in provider owns its base URL and its default model, so the admin
- * picks the provider and pastes a key; only the custom entry asks for an
- * address. Saving always keeps the settings and reports the live connection
- * test: an endpoint that answers with a different model than the one named,
- * or not at all, is shown here instead of surfacing the first time someone
- * asks the agent a question.
- */
 export function AdminAgentModel({
   onUnauthorized,
   onNotice,

@@ -14,13 +14,6 @@ const OPTIONS: Array<{ id: ThemePreference; label: string; icon: typeof Sun }> =
   { id: 'dark', label: 'Dark', icon: Moon },
 ]
 
-/**
- * The theme control: one icon that shows what is in effect, and a menu that
- * names the three choices.
- *
- * It sits in the sidebar footer because the theme is a personal setting, next
- * to the sign-out button rather than among the workspace navigation.
- */
 export function ThemeMenu({ preference, resolved, onSelect }: ThemeMenuProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)

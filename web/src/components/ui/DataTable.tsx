@@ -15,14 +15,6 @@ interface DataTableProps<T> {
   empty?: ReactNode
 }
 
-/**
- * A table that becomes a list of cards on a narrow screen.
- *
- * Two screens had this written out by hand, and both of them made the table
- * scroll sideways on a phone instead: a `min-w-[42rem]` table inside an
- * `overflow-x-auto` is a table nobody can read. Here the first column is the
- * card's heading and the rest become label and value pairs.
- */
 export function DataTable<T>({ caption, columns, rows, rowKey, empty }: DataTableProps<T>) {
   if (rows.length === 0) {
     return <>{empty ?? null}</>

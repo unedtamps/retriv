@@ -13,13 +13,6 @@ export interface WorkspaceDocumentsData {
 const PAGE_SIZE = 100
 const MAX_PAGES = 20
 
-/**
- * Every document the dashboard can show for one workspace.
- *
- * The API pages at 100 records. A workspace overview needs ready/processing
- * counts and storage totals, so the loader walks the remaining pages instead
- * of quietly deriving those numbers from the first 100 rows.
- */
 export function useWorkspaceDocuments(
   workspace: Workspace | null,
   onUnauthorized: () => void,

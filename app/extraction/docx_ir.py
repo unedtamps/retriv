@@ -3,9 +3,8 @@
 A DOCX carries its structure in styles, so the walk is deterministic: a
 paragraph set in a heading style becomes a heading, a table becomes rows,
 an embedded picture becomes a marker. The document has no pages, so no
-page numbers exist here -- the same is true of how the old parser reported
-DOCX, and every consumer already treats an empty page list as "pages
-unknown".
+page numbers exist here, and every consumer treats an empty page list as
+"pages unknown".
 """
 
 from dataclasses import replace
@@ -36,16 +35,7 @@ def build_docx_blocks(
     max_image_bytes: int = 0,
     max_total_image_bytes: int = 0,
 ) -> tuple[list[DocumentBlock], list[ExtractedImage]]:
-    """The document as blocks and pictures, in the order it is written.
-
-    ``image_render_scale`` is accepted but unused: a DOCX picture arrives
-    with its own pixels, so there is nothing to scale. It keeps the
-    extractor's two format paths symmetric for the caller. The byte and
-    count caps mean what they mean in the PDF path: a picture over the
-    per-image cap is skipped, and collection stops at the total -- the cap
-    applies where the bytes come into existence, so no marker is ever
-    written for a picture that was never shipped.
-    """
+    """The document as blocks and pictures, in the order it is written."""
     document = docx.Document(str(path))
     blocks: list[DocumentBlock] = []
     images: list[ExtractedImage] = []

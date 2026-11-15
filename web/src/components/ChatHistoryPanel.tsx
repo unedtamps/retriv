@@ -3,17 +3,9 @@ import type { AgentConversation } from '../hooks/useAgentConversation'
 
 interface ChatHistoryPanelProps {
   conversation: AgentConversation
-  /** Called after a navigation action; the narrow drawer closes here. */
   onDone?: () => void
 }
 
-/**
- * The session archive: the new-task action and every conversation this
- * browser remembers.
- *
- * Shared by the permanent sidebar and the narrow-screen drawer so the two
- * never drift apart.
- */
 export function ChatHistoryPanel({ conversation, onDone }: ChatHistoryPanelProps) {
   const { sessions, activeId, selectSession, deleteSession, newConversation } = conversation
   const orderedSessions = [...sessions].sort((a, b) =>

@@ -1,11 +1,3 @@
-"""Enqueueing for the processing pipeline.
-
-This replaces the webhook intake tests. The event inbox existed to make
-a replayed HTTP delivery idempotent; with the document and its run
-committing in one transaction there is no replay, so the idempotency now
-has to come from the constraints on the rows themselves.
-"""
-
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -88,12 +80,6 @@ async def test_enqueue_extract_is_idempotent(
     settings: Settings,
     entities: SeededEntities,
 ) -> None:
-    """The webhook's event-id dedup is gone; this is what replaces it.
-
-    A second enqueue returns the run that already exists rather than
-    creating a second one, so a retried request cannot index a document
-    twice.
-    """
     document = new_document(entities.finance.id)
     async with db_session_factory() as session, session.begin():
         session.add(document)

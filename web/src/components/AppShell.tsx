@@ -42,10 +42,6 @@ const WORKSPACE_NAV: Array<{ view: DashboardView; label: string; icon: typeof La
   { view: 'members', label: 'Members', icon: Users },
 ]
 
-/**
- * The frame around every page: a rail on a wide screen, a drawer on a narrow
- * one, and a bar across the top.
- */
 export function AppShell({
   route,
   activeView,
@@ -552,14 +548,6 @@ interface WorkspaceSwitcherProps {
   onSelect: (workspaceId: string) => void
 }
 
-/**
- * The current workspace, and the switch that changes it.
- *
- * The card itself is the button: with only a handful of memberships, a
- * dropdown beside it beats walking down to the workspace list. Picking one
- * closes the menu in the same click and keeps the current view, which is
- * the workspace-scoped behaviour the dashboard already implements.
- */
 function WorkspaceSwitcher({
   workspaces,
   selectedWorkspace,

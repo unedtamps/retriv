@@ -9,12 +9,6 @@ interface SearchFieldProps {
   className?: string
 }
 
-/**
- * A search box with the icon in it.
- *
- * Four screens had this written out, each with its own wrapper div, its own
- * icon class and its own padding arithmetic on the input.
- */
 export function SearchField({
   id,
   label,

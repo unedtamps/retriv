@@ -16,18 +16,6 @@ interface AddWorkspaceMemberDialogProps {
   onClose: () => void
 }
 
-/**
- * Grant an existing platform user a role in this workspace.
- *
- * It lives in a dialog rather than in the page: adding a member is an
- * occasional act, and a permanent search box plus role picker plus button
- * pushed the actual member list most of a screen down.
- *
- * Candidates come from the platform user directory for an admin (who holds
- * no membership to ask the owner-facing search) and from the workspace's own
- * candidate search for an owner. Users already in the workspace are withheld,
- * so the PUT can only ever add.
- */
 export function AddWorkspaceMemberDialog({
   open,
   workspace,

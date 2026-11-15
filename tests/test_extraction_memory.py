@@ -23,7 +23,6 @@ from app.extraction.sandbox import SandboxedExtractor
 
 
 def test_the_production_allocation_message_is_recognised() -> None:
-    """The exact text from the 182-page 10-K that failed at an 8 GiB limit."""
     message = (
         "enforce fail at alloc_cpu.cpp:127] err == 0. DefaultCPUAllocator: "
         "can't allocate memory: you tried to allocate 26214400 bytes. "

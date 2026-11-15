@@ -1,16 +1,5 @@
 import type { Options } from 'docx-preview'
 
-/**
- * Rendering a `.docx` into markup the viewer can mount.
- *
- * The library is imported lazily so its ~100 KB never reaches a user who only
- * opens PDFs: the chunk is fetched the first time a Word file is previewed.
- *
- * The rendered markup is kept per file hash, because parsing a Word package is
- * the expensive part (unzip, XML parse, style resolution, layout) and the
- * result for a given set of bytes never changes. Re-opening a document that was
- * already previewed in this tab costs nothing but a string assignment.
- */
 const RENDER_OPTIONS: Partial<Options> = {
   className: 'retriv-docx',
   inWrapper: true,
@@ -46,7 +35,6 @@ const markupCache = new Map<string, string>()
 
 const BLOCKED_TAGS = new Set(['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'BASE', 'FORM'])
 
-/** The rendered representation of a document, ready to mount. */
 export async function renderDocxMarkup(key: string, blob: Blob): Promise<string> {
   const cached = cachedDocxMarkup(key)
   if (cached !== null) return cached
@@ -84,7 +72,6 @@ export async function renderDocxMarkup(key: string, blob: Blob): Promise<string>
   return markup
 }
 
-/** A document's markup if it has already been rendered in this tab. */
 export function cachedDocxMarkup(key: string): string | null {
   const markup = markupCache.get(key)
   if (markup === undefined) return null
@@ -94,7 +81,6 @@ export function cachedDocxMarkup(key: string): string | null {
   return markup
 }
 
-/** Forget every rendered document. Called on sign-out. */
 export function clearDocxMarkupCache(): void {
   markupCache.clear()
 }
@@ -117,13 +103,6 @@ function totalMarkupChars(): number {
   return total
 }
 
-/**
- * Strip everything from the rendered tree that a hostile file could use.
- *
- * The document is HTML by the time we see it, and no attribute of it was
- * authored by us, so the rules are deny-by-default: no scripting tags, no
- * event handlers, no embedded documents, and only URLs we can explain.
- */
 function sanitize(container: HTMLElement): void {
   for (const element of [...container.querySelectorAll('*')]) {
     if (BLOCKED_TAGS.has(element.tagName)) {

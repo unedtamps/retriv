@@ -1,5 +1,6 @@
 import hmac
 import re
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 from secrets import token_urlsafe
@@ -109,7 +110,7 @@ class Settings(BaseSettings):
     cap bounds the cost of a workbook that embeds a logo on every sheet."""
     max_concurrent_uploads: int = Field(default=2, ge=1, le=16)
     request_read_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
-    upload_temp_dir: Path = Path("/tmp")  # noqa: S108 - container-scoped tmpfs
+    upload_temp_dir: Path = Path(tempfile.gettempdir())
 
     max_source_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     max_chunks_per_document: int = Field(default=10_000, gt=0)
@@ -221,7 +222,6 @@ class Settings(BaseSettings):
     sql_reader_user: str = "retriv_reader"
     sql_reader_password: SecretStr | None = None
 
-    # -- tracing --------------------------------------------------------
     tracing_enabled: bool = False
     tracing_endpoint: str = "http://127.0.0.1:4318/v1/traces"
     tracing_sample_ratio: float = Field(default=1.0, gt=0, le=1)

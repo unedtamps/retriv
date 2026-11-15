@@ -13,16 +13,6 @@ interface ProcessingNotificationsProps {
   onOpenChange: (open: boolean) => void
 }
 
-/**
- * The bell, and the floating panel it opens.
- *
- * The panel is a small popover anchored under the bell, not a drawer: the
- * feed only ever holds what is running right now, so a whole column of the
- * screen was never its proportion. The open state is owned by the shell so
- * this panel and the pipeline popover are mutually exclusive — opening one
- * closes the other on the same click. The runs state is owned by the
- * dashboard and passed in, so both show one shared picture.
- */
 export function ProcessingNotifications({
   workspaces,
   runs,

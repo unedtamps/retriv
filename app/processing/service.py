@@ -1,11 +1,3 @@
-"""Enqueueing for the processing pipeline.
-
-The upload and delete routes call these functions inside their own
-transaction. There is no outbox and no webhook: the document row and its
-processing run commit together or not at all, so a document can never
-exist without a way to be processed.
-"""
-
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -54,8 +46,7 @@ async def enqueue_extract(
     """Queue a document for extraction and indexing.
 
     The document must already be flushed so the run's foreign key
-    resolves. Re-enqueueing a document that already has a run is a no-op,
-    which is what made the old webhook replay safe.
+    resolves. Re-enqueueing a document that already has a run is a no-op.
     """
     existing_run = await session.scalar(
         select(ProcessingRun).where(

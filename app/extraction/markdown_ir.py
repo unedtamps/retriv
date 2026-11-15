@@ -535,8 +535,10 @@ def _attach_regions(
         for line_text, line in available:
             if line_text not in block_text and block_text not in line_text:
                 continue
-            key = (line.page_no, line.bbox)  # type: ignore[arg-type]
-            if key in seen or line.bbox is None:
+            if line.bbox is None:
+                continue
+            key = (line.page_no, line.bbox)
+            if key in seen:
                 continue
             seen.add(key)
             matches.append(

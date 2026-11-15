@@ -8,13 +8,6 @@ interface ChatSidebarProps {
   onToggle: () => void
 }
 
-/**
- * The archive as a permanent, collapsible rail.
- *
- * Open, it names the work: a New task button and the sessions this browser
- * remembers. Collapsed, it keeps both actions reachable as icons while the
- * transcript takes the width.
- */
 export function ChatSidebar({ conversation, collapsed, onToggle }: ChatSidebarProps) {
   return (
     <aside

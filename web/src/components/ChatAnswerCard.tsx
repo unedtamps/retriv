@@ -127,11 +127,6 @@ function formatDuration(call: ToolStep, running: boolean): string {
   return `${(call.durationMs / 1000).toFixed(1)}s`
 }
 
-/**
- * One answer, framed the way the evidence is framed in the product:
- * an answer plate with its source reference, the prose, the calls that
- * produced it, and the citations that make it checkable.
- */
 export function ChatAnswerCard({
   calls,
   texts,

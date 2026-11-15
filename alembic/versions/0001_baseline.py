@@ -1,15 +1,3 @@
-"""The whole schema in one baseline, as of the pgvector migration.
-
-Every table, RLS policy, grant guard, and index — including the
-``chunk_embeddings.embedding`` pgvector column and its HNSW index — exists
-here exactly as the running deployment had it. Prior history lived in
-migrations 0001 through 0018 (initial schema, CSV rows, the reader role,
-multi-workspace links, the vector column); they were squashed into this
-file while the deployment was still dev-only and the data disposable, so
-a fresh clone reaches the current schema with a single ``alembic
-upgrade head``. New schema changes resume the revision chain from here.
-"""
-
 from collections.abc import Sequence
 
 from alembic import op
@@ -19,29 +7,13 @@ down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-BASELINE_SCHEMA = """-- Dumped from database version 17.11 (Debian 17.11-1.pgdg12+2)
--- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg12+2)
-
-
---
--- Name: vector; Type: EXTENSION; Schema: -; Owner: -
---
+BASELINE_SCHEMA = """
 
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
---
--- Name: EXTENSION vector; Type: COMMENT; Schema: -; Owner: -
---
-
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 
-
-
-
---
--- Name: agent_model_settings; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.agent_model_settings (
     id integer NOT NULL,
@@ -58,10 +30,6 @@ CREATE TABLE public.agent_model_settings (
 );
 
 
---
--- Name: agent_model_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.agent_model_settings_id_seq
     AS integer
     START WITH 1
@@ -71,16 +39,8 @@ CREATE SEQUENCE public.agent_model_settings_id_seq
     CACHE 1;
 
 
---
--- Name: agent_model_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.agent_model_settings_id_seq OWNED BY public.agent_model_settings.id;
 
-
---
--- Name: api_keys; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.api_keys (
     id uuid NOT NULL,
@@ -93,10 +53,6 @@ CREATE TABLE public.api_keys (
     revoked_at timestamp with time zone
 );
 
-
---
--- Name: chunk_embeddings; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.chunk_embeddings (
     chunk_id uuid NOT NULL,
@@ -117,10 +73,6 @@ CREATE TABLE public.chunk_embeddings (
 );
 
 
---
--- Name: document_chunks; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.document_chunks (
     id uuid NOT NULL,
     origin_workspace_id uuid NOT NULL,
@@ -139,10 +91,6 @@ CREATE TABLE public.document_chunks (
 );
 
 
---
--- Name: document_images; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.document_images (
     id uuid NOT NULL,
     document_id uuid NOT NULL,
@@ -160,10 +108,6 @@ CREATE TABLE public.document_images (
 );
 
 
---
--- Name: document_rows; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.document_rows (
     id uuid NOT NULL,
     origin_workspace_id uuid NOT NULL,
@@ -178,10 +122,6 @@ CREATE TABLE public.document_rows (
 ALTER TABLE ONLY public.document_rows FORCE ROW LEVEL SECURITY;
 
 
---
--- Name: document_workspaces; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.document_workspaces (
     workspace_id uuid NOT NULL,
     document_id uuid NOT NULL,
@@ -193,10 +133,6 @@ CREATE TABLE public.document_workspaces (
 
 ALTER TABLE ONLY public.document_workspaces FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: documents; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.documents (
     id uuid NOT NULL,
@@ -215,10 +151,6 @@ CREATE TABLE public.documents (
 
 ALTER TABLE ONLY public.documents FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: processing_runs; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.processing_runs (
     id uuid NOT NULL,
@@ -251,10 +183,6 @@ CREATE TABLE public.processing_runs (
 ALTER TABLE ONLY public.processing_runs FORCE ROW LEVEL SECURITY;
 
 
---
--- Name: refresh_tokens; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.refresh_tokens (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -266,10 +194,6 @@ CREATE TABLE public.refresh_tokens (
     revoked_at timestamp with time zone
 );
 
-
---
--- Name: users; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.users (
     id uuid NOT NULL,
@@ -283,10 +207,6 @@ CREATE TABLE public.users (
 );
 
 
---
--- Name: workspace_memberships; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.workspace_memberships (
     user_id uuid NOT NULL,
     workspace_id uuid NOT NULL,
@@ -298,10 +218,6 @@ CREATE TABLE public.workspace_memberships (
 );
 
 
---
--- Name: workspaces; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.workspaces (
     id uuid NOT NULL,
     slug character varying(100) NOT NULL,
@@ -312,572 +228,270 @@ CREATE TABLE public.workspaces (
 );
 
 
---
--- Name: agent_model_settings id; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_model_settings ALTER COLUMN id SET DEFAULT nextval('public.agent_model_settings_id_seq'::regclass);
 
-
---
--- Name: agent_model_settings pk_agent_model_settings; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_model_settings
     ADD CONSTRAINT pk_agent_model_settings PRIMARY KEY (id);
 
 
---
--- Name: api_keys pk_api_keys; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.api_keys
     ADD CONSTRAINT pk_api_keys PRIMARY KEY (id);
 
-
---
--- Name: chunk_embeddings pk_chunk_embeddings; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.chunk_embeddings
     ADD CONSTRAINT pk_chunk_embeddings PRIMARY KEY (chunk_id, embedding_profile);
 
 
---
--- Name: document_chunks pk_document_chunks; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.document_chunks
     ADD CONSTRAINT pk_document_chunks PRIMARY KEY (id);
 
-
---
--- Name: document_images pk_document_images; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.document_images
     ADD CONSTRAINT pk_document_images PRIMARY KEY (id);
 
 
---
--- Name: document_rows pk_document_rows; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.document_rows
     ADD CONSTRAINT pk_document_rows PRIMARY KEY (id);
 
-
---
--- Name: document_workspaces pk_document_workspaces; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.document_workspaces
     ADD CONSTRAINT pk_document_workspaces PRIMARY KEY (workspace_id, document_id);
 
 
---
--- Name: documents pk_documents; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT pk_documents PRIMARY KEY (id);
 
-
---
--- Name: processing_runs pk_processing_runs; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.processing_runs
     ADD CONSTRAINT pk_processing_runs PRIMARY KEY (id);
 
 
---
--- Name: refresh_tokens pk_refresh_tokens; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.refresh_tokens
     ADD CONSTRAINT pk_refresh_tokens PRIMARY KEY (id);
 
-
---
--- Name: users pk_users; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT pk_users PRIMARY KEY (id);
 
 
---
--- Name: workspace_memberships pk_workspace_memberships; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.workspace_memberships
     ADD CONSTRAINT pk_workspace_memberships PRIMARY KEY (user_id, workspace_id);
 
-
---
--- Name: workspaces pk_workspaces; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT pk_workspaces PRIMARY KEY (id);
 
 
---
--- Name: api_keys uq_api_keys_key_hash; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.api_keys
     ADD CONSTRAINT uq_api_keys_key_hash UNIQUE (key_hash);
 
-
---
--- Name: document_chunks uq_document_chunks_run_ordinal; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.document_chunks
     ADD CONSTRAINT uq_document_chunks_run_ordinal UNIQUE (processing_run_id, ordinal);
 
 
---
--- Name: document_images uq_document_images_document_ref; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.document_images
     ADD CONSTRAINT uq_document_images_document_ref UNIQUE (document_id, ref);
 
-
---
--- Name: document_rows uq_document_rows_run_sheet_row; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.document_rows
     ADD CONSTRAINT uq_document_rows_run_sheet_row UNIQUE (processing_run_id, sheet, row_number);
 
 
---
--- Name: documents uq_documents_object_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT uq_documents_object_key UNIQUE (object_key);
 
-
---
--- Name: documents uq_documents_sha256; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT uq_documents_sha256 UNIQUE (sha256);
 
 
---
--- Name: processing_runs uq_processing_runs_identity; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.processing_runs
     ADD CONSTRAINT uq_processing_runs_identity UNIQUE (id, origin_workspace_id, document_id);
 
-
---
--- Name: refresh_tokens uq_refresh_tokens_token_hash; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.refresh_tokens
     ADD CONSTRAINT uq_refresh_tokens_token_hash UNIQUE (token_hash);
 
 
---
--- Name: ix_api_keys_key_prefix; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_api_keys_key_prefix ON public.api_keys USING btree (key_prefix);
 
-
---
--- Name: ix_api_keys_user_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_api_keys_user_id ON public.api_keys USING btree (user_id);
 
 
---
--- Name: ix_chunk_embeddings_dispatch; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_chunk_embeddings_dispatch ON public.chunk_embeddings USING btree (processing_run_id, embedding_profile, status);
 
-
---
--- Name: ix_chunk_embeddings_hnsw; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_chunk_embeddings_hnsw ON public.chunk_embeddings USING hnsw (embedding public.vector_cosine_ops);
 
 
---
--- Name: ix_document_chunks_active_lookup; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_document_chunks_active_lookup ON public.document_chunks USING btree (origin_workspace_id, processing_run_id);
 
-
---
--- Name: ix_document_chunks_document; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_document_chunks_document ON public.document_chunks USING btree (origin_workspace_id, document_id);
 
 
---
--- Name: ix_document_chunks_section_key; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_document_chunks_section_key ON public.document_chunks USING btree (processing_run_id, section_key text_pattern_ops);
 
-
---
--- Name: ix_document_images_document; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_document_images_document ON public.document_images USING btree (document_id);
 
 
---
--- Name: ix_document_rows_active_lookup; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_document_rows_active_lookup ON public.document_rows USING btree (origin_workspace_id, processing_run_id);
 
-
---
--- Name: ix_document_rows_data; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_document_rows_data ON public.document_rows USING gin (data);
 
 
---
--- Name: ix_document_rows_document_sheet; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_document_rows_document_sheet ON public.document_rows USING btree (document_id, sheet);
 
-
---
--- Name: ix_document_workspaces_created_by_user_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_document_workspaces_created_by_user_id ON public.document_workspaces USING btree (created_by_user_id);
 
 
---
--- Name: ix_document_workspaces_document; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_document_workspaces_document ON public.document_workspaces USING btree (document_id);
 
-
---
--- Name: ix_document_workspaces_workspace_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_document_workspaces_workspace_created ON public.document_workspaces USING btree (workspace_id, created_at);
 
 
---
--- Name: ix_documents_active_run; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_documents_active_run ON public.documents USING btree (active_processing_run_id);
 
-
---
--- Name: ix_documents_created_by_user_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_documents_created_by_user_id ON public.documents USING btree (created_by_user_id);
 
 
---
--- Name: ix_documents_origin_workspace_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_documents_origin_workspace_created ON public.documents USING btree (origin_workspace_id, created_at);
 
-
---
--- Name: ix_documents_origin_workspace_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_documents_origin_workspace_id ON public.documents USING btree (origin_workspace_id);
 
 
---
--- Name: ix_processing_runs_dispatch; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_processing_runs_dispatch ON public.processing_runs USING btree (status, available_at);
 
-
---
--- Name: ix_processing_runs_document; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_processing_runs_document ON public.processing_runs USING btree (document_id);
 
 
---
--- Name: ix_processing_runs_lease; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_processing_runs_lease ON public.processing_runs USING btree (status, lease_until);
 
-
---
--- Name: ix_processing_runs_origin_workspace_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_processing_runs_origin_workspace_created ON public.processing_runs USING btree (origin_workspace_id, created_at);
 
 
---
--- Name: ix_refresh_tokens_family_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_refresh_tokens_family_id ON public.refresh_tokens USING btree (family_id);
 
-
---
--- Name: ix_refresh_tokens_user_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_refresh_tokens_user_id ON public.refresh_tokens USING btree (user_id);
 
 
---
--- Name: ix_users_username; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX ix_users_username ON public.users USING btree (username);
 
-
---
--- Name: ix_workspace_memberships_workspace_user; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_workspace_memberships_workspace_user ON public.workspace_memberships USING btree (workspace_id, user_id);
 
 
---
--- Name: ix_workspaces_slug; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX ix_workspaces_slug ON public.workspaces USING btree (slug);
 
 
---
--- Name: uq_processing_runs_one_active_extract; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX uq_processing_runs_one_active_extract ON public.processing_runs USING btree (document_id) WHERE (((job_kind)::text = 'extract'::text) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'fetching'::character varying, 'extracting'::character varying, 'describing'::character varying, 'storing_artifact'::character varying, 'chunking'::character varying, 'embedding'::character varying, 'retry_wait'::character varying])::text[])));
 
-
---
--- Name: agent_model_settings fk_agent_model_settings_updated_by_user_id_users; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_model_settings
     ADD CONSTRAINT fk_agent_model_settings_updated_by_user_id_users FOREIGN KEY (updated_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
---
--- Name: api_keys fk_api_keys_user_id_users; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.api_keys
     ADD CONSTRAINT fk_api_keys_user_id_users FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: chunk_embeddings fk_chunk_embeddings_chunk_id_document_chunks; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.chunk_embeddings
     ADD CONSTRAINT fk_chunk_embeddings_chunk_id_document_chunks FOREIGN KEY (chunk_id) REFERENCES public.document_chunks(id) ON DELETE CASCADE;
 
 
---
--- Name: document_chunks fk_document_chunks_processing_run_id_processing_runs; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.document_chunks
     ADD CONSTRAINT fk_document_chunks_processing_run_id_processing_runs FOREIGN KEY (processing_run_id) REFERENCES public.processing_runs(id) ON DELETE CASCADE;
 
-
---
--- Name: document_images fk_document_images_document_id_documents; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.document_images
     ADD CONSTRAINT fk_document_images_document_id_documents FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
 
 
---
--- Name: document_rows fk_document_rows_processing_run_id_processing_runs; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.document_rows
     ADD CONSTRAINT fk_document_rows_processing_run_id_processing_runs FOREIGN KEY (processing_run_id) REFERENCES public.processing_runs(id) ON DELETE CASCADE;
 
-
---
--- Name: document_workspaces fk_document_workspaces_created_by_user_id_users; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.document_workspaces
     ADD CONSTRAINT fk_document_workspaces_created_by_user_id_users FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
 
 
---
--- Name: document_workspaces fk_document_workspaces_document_id_documents; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.document_workspaces
     ADD CONSTRAINT fk_document_workspaces_document_id_documents FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
 
-
---
--- Name: document_workspaces fk_document_workspaces_workspace_id_workspaces; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.document_workspaces
     ADD CONSTRAINT fk_document_workspaces_workspace_id_workspaces FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
---
--- Name: documents fk_documents_created_by_user_id_users; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT fk_documents_created_by_user_id_users FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
 
-
---
--- Name: documents fk_documents_workspace_id_workspaces; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT fk_documents_workspace_id_workspaces FOREIGN KEY (origin_workspace_id) REFERENCES public.workspaces(id) ON DELETE RESTRICT;
 
 
---
--- Name: processing_runs fk_processing_runs_document_id_documents; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.processing_runs
     ADD CONSTRAINT fk_processing_runs_document_id_documents FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
 
-
---
--- Name: refresh_tokens fk_refresh_tokens_user_id_users; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.refresh_tokens
     ADD CONSTRAINT fk_refresh_tokens_user_id_users FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
---
--- Name: workspace_memberships fk_workspace_memberships_granted_by_user_id_users; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.workspace_memberships
     ADD CONSTRAINT fk_workspace_memberships_granted_by_user_id_users FOREIGN KEY (granted_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
 
-
---
--- Name: workspace_memberships fk_workspace_memberships_user_id_users; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.workspace_memberships
     ADD CONSTRAINT fk_workspace_memberships_user_id_users FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
---
--- Name: workspace_memberships fk_workspace_memberships_workspace_id_workspaces; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.workspace_memberships
     ADD CONSTRAINT fk_workspace_memberships_workspace_id_workspaces FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
---
--- Name: document_rows; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.document_rows ENABLE ROW LEVEL SECURITY;
 
---
--- Name: document_workspaces; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.document_workspaces ENABLE ROW LEVEL SECURITY;
 
---
--- Name: document_workspaces document_workspaces_in_scope; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY document_workspaces_in_scope ON public.document_workspaces USING ((workspace_id = ANY ((current_setting('retriv.workspace_scope'::text, true))::uuid[])));
 
 
---
--- Name: documents; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 
---
--- Name: documents documents_in_scope; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY documents_in_scope ON public.documents USING ((EXISTS ( SELECT 1
    FROM public.document_workspaces link
   WHERE ((link.document_id = documents.id) AND (link.workspace_id = ANY ((current_setting('retriv.workspace_scope'::text, true))::uuid[])) AND (link.deleted_at IS NULL)))));
 
 
---
--- Name: processing_runs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.processing_runs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: document_rows rows_in_scope; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY rows_in_scope ON public.document_rows USING ((EXISTS ( SELECT 1
    FROM public.document_workspaces link
   WHERE ((link.document_id = document_rows.document_id) AND (link.workspace_id = ANY ((current_setting('retriv.workspace_scope'::text, true))::uuid[])) AND (link.deleted_at IS NULL)))));
 
 
---
--- Name: processing_runs runs_in_scope; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY runs_in_scope ON public.processing_runs USING ((EXISTS ( SELECT 1
    FROM public.document_workspaces link
   WHERE ((link.document_id = processing_runs.document_id) AND (link.workspace_id = ANY ((current_setting('retriv.workspace_scope'::text, true))::uuid[])) AND (link.deleted_at IS NULL)))));
 
-
---
--- PostgreSQL database dump complete
---
-
---
--- The read-only SQL role's grants. Guarded because the role is created by
--- docker/postgres/init.sh at runtime, so a fresh host that has not run it
--- yet has no role to grant to; `make sql-role` re-runs the grants then.
---
 
 DO $$
 BEGIN
@@ -889,8 +503,7 @@ BEGIN
                     public.documents,
                     public.document_workspaces,
                     public.processing_runs TO retriv_reader;
-END $$;
-"""
+END $$;"""
 
 def split_statements(sql: str) -> list[str]:
     """Split the baseline into single statements for asyncpg.

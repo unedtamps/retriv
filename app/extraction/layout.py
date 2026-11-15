@@ -1,14 +1,5 @@
 """What on this page is a figure, answered by a layout model.
 
-A scanned page is one bitmap, so the extractor has nothing to point at. The
-first attempt at this answered the question by hand -- subtract the OCR text
-boxes from the render, then test what is left for size, ink, line-ness and
-shape -- and it did not generalise. A bar chart is twelve pieces and each one
-is too wide; a tinted page is one piece covering everything; a badge is a
-small frame. Every document family added a case and a constant, and the
-constants then fought each other: the gap that joins a bar chart's bars also
-joins the stamp below the figure.
-
 PP-DocLayout is trained for this exact question, and answers it once: what
 kind of region is each part of the page, and where is it. `image` and `chart`
 are the figures. `table`, `header`, `footer`, `figure_title` and the rest come

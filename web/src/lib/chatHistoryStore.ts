@@ -1,20 +1,5 @@
 import type { ChatItem } from '../hooks/useAgentConversation'
 
-/**
- * The conversation archive, kept in this browser and nowhere else.
- *
- * The wire protocol is already stateless -- the client replays the recent
- * history on every turn -- so the server never needed a table, and keeping a
- * whole archive of sessions is a matter of remembering what the client would
- * replay anyway. Each session travels with its own id: providers key routing
- * and prompt caching on it, so returning to an old chat reattaches to the
- * very model session that wrote it.
- *
- * Version 2 holds a list of sessions. Version 1 held the single active
- * conversation; it is migrated in place on first load so an upgrade does not
- * silently drop a transcript.
- */
-
 const STORAGE_KEY = "retriv.chat.conversations.v2"
 const LEGACY_KEY = "retriv.chat.conversation.v1"
 const MAX_CONVERSATIONS = 20
@@ -83,7 +68,6 @@ export function loadChatHistory(): StoredChatHistory {
   }
 }
 
-/** A v1 payload was one unnamed conversation; it becomes the first entry. */
 function migrateLegacy(): StoredChatHistory {
   try {
     const raw = localStorage.getItem(LEGACY_KEY)

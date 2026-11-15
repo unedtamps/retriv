@@ -1,9 +1,4 @@
-"""Rendering and attribution helpers for row evidence.
-
-Split out of the agent harness so the MCP tools can share them: they describe
-what the row query produced, which is a fact about the data and not about any
-one caller.
-"""
+"""Rendering and attribution helpers for row evidence."""
 
 import json
 import re

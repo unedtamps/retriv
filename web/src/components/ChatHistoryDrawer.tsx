@@ -9,12 +9,6 @@ interface ChatHistoryDrawerProps {
   conversation: AgentConversation
 }
 
-/**
- * The chat archive on a narrow screen.
- *
- * There is no room for a permanent rail, so the same panel opens over the
- * transcript and closes as soon as a session is picked.
- */
 export function ChatHistoryDrawer({ open, onClose, conversation }: ChatHistoryDrawerProps) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
 

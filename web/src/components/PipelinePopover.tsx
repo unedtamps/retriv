@@ -26,13 +26,6 @@ interface PipelinePopoverProps {
   onOpenChange: (open: boolean) => void
 }
 
-/**
- * The pipeline status beside the bell: a quiet icon that opens a small
- * popover with the stage flow and the recent runs of the selected workspace.
- *
- * It is controlled by the shell so the bell and the pipeline can never be
- * open together: opening one closes the other in the same click.
- */
 export function PipelinePopover({
   runs,
   workspaceId,

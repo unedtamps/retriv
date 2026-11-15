@@ -1,16 +1,3 @@
-"""CSV acceptance rules.
-
-XLSX was accepted by the validator and then rejected by the extractor, so an
-upload that returned 202 was guaranteed to fail later. CSV replaces it, which
-also retires the whole OOXML hardening path for spreadsheets -- a ZIP archive
-needs zip-bomb and macro checks, plain text needs none of that.
-
-These are unit tests against ``validate_csv`` rather than through the upload
-route, because the rules being pinned here are parse-level: decoding,
-delimiter agreement between validator and worker, field-count agreement, and
-the row cap.
-"""
-
 from pathlib import Path
 
 import pytest
@@ -48,11 +35,6 @@ def test_plain_csv_is_accepted_as_text_csv(tmp_path: Path) -> None:
 
 
 def test_a_utf8_bom_is_stripped_not_rejected(tmp_path: Path) -> None:
-    """Excel writes a BOM, and plain utf-8 decoding rejects it.
-
-    Without the utf-8-sig attempt this file would fail as undecodable, which
-    is the most common way a spreadsheet export from Excel gets refused.
-    """
     assert validate_csv(staged(tmp_path, csv_with_bom_bytes()), Settings()).media_type == (
         CSV_MEDIA_TYPE
     )

@@ -8,7 +8,6 @@ interface EmptyStateProps {
   action?: ReactNode
 }
 
-/** The nothing-here panel: an icon, a title, a sentence, and what to do next. */
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
     <div className="px-5 py-12 text-center">
@@ -32,12 +31,6 @@ interface CopyButtonProps {
   copiedLabel?: string
 }
 
-/**
- * Copies a secret to the clipboard and says so for a moment.
- *
- * The one-time credential and the API key each had their own copy button,
- * each with its own copied state and its own clipboard call.
- */
 export function CopyButton({
   value,
   label = 'Copy',
@@ -66,12 +59,6 @@ export function CopyButton({
   )
 }
 
-/**
- * The panel that warns a secret is shown once.
- *
- * It was written out twice: once in the API key reveal and once in the
- * credential reveal, in two slightly different shades of amber.
- */
 export function SecretWarning({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-3 rounded-card border border-warn/30 bg-warn-soft px-4 py-3 text-sm leading-6 text-warn">

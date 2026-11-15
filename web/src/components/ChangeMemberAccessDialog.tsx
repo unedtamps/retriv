@@ -14,13 +14,6 @@ interface ChangeMemberAccessDialogProps {
   onClose: () => void
 }
 
-/**
- * Change one member's role with an explicit save.
- *
- * Nothing is written until Save is pressed, and the row the dialog came from
- * stays untouched until then. The last-owner rule is enforced by the API and
- * surfaces here as an inline error.
- */
 export function ChangeMemberAccessDialog({
   open,
   workspace,

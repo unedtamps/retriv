@@ -102,11 +102,6 @@ async def test_upload_enqueues_the_pipeline_in_the_same_transaction(
     entities: SeededEntities,
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """The document and its run commit together.
-
-    There is no outbox and no webhook: a document that exists is a
-    document the worker will pick up.
-    """
     response = await upload(client, auth_headers, entities.finance.id, "report.pdf", pdf_bytes())
 
     assert response.status_code == 202

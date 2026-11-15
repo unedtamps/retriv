@@ -28,14 +28,6 @@ function currentRoute(): AppRoute {
   return '/dashboard'
 }
 
-/**
- * The app shell: resolve a session, then hand everything to the dashboard.
- *
- * The tokens themselves are not React state. They belong to `api.ts`, which
- * renews them mid-request when it has to; what React watches here is only
- * whether a session exists at all, which is what decides between the sign-in
- * screen and the dashboard.
- */
 function App() {
   const [route, setRoute] = useState<AppRoute>(currentRoute)
   const [signedIn, setSignedIn] = useState(() => restoreSession())

@@ -1,11 +1,5 @@
 import type { ReactNode } from 'react'
 
-/**
- * The bordered surface every region of the app sits on.
- *
- * The panel used to be written out as `border border-stone-300 bg-white` in
- * a dozen places, with a third variant each time. One component, one border.
- */
 export function Panel({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <section className={`panel ${className}`}>{children}</section>
 }
@@ -18,11 +12,6 @@ interface PanelHeaderProps {
   id?: string
 }
 
-/**
- * A panel's title row. The eyebrow is the small mono label that used to be
- * `section-eyebrow`, hand-written with a slightly different size and
- * tracking in every file that used it.
- */
 export function PanelHeader({
   title,
   eyebrow,

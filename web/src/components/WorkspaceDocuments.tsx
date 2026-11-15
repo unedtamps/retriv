@@ -23,13 +23,6 @@ const DOCUMENT_STATUS_LABELS: Record<string, string> = {
   unsupported_format: 'Unsupported format',
 }
 
-/**
- * The documents in a workspace, and the right to delete one.
- *
- * The list and the delete are one concern, so they are one component: the
- * drawer used to hold both alongside membership management and the access
- * summary, and was the largest file in the app.
- */
 export function WorkspaceDocuments({
   workspace,
   canDelete,

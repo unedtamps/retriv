@@ -1,15 +1,3 @@
-"""Finding a document by name, for a caller that only has the name.
-
-Retrieval answers "what does this workspace say about X". This answers the
-question before it: "which file is that in". Without it a model can only
-learn a document_id from a search result or the row catalogue, so naming a
-file in a question is not something it can act on.
-
-The query itself lives in app/documents/search.py, shared with the dashboard's
-cross-workspace search route, so the two can never disagree about scope,
-ranking or what counts as a match.
-"""
-
 from app.documents.search import DocumentSummary, find_documents
 
 __all__ = ["DocumentSummary", "find_documents", "format_documents"]

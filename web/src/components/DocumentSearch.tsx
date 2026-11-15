@@ -13,16 +13,6 @@ interface DocumentSearchProps {
   onUnauthorized: () => void
 }
 
-/**
- * The top-bar search: one field that filters the open table and searches
- * every workspace the caller can read.
- *
- * Two jobs in one box on purpose. The typed text still narrows the current
- * workspace's table, and the same text is asked of the API across all
- * readable workspaces, so a document in another workspace is one click away
- * instead of invisible. The dropdown is a portal measured off the field, like
- * the other popovers in the header, because the bar clips its own overflow.
- */
 export function DocumentSearch({
   value,
   onChange,

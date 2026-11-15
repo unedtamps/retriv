@@ -537,14 +537,6 @@ async def test_tools_are_the_documented_set(mcp: McpEnv) -> None:
 async def test_query_rows_states_the_jsonb_shape_before_any_failure(
     mcp: McpEnv,
 ) -> None:
-    """The description has to carry the contract the catalogue cannot.
-
-    On a live run the model wrote CSV headers as if they were SQL columns and
-    had every statement rejected. The description named list_queryable_files,
-    which supplied the key names, but never said where those keys live, so the
-    first query was wrong every time. Naming the JSONB column up front is what
-    makes the first attempt correct instead of the ninth.
-    """
     listed = await mcp.session.request(mcp.alice_key, "tools/list", {})
     tools = {tool["name"]: tool for tool in listed["result"]["tools"]}
     description = tools["query_rows"]["description"]
@@ -1373,11 +1365,6 @@ async def test_describe_document_reports_what_was_extracted(mcp: McpEnv) -> None
 
 
 async def test_a_document_tool_works_without_a_workspace_argument(mcp: McpEnv) -> None:
-    """The key's scope is the default, so naming a workspace is optional.
-
-    Every read tool used to make the caller repeat a workspace it already knew
-    the key could see, and two of them did not accept one at all.
-    """
     document_id = await _seed_processed_document(
         mcp,
         entries=[

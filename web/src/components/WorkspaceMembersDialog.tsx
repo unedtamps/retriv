@@ -10,14 +10,6 @@ interface WorkspaceMembersDialogProps {
   onClose: () => void
 }
 
-/**
- * The member register of one workspace, for the platform administrator.
- *
- * Read-only on purpose: the register answers "who is in here and at what
- * role", while granting and revoking live in the add-member dialog and the
- * API. The list arrives embedded in the workspace itself, so opening the
- * register costs no request.
- */
 export function WorkspaceMembersDialog({ open, workspace, onClose }: WorkspaceMembersDialogProps) {
   return (
     <Dialog

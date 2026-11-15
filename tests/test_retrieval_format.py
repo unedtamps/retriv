@@ -58,18 +58,12 @@ def test_every_heading_reads_as_plural() -> None:
 
 
 def test_the_hint_never_contradicts_its_own_total() -> None:
-    """The count already says how many there are; a trailing "and N more" fights it.
-
-    The regression this covers read "3 of 3 sources are a heading ... and 2
-    more", which states two different totals for the same list.
-    """
     text = hint([source(heading=True) for _ in range(4)])
     assert "more" not in text
 
 
 @pytest.mark.parametrize("count", [1, 2, 5])
 def test_the_word_sources_is_never_garbled(count: int) -> None:
-    """A string built by appending "s" to "sources" produced "sourcess"."""
     text = hint([source(heading=True) for _ in range(count)])
     assert "sourcess" not in text
 
@@ -96,12 +90,6 @@ def test_citation_index_reuses_a_chunk_for_the_whole_answer() -> None:
 
 
 def test_the_source_label_names_what_a_reader_can_act_on() -> None:
-    """A label carries the handles a tool takes, and nothing else.
-
-    `chunk_id` was printed on every source and no tool accepted it: the chunk
-    is reachable through the ordinal on the same line. Dropping it also takes
-    a UUID off every label in every search.
-    """
     first = source(heading=False, ordinal=3)
     body = format_context([first], source_indices({first.chunk_id: first}))
     label = body.splitlines()[0]

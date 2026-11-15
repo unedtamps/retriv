@@ -1,12 +1,3 @@
-"""Processing-status route, scoped by the caller's own memberships.
-
-These used to assert the scope sent to an upstream service over HTTP.
-There is no upstream now, so the scope is enforced in the query itself,
-and that is what these tests check: a run in a workspace the caller
-cannot read is simply never selected, rather than being fetched and then
-rejected. The feed is in-flight only — a finished run leaves it.
-"""
-
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 

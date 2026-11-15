@@ -755,11 +755,6 @@ class AgentToolKit:
         )
 
     async def _rejection_prefix(self, scope: tuple[UUID, ...]) -> str:
-        """The catalogue, fetched only when a rejection needs to hand it back.
-
-        Successful queries used to carry it too, which repeated up to 100 files
-        with their columns in every answer; the model fetches it once with
-        list_queryable_files instead.
-        """
+        """The catalogue, fetched only when a rejection needs to hand it back."""
         catalogue = await self._catalogue_for(scope)
         return format_catalogue(catalogue, queryable=True)

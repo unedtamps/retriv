@@ -1,13 +1,6 @@
 #!/usr/bin/env python
 """Measure whether the agent picks the right tool, before it picks a bad one.
 
-Adding a tool is cheap; making a model choose correctly among similar ones is
-not. Studies of tool selection agree on the shape of the failure: accuracy
-falls as the catalogue grows, and falls faster when the added tools resemble
-the ones already there. This harness measures that for *our* catalogue and
-*our* configured model, because tolerance to tool count is model-specific --
-a number from a benchmark does not transfer to the model an admin picked.
-
 The unit of measurement is one model turn: a question, the real system
 prompt, the real tool specs, and one completion. Nothing is executed, so
 retrieval quality and database state cannot flatter or spoil the result. Two

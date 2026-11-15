@@ -1,26 +1,6 @@
 #!/usr/bin/env python
 """Measure what parallel extraction actually costs in RAM and CPU.
 
-Runs N copies of the real extraction sandbox at the same time, one per
-document, and samples each process while it works. The numbers this prints
-are the ones the deployment cares about: peak resident memory per sandbox,
-total resident memory across the batch, CPU-seconds burned, and how much
-wall-clock a second or third parser actually buys.
-
-The sandbox is spawned exactly as the worker spawns it -- same module, same
-resource limits, same thread caps -- so the measurement reflects production
-and not a convenient in-process shortcut. The child's stdout/stderr go to a
-log file beside the output, because a sandbox that dies has its reason in
-there.
-
-Two kinds of run are worth comparing:
-
-    inside the worker container  (docker exec ...)   <- the cgroup applies
-    on the host                  (plain python)      <- no cgroup ceiling
-
-The container caps the worker at 4 CPUs and 12 GiB, so a host run measures a
-machine nobody deploys on.
-
 Usage:
     uv run --extra extraction python scripts/benchmark_extraction.py \
         --parallel 1 data/corp-10k-2025.pdf

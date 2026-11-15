@@ -29,13 +29,6 @@ interface TurnGroup {
   errors: string[]
 }
 
-/**
- * Group the flat event list into questions and their answers.
- *
- * The wire format alternates user text, tool activity, and one or more
- * assistant messages. The page needs the final answer and its whole evidence
- * trail together, so the trail can sit below the answer rather than above it.
- */
 function groupTurns(items: ChatItem[]): TurnGroup[] {
   const turns: TurnGroup[] = []
   let current: TurnGroup | null = null
@@ -78,14 +71,6 @@ function groupTurns(items: ChatItem[]): TurnGroup[] {
   return turns
 }
 
-/**
- * The agent chat as a document room.
- *
- * The transcript is the work surface; the archive is a drawer opened from the
- * left edge, so a long answer is never squeezed by a permanent sidebar. The
- * composer stays on the lower edge and the active pipeline run stays above the
- * conversation instead of hiding in a notification popover.
- */
 export function AgentChatPage({
   conversation,
   runs,

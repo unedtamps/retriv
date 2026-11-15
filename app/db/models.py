@@ -129,8 +129,6 @@ class Document(Base):
     the raw object and artifacts live, not who may read the document. Access
     is the set of rows in ``DocumentWorkspace``.
 
-    This replaces the two tables the services used to keep in step across
-    a database boundary: the API's row and the ingestion service's mirror.
     A document's status is not stored here; it is derived from the active
     processing run so the two can never disagree.
 

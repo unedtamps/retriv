@@ -697,17 +697,11 @@ async def run_agent(
             if stream is None:
                 turn = await provider.complete(messages=messages, tools=specs)
             else:
-                streamed: list[str] = []
                 async for piece in stream(messages=messages, tools=specs):
                     if piece["kind"] == "delta":
-                        streamed.append(piece["text"])
                         yield {"type": "message_delta", "content": piece["text"]}
                     else:
                         turn = piece["turn"]
-                # The streamed text was already shown to the user as it
-                # arrived; `final` below carries the same assembled string,
-                # which the viewer swaps in as the authoritative copy.
-                del streamed
         except ChatProviderError as exc:
             yield {
                 "type": "error",
@@ -769,12 +763,6 @@ async def run_agent(
                 DocumentNotFound,
                 DocumentNotNavigable,
             ) as exc:
-                # The retrieval layer saying no -- the embedding service being
-                # down is the everyday case -- is an answer about the world,
-                # not a crash: handed back as the tool's result, the model
-                # tells the user so and the stream survives. The MCP server's
-                # guarded wrapper used to make the same translation for
-                # external clients; the harness needs its own.
                 outcome = ToolOutcome(text=f"Unavailable: {exc}")
             for source in outcome.sources:
                 served.setdefault(source.index, source)

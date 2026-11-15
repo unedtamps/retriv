@@ -305,20 +305,7 @@ def _chart_regions(pdf: pymupdf.Document, page_no: int) -> list[pymupdf.Rect]:
 def _chart_score(
     page: pymupdf.Page, clip: pymupdf.Rect, drawings: list[dict]
 ) -> int:
-    """How much a cluster looks like a chart rather than a table or a text box.
-
-    Each signal is one thing a table does not do: draw a line that runs
-    diagonally, break a series into dashes, leave its interior mostly empty of
-    words, or stack bars of one width and many heights. The weights put a
-    diagonal above the rest because it is the hardest to fake -- a table's
-    rules are horizontal or vertical by construction.
-
-    The bar signal exists because a bar chart fails every other test: it has no
-    diagonal by definition, and the value label above each bar makes its text
-    denser than a line chart's. On the annual-report corpus, five charts were
-    missed for exactly that reason. Four points for the same signal admitted
-    forty-three table cells instead, so the weight is three.
-    """
+    """How much a cluster looks like a chart rather than a table or a text box."""
     score = 0
     diagonals = 0
     dashed = 0

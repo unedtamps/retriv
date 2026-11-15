@@ -10,15 +10,6 @@ export interface ApiResource<T> {
   setData: (value: T | ((current: T | null) => T | null)) => void
 }
 
-/**
- * One fetch, with the abort and the sign-out handling the app needs.
- *
- * This was written out seven times, in seven files, and every copy was a
- * little different: some cancelled on unmount, some did not, and one of them
- * set a state after the component was gone. Here it is once.
- *
- * The loader is re-run when `deps` change, and on demand through `reload`.
- */
 export function useApiResource<T>(
   load: (signal: AbortSignal) => Promise<T>,
   deps: readonly unknown[],

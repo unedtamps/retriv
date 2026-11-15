@@ -12,12 +12,6 @@ interface AdminWorkspacesProps {
   onNotice: (message: string, tone?: 'success' | 'error') => void
 }
 
-/**
- * The platform-wide workspace register for admins: one slim block per
- * workspace, with the member register and the grant-membership action behind
- * two buttons. The register itself is read-only — membership changes run
- * through the dialogs, never through the block.
- */
 export function AdminWorkspacesPage({ onUnauthorized, onNotice }: AdminWorkspacesProps) {
   const resource = useApiResource(
     (signal) => api.listAdminWorkspaces({ signal }),

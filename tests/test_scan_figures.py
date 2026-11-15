@@ -126,7 +126,6 @@ def test_a_scanned_page_is_cropped_to_its_figure(tmp_path: Path, fake_engine: An
 def test_a_scan_of_text_only_asks_the_vision_stage_nothing(
     tmp_path: Path, fake_engine: Any
 ) -> None:
-    """The page used to be sent whole, so every scan cost one model call."""
     fake_engine(
         boxes=[(150, 60, 1200, 200), (150, 300, 1200, 1200)],
         scores=[0.95, 0.97],
@@ -143,12 +142,6 @@ def test_a_scan_of_text_only_asks_the_vision_stage_nothing(
 
 @pytest.mark.integration
 def test_the_orientation_classifier_is_off() -> None:
-    """It flipped upright archival lines and destroyed their words.
-
-    It reported 180 degrees with 0.997 confidence on body lines that read
-    perfectly with the classifier skipped, and raising the resolution made it
-    worse rather than better. This is the guard against it coming back.
-    """
     assert _RapidOcr._PARAMS["Global.use_cls"] is False
 
 

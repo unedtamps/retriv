@@ -12,12 +12,6 @@ interface ApiKeysPanelProps {
   onNotice: (message: string, tone?: 'success' | 'error') => void
 }
 
-/**
- * API keys are the credential MCP clients send to /mcp. The plaintext is
- * shown once, immediately after creation, and the panel never holds onto it
- * afterwards: it exists in component state only while the dialog is open, so
- * a re-render cannot resurrect it from a stored list.
- */
 export function ApiKeysPanel({ onUnauthorized, onNotice }: ApiKeysPanelProps) {
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')

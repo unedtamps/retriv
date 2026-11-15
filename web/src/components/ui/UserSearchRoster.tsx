@@ -22,12 +22,6 @@ interface UserSearchRosterProps {
   total: number
 }
 
-/**
- * The shared user picker: a filter-as-you-type field above a roster of
- * selectable rows. The roster owns no fetching — the caller keeps the search
- * state, runs the debounced directory query, and applies its own eligibility
- * rules to what it passes in as candidates.
- */
 export function UserSearchRoster({
   id,
   label,

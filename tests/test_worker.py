@@ -1,12 +1,3 @@
-"""The processing worker.
-
-Driven directly against the models rather than through the intake
-webhook, which no longer exists. The delete path's ordering still
-matters: the document row must outlive the request so the worker can
-remove the artifacts and raw object it names, and the embedding vectors
-go with the row's own cascade.
-"""
-
 import asyncio
 import hashlib
 import json
@@ -1125,13 +1116,6 @@ async def test_a_csv_run_completes_while_the_activation_gate_would_have_failed_i
     settings: Settings,
     entities: SeededEntities,
 ) -> None:
-    """No chunks and no vectors is the correct end state, not a failure.
-
-    Pins the observable contract: the document becomes active with rows as
-    its only product. Note the CSV path never enters the embedding stage, so
-    this is not exercising `_activate_embedded_run` -- that gate carries a
-    `run.row_count` branch as depth, and mutating it changes nothing here.
-    """
     storage = FakeStorage()
     document, run = await seed_document(
         db_session_factory,

@@ -14,13 +14,6 @@ interface WorkspaceDrawerProps {
   onClose: () => void
 }
 
-/**
- * One workspace, opened beside the catalog.
- *
- * This used to be a 512-line file holding four concerns: what the caller may
- * do here, which documents are here, and who is in the workspace. Each is now
- * a component that owns its own data, and this is the frame around them.
- */
 export function WorkspaceDrawer({
   workspace,
   isAdmin,

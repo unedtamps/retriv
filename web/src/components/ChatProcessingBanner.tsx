@@ -13,13 +13,6 @@ const STAGE_PROGRESS: Record<string, number> = {
   syncing: 98,
 }
 
-/**
- * The active pipeline run, kept visible above the transcript.
- *
- * It is a status strip, not a second progress dashboard: the document, the
- * stage, and the count when the run has one. Embedding is the only stage with
- * a truthful numeric count; the earlier stages get a coarse stage bar.
- */
 export function ChatProcessingBanner({ run }: { run: ProcessingRun }) {
   const hasCounts = run.chunk_count > 0
   const percent = hasCounts

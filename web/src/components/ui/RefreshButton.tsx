@@ -9,16 +9,6 @@ interface RefreshButtonProps {
 
 const MINIMUM_SPIN_MS = 700
 
-/**
- * A quiet icon that refetches one table's data.
- *
- * It never reloads the page — the caller hands in the resource's own reload,
- * so pressing it costs exactly one request for the list it belongs to.
- *
- * The spinner starts on the press and holds for a minimum time even when the
- * request returns in tens of milliseconds: a rotation that ends before the
- * eye catches it reads as "nothing happened" rather than as a refresh.
- */
 export function RefreshButton({ label, loading, onRefresh }: RefreshButtonProps) {
   const [spinning, setSpinning] = useState(false)
   const startedAt = useRef(0)

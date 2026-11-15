@@ -136,14 +136,6 @@ def _failing(error: Exception) -> DBAPIError:
 
 
 def test_a_missing_column_is_explained_in_terms_the_model_can_use() -> None:
-    """The hint is what turned eight wrong queries into one correct one.
-
-    On the first live run the model wrote the CSV headers as if they were SQL
-    columns. Every statement failed with `column "revenue_usd" does not
-    exist`, the tool reported "could not be executed", and the model burned
-    its whole budget retrying before reporting the data as missing. Given the
-    JSONB hint it corrected the syntax on the next attempt and answered.
-    """
     error = _failing(
         RuntimeError(
             "<class 'asyncpg.exceptions.UndefinedColumnError'>: "

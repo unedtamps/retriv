@@ -539,12 +539,6 @@ def test_a_page_with_a_lifted_picture_is_not_searched_for_charts(tmp_path: Path)
 
 
 def test_a_bar_chart_is_found_without_a_single_diagonal(tmp_path: Path) -> None:
-    """A bar chart is all verticals: the trend-line test alone would miss it.
-
-    Its value labels also make the interior denser than a line chart's, so the
-    density gate pushes it down too. The bar signal is what recovers it, and
-    without it five charts on the annual-report corpus were lost.
-    """
     path = write_sample(tmp_path, vector_bar_chart_pdf_bytes(), "bars.pdf")
     result = an_extractor(picture_images_enabled=True).extract(path, media_type=PDF_MEDIA_TYPE)
 
@@ -554,11 +548,6 @@ def test_a_bar_chart_is_found_without_a_single_diagonal(tmp_path: Path) -> None:
 
 
 def test_zebra_striping_alone_does_not_make_a_chart(tmp_path: Path) -> None:
-    """Alternating row fills give one width and two heights -- not enough.
-
-    This is the shape that made a four-point bar bonus admit forty-three table
-    cells; three points and a three-height floor is what holds it out.
-    """
     path = write_sample(tmp_path, vector_zebra_table_pdf_bytes(), "zebra.pdf")
     result = an_extractor(picture_images_enabled=True).extract(path, media_type=PDF_MEDIA_TYPE)
 
@@ -1022,11 +1011,6 @@ def a_large_jpeg_photo(width: int = 3000, height: int = 2000) -> bytes:
 
 
 def test_an_oversized_docx_picture_is_shrunk_not_dropped(tmp_path: Path) -> None:
-    """A picture over the byte cap must still reach the vision stage.
-
-    Dropping it left the document looking complete with the figure missing
-    entirely: no image, no marker, no row. Shrinking keeps the content.
-    """
     import docx
 
     photo = a_large_jpeg_photo()

@@ -196,13 +196,6 @@ function PdfPageView({
   )
 }
 
-/**
- * A continuous PDF rendered by PDF.js.
- *
- * Pages are placeholders until they approach the viewport, so a long filing
- * does not allocate a canvas per page. The scroll container is the source of
- * truth for the current page; the toolbar only moves that scroll position.
- */
 export function DocumentPdfPreview({
   document,
   workspace,

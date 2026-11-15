@@ -9,14 +9,6 @@ export interface ProcessingRuns {
   reload: () => void
 }
 
-/**
- * The runs the pipeline is working on, across every readable workspace.
- *
- * There is no polling timer. An idle page used to re-request the feed every
- * ten seconds forever, which is a request per user per ten seconds for data
- * that usually has not changed. This fetches once, and again only when
- * someone asks for it.
- */
 export function useProcessingRuns(onUnauthorized: () => void): ProcessingRuns {
   const resource = useApiResource(
     (signal) => api.listProcessingActivity({ signal }),

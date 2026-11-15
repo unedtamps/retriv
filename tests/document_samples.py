@@ -277,10 +277,9 @@ def image_pdf_bytes(*, full_page: bool = False) -> bytes:
 def vector_chart_pdf_bytes(*, dashed_series: bool = True) -> bytes:
     """A page whose chart is line-art, with no bitmap anywhere on it.
 
-    This is the shape the extractor used to miss: axis rules plus polylines
-    drawn as paths. Nothing in the source marks it as a picture, so only
-    clustering the line-art can find it. The labels are real text, which is
-    what keeps the region from looking like a table.
+    Axis rules and polylines are drawn as paths. Nothing in the source marks
+    it as a picture, so only clustering the line-art can find it. The labels
+    are real text, which is what keeps the region from looking like a table.
     """
     document = pymupdf.open()
     page = document.new_page()

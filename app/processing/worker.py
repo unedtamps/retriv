@@ -337,13 +337,6 @@ class ProcessingWorker:
                         len(self._in_flight),
                         extra={"retriv.abandoned_runs": len(self._in_flight)},
                     )
-                    # Hand the leases back BEFORE cancelling. A run blocked in
-                    # the extraction sandbox sits in a worker thread that cannot
-                    # be interrupted, so awaiting the cancelled tasks would wait
-                    # for the sandbox to finish and the container would be
-                    # SIGKILLed first -- leaving the lease written. Cancelling
-                    # afterwards is best-effort: the process is about to exit and
-                    # any writer that still wakes finds its lease gone.
                     await self.release_held_leases()
                     for task in list(self._in_flight):
                         task.cancel()
@@ -956,20 +949,7 @@ class ProcessingWorker:
         return stored
 
     def _preview_png(self, data: bytes, media_type: str) -> tuple[bytes, str]:
-        """The picture, shrunk to the edge a vision model reads at.
-
-        The format is carried over rather than normalised. A JPEG stays a
-        JPEG because storing photographic pixels losslessly multiplies the
-        file -- a 150 KB photo grows past a megabyte as PNG, since every
-        gradient the camera compressed cheaply is then stored exactly. A PNG
-        stays a PNG, because that is what charts and screenshots arrive as
-        and a lossy re-encode would blur the small labels.
-
-        The shrink target comes from the file header rather than from
-        pymupdf, whose page size is reported in DPI-scaled points. A picture
-        that cannot be decoded keeps its own bytes: a bad file must not fail
-        a run at the artifact stage.
-        """
+        """The picture, shrunk to the edge a vision model reads at."""
         import pymupdf
 
         image_format = _image_format_of(data)
@@ -1020,28 +1000,7 @@ class ProcessingWorker:
     async def _process_csv_extract(
         self, claimed_run: ProcessingRun, lease_token: UUID, document: Document
     ) -> None:
-        """Store a CSV as queryable rows instead of embedded chunks.
-
-        This deliberately does not go through ``_extract_document``. The
-        extraction contract carries a serialized parser artifact plus
-        chunk text, and neither is wanted here: rows go to
-        ``document_rows`` and no vectors are stored for this document. Handing
-        100k rows through a JSON contract to then discard them would cost
-        more than the parse itself.
-
-        The parser is the stdlib csv module, which is why it runs in-process
-        rather than in the extraction sandbox. The sandbox exists because the
-        document extractors load native parsing libraries; plain delimited
-        text has no such surface, and the caps in the validator bound it
-        instead.
-
-        The parser slot is held for the whole post-download call, not just
-        the parse: the decoded text stays in memory until the rows are
-        committed, so releasing the slot at the parse would let the next
-        CSV in while this one still holds its full size in RAM. The
-        download itself stays outside the slot -- it is network I/O and
-        overlaps another document's parse.
-        """
+        """Store a CSV as queryable rows instead of embedded chunks."""
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
         expected_key = (
@@ -1148,19 +1107,7 @@ class ProcessingWorker:
     async def _process_xlsx_extract(
         self, claimed_run: ProcessingRun, lease_token: UUID, document: Document
     ) -> None:
-        """Store a workbook's sheets as rows, and its pictures for the agent.
-
-        The data path is the CSV path with names: every tabular sheet lands
-        in ``document_rows`` under its sheet name, and no vectors are stored
-        for the document. What a CSV cannot carry -- embedded pictures,
-        charts -- is lifted here and described by the vision stage, so a
-        workbook's graphs are as reachable as its numbers: each description
-        is stored beside its picture and served through the image tools.
-
-        The parser runs in-process next to the CSV parser: openpyxl is pure
-        Python and holds no native parsing surface, and the caps bound the
-        work instead of a sandbox.
-        """
+        """Store a workbook's sheets as rows, and its pictures for the agent."""
         if document.bucket != self._settings.s3_raw_bucket:
             raise PermanentProcessingError("Document references an unapproved raw bucket")
         expected_key = (

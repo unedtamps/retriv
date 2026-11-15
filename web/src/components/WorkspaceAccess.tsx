@@ -8,14 +8,6 @@ interface WorkspaceAccessProps {
   canDelete: boolean
 }
 
-/**
- * What the caller may do in this workspace, and why.
- *
- * Presentational on purpose: the answer is already on the workspace record,
- * and the panel only has to say it. One line carries the role and its four
- * capabilities, because four boxes of the same green check said the same
- * thing at four times the height.
- */
 export function WorkspaceAccess({
   workspace,
   isAdmin,

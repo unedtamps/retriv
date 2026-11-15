@@ -18,17 +18,6 @@ interface DocumentSheetPreviewProps {
   onUnauthorized: () => void
 }
 
-/**
- * A CSV or a workbook, shown as the table it holds.
- *
- * CSV and XLSX are fetched as bytes and parsed in the browser, which is what
- * keeps the preview faithful: the same header row, the same cell values, the
- * same merges a reader sees when the file is opened locally. The cost is that
- * the parse happens on the user's machine, so a workbook past
- * `PREVIEW_ROW_LIMIT` is refused before anything is parsed rather than after
- * the tab has already spent a couple of seconds and a few hundred megabytes on
- * it.
- */
 export function DocumentSheetPreview({
   document,
   workspace,

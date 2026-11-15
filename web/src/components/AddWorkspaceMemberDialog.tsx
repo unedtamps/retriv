@@ -16,15 +16,6 @@ interface AddWorkspaceMemberDialogProps {
 
 const ROLE_CHOICES: WorkspaceRole[] = ['owner', 'editor', 'viewer']
 
-/**
- * Grant a platform user a role in one workspace, as the administrator.
- *
- * Candidates come from the platform user directory rather than the
- * owner-facing member-candidate search, which answers 403 to a caller with no
- * membership. The directory refilters while the query is typed, and users
- * already in the workspace are withheld from the list, so the PUT can only
- * ever add.
- */
 export function AddWorkspaceMemberDialog({
   open,
   workspace,

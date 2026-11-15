@@ -122,13 +122,6 @@ export function Dashboard({
     setNotice({ message, tone })
   }
 
-  /**
-   * Open the document behind a chat citation.
-   *
-   * The chat page already knows the workspace, but the documents hook is the
-   * cheap path when it has the row. A citation can outlive the current page of
-   * that hook, so fall back to the single-document endpoint before giving up.
-   */
   async function openCitation(target: CitationTarget) {
     const workspace =
       workspaces.find((entry) => entry.id === target.workspaceId) ??
@@ -218,27 +211,11 @@ export function Dashboard({
     setActiveView(view)
   }
 
-  /**
-   * Change which workspace the console is looking at.
-   *
-   * The view is left exactly where it is. Documents and Members simply answer
-   * for the new workspace, and the platform views (API keys, Users) are not
-   * workspace-scoped at all -- switching workspace has no bearing on them, so
-   * yanking the user out of API keys would only lose their place.
-   */
   function selectWorkspace(workspaceId: string) {
     setSelectedWorkspaceId(workspaceId)
     setSearchQuery('')
   }
 
-  /**
-   * Jump to one document from the cross-workspace search.
-   *
-   * The workspace changes, the view becomes Documents, and the query is set
-   * to the filename so the table is guaranteed to contain the row even when
-   * it sits past the first page. The id is handed down as a one-shot focus
-   * signal the table consumes when it scrolls the row into view.
-   */
   function openDocument(hit: DocumentSearchHit) {
     if (route !== '/dashboard') onNavigate('/dashboard')
     setSelectedWorkspaceId(hit.workspace_id)
@@ -277,13 +254,6 @@ export function Dashboard({
     }
   }
 
-  /**
-   * Re-run extraction for one document, on an owner's order.
-   *
-   * The 202 body already describes the document in its new state, so the row
-   * is replaced in place instead of refetching the list: the status stamp
-   * turns into "processing" and the pipeline popover picks the run up.
-   */
   async function reindexDocument() {
     if (reindexTarget === null || selectedWorkspace === null) return
     setReindexingId(reindexTarget.id)
