@@ -18,8 +18,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.chat import ChatTurn
-from app.agents.harness import MAX_SEARCH_LIMIT, _execute_tool
-from app.agents.toolkit import ToolRejection
+from app.agents.harness import MAX_SEARCH_LIMIT, _execute_tool, _tool_specs
 from app.db.models import (
     JOB_EXTRACT,
     AgentModelSetting,
@@ -1081,17 +1080,34 @@ async def test_the_new_tools_dispatch_with_clamped_arguments() -> None:
     assert kit.described == [(document_id, workspace_id)]
 
 
-async def test_an_outline_without_a_workspace_is_rejected_before_the_call() -> None:
+def test_document_tools_accept_document_id_without_a_workspace() -> None:
+    specs = _tool_specs(row_queries=False)
+    by_name = {spec["function"]["name"]: spec["function"] for spec in specs}
+    for name in (
+        "read_document",
+        "get_document_outline",
+        "describe_document",
+        "list_images",
+        "get_document_link",
+    ):
+        parameters = by_name[name]["parameters"]
+        assert parameters["required"] == ["document_id"]
+        assert "workspace_id" in parameters["properties"]
+    assert by_name["get_image"]["parameters"]["required"] == ["document_id", "ref"]
+
+
+async def test_an_outline_without_a_workspace_uses_the_whole_scope() -> None:
     kit: Any = _LimitRecordingKit()
+    document_id = uuid4()
 
-    with pytest.raises(ToolRejection):
-        await _execute_tool(
-            kit,
-            "get_document_outline",
-            {"document_id": str(uuid4())},
-        )
+    outcome = await _execute_tool(
+        kit,
+        "get_document_outline",
+        {"document_id": str(document_id)},
+    )
 
-    assert kit.outlines == []
+    assert kit.outlines == [(document_id, None, 200)]
+    assert outcome.text == "ok"
 
 
 async def test_an_answer_without_a_citation_is_replaced(
