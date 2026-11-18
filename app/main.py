@@ -33,7 +33,6 @@ from app.routes import (
     setup,
     workspaces,
 )
-from app.security.bootstrap import ensure_bootstrap_admin
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        await ensure_bootstrap_admin(settings, session_factory)
         retriever = ContextRetriever(settings, engine)
         navigator = DocumentNavigator(settings, session_factory)
         rows: RowQuery | None = None

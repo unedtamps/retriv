@@ -105,7 +105,7 @@ two distinct leases at once -- `FOR UPDATE SKIP LOCKED` keeps them apart, so
   `RETRIV_REFRESH_TOKEN_DAYS` (30 by default). Every use mints a replacement and revokes the
   presented token; presenting a revoked token revokes the whole chain, because a token that was
   already spent can only reappear if a copy of it leaked. Only the SHA-256 hash is stored.
-- The first admin is created from `RETRIV_BOOTSTRAP_ADMIN_*` on startup; later users by a
+- The first admin is created in the browser when no admin exists; later users by a
   platform admin.
 - `admin` is a platform role for the dashboard and grants no workspace data access.
 - Workspace access lives in a membership table with role `owner`, `editor`, or `viewer`.
@@ -810,9 +810,9 @@ sequenceDiagram
     A-->>W: the request proceeds
 ```
 
-`auth_version` is the reason a password reset or a bootstrap-admin password change takes
-effect immediately rather than at token expiry: the claim is compared against the row on
-every request, so bumping the counter invalidates every outstanding token at once. The
+`auth_version` is the reason a password reset takes effect immediately rather than at token
+expiry: the claim is compared against the row on every request, so bumping the counter
+invalidates every outstanding token at once. The
 `admin` platform role is orthogonal to workspace roles and grants no data access.
 
 API keys are a second, longer-lived credential for the same user. One is created from the
@@ -836,17 +836,19 @@ the one guarantee an operator cannot have here.
 
 ## The first admin
 
-A fresh deployment has no users and no self-registration. The API creates the first
-platform administrator on startup from `RETRIV_BOOTSTRAP_ADMIN_USERNAME` and
-`RETRIV_BOOTSTRAP_ADMIN_PASSWORD`:
+A fresh deployment has no users and no self-registration. The login screen asks
+`GET /v1/setup/status`; when no administrator exists, it replaces the sign-in form
+with a one-time create-administrator form. `POST /v1/setup/admin` creates the user
+with role `admin` and returns a session.
 
-- the account is created only when the username does not exist;
-- the password is kept in sync with the environment; if it changed, the hash is
-  replaced and `auth_version` is bumped, signing out sessions issued under the old
-  password;
-- role and active flag are left alone, so disabling the account is not undone by a
-  restart;
-- leave both variables empty when the deployment already has its users.
+`system_state.admin_created_at` is the setup gate. The first successful creation
+sets it, and later requests return `409 setup_already_completed`. Deleting the
+administrator does not reopen setup, because the gate remains set. Clearing the
+gate is a deliberate database operation, not something the dashboard can do.
+
+`RETRIV_ALLOW_WEB_SETUP=false` disables the form. In that case an operator must
+seed an administrator directly. No startup code reads an administrator username or
+password from the environment.
 
 The admin can create workspaces and assign their first owner through `/v1/admin`:
 `POST /v1/admin/workspaces` and `PUT /v1/admin/workspaces/{id}/members/{user_id}`.

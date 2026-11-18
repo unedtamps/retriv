@@ -242,11 +242,11 @@ MinIO service runs locally.
 
 - Dashboard users authenticate with a short-lived HS256 JWT; MCP clients use a
   long-lived `rk_...` API key.
-- The JWT carries `auth_version`. Password rotation and bootstrap-admin changes
-  bump it, revoking outstanding tokens on the next request.
+- The JWT carries `auth_version`. Password rotation bumps it, revoking
+  outstanding tokens on the next request.
 - When no administrator exists, the login screen offers a one-time first-admin
-  form. Set `RETRIV_ALLOW_WEB_SETUP=false` to require the bootstrap environment
-  pair instead.
+  form. Set `RETRIV_ALLOW_WEB_SETUP=false` to disable it and seed an
+  administrator directly instead.
 - Workspace access is checked from live memberships on every request, never
   from a caller-supplied workspace id.
 - API keys are read-only and reach only `/mcp` and the document download route.

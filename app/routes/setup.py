@@ -36,8 +36,8 @@ def setup_disabled_error() -> AppError:
         code="setup_disabled",
         title="Web setup is disabled",
         detail=(
-            "Set RETRIV_BOOTSTRAP_ADMIN_USERNAME and "
-            "RETRIV_BOOTSTRAP_ADMIN_PASSWORD, then restart the API."
+            "Set RETRIV_ALLOW_WEB_SETUP=true or create an administrator "
+            "directly in the database."
         ),
     )
 

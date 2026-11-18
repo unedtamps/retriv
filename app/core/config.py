@@ -42,8 +42,6 @@ class Settings(BaseSettings):
     login_max_attempts: int = Field(default=5, ge=1, le=100)
     login_window_seconds: int = Field(default=300, ge=1, le=3600)
     max_password_bytes: int = Field(default=1024, ge=64, le=8192)
-    bootstrap_admin_username: str = ""
-    bootstrap_admin_password: SecretStr = SecretStr("")
     allow_web_setup: bool = True
     cors_allowed_origins: list[str] = [
         "http://127.0.0.1:9500",
@@ -274,14 +272,6 @@ class Settings(BaseSettings):
             raise ValueError("RETRIV_JWT_SECRET must be at least 32 characters")
         return value
 
-    @field_validator("bootstrap_admin_username")
-    @classmethod
-    def normalize_bootstrap_admin_username(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if len(normalized) > 255:
-            raise ValueError("RETRIV_BOOTSTRAP_ADMIN_USERNAME cannot exceed 255 characters")
-        return normalized
-
     @field_validator("cors_allowed_origins")
     @classmethod
     def validate_cors_allowed_origins(cls, values: list[str]) -> list[str]:
@@ -403,21 +393,6 @@ class Settings(BaseSettings):
                 "RETRIV_VLM_MAX_TOKENS_CEILING must not be below RETRIV_VLM_MAX_TOKENS"
             )
 
-        bootstrap_password = self.bootstrap_admin_password.get_secret_value()
-        if bool(self.bootstrap_admin_username) != bool(bootstrap_password):
-            raise ValueError(
-                "RETRIV_BOOTSTRAP_ADMIN_USERNAME and "
-                "RETRIV_BOOTSTRAP_ADMIN_PASSWORD must be set together"
-            )
-        if bootstrap_password:
-            password_bytes = len(bootstrap_password.encode("utf-8"))
-            if password_bytes < 12:
-                raise ValueError("RETRIV_BOOTSTRAP_ADMIN_PASSWORD must be at least 12 bytes")
-            if password_bytes > self.max_password_bytes:
-                raise ValueError(
-                    "RETRIV_BOOTSTRAP_ADMIN_PASSWORD cannot exceed RETRIV_MAX_PASSWORD_BYTES"
-                )
-
         if self.environment != "production":
             return self
 
@@ -426,7 +401,6 @@ class Settings(BaseSettings):
             secrets = (
                 self.jwt_secret.get_secret_value(),
                 self.s3_secret_key.get_secret_value(),
-                self.bootstrap_admin_password.get_secret_value(),
             )
         else:
             secrets = (

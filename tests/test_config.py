@@ -377,37 +377,3 @@ def test_production_rejects_a_placeholder_vision_key() -> None:
 def test_the_token_ceiling_must_not_be_below_the_budget() -> None:
     with pytest.raises(ValidationError, match="MAX_TOKENS_CEILING"):
         Settings(vlm_max_tokens=8192, vlm_max_tokens_ceiling=256)
-
-
-def test_bootstrap_admin_username_is_normalized() -> None:
-    settings = Settings(
-        bootstrap_admin_username=" Admin ",
-        bootstrap_admin_password=SecretStr("correct-password-123"),
-    )
-    assert settings.bootstrap_admin_username == "admin"
-
-
-def test_bootstrap_admin_username_and_password_are_set_together() -> None:
-    with pytest.raises(ValidationError, match="set together"):
-        Settings(bootstrap_admin_username="admin")
-    with pytest.raises(ValidationError, match="set together"):
-        Settings(bootstrap_admin_password=SecretStr("correct-password-123"))
-
-
-def test_bootstrap_admin_password_must_be_long_enough() -> None:
-    with pytest.raises(ValidationError, match="at least 12 bytes"):
-        Settings(
-            bootstrap_admin_username="admin",
-            bootstrap_admin_password=SecretStr("short"),
-        )
-
-
-def test_production_rejects_a_placeholder_bootstrap_password() -> None:
-    with pytest.raises(ValidationError, match="placeholders"):
-        Settings(
-            **{
-                **PRODUCTION_BASE,
-                "bootstrap_admin_username": "admin",
-                "bootstrap_admin_password": SecretStr("change-this-bootstrap-admin-password"),
-            }
-        )
