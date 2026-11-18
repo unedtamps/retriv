@@ -827,7 +827,7 @@ async def run_agent(
         "type": "error",
         "message": (
             f"The answer needed more than {max_turns} model turns; the run "
-            "was stopped. Narrow the question and try again."
+            "was stopped. You can continue, or narrow the question and try again."
         ),
         "retryable": False,
     }
