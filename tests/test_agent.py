@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.chat import ChatTurn
 from app.agents.harness import MAX_SEARCH_LIMIT, _execute_tool, _tool_specs
+from app.core.config import Settings, get_settings
 from app.db.models import (
     JOB_EXTRACT,
     AgentModelSetting,
@@ -297,6 +298,56 @@ async def test_chat_streams_tool_calls_to_an_answer(
     )
     assert "untrusted_document_text" in tool_message["content"]
     assert scripted_model.closed
+
+
+async def test_a_stopped_run_carries_tool_results_into_the_next_turn(
+    client: httpx.AsyncClient,
+    app: Any,
+    settings: Settings,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    app.dependency_overrides[get_settings] = lambda: settings.model_copy(
+        update={"agent_max_turns": 1}
+    )
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    stopped = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    events = sse_events(stopped.text)
+    error = events[-1]
+    assert error["type"] == "error"
+    context = error["resume_context"]
+    assert "search_context" in context
+    assert "Net revenue rose by a tenth." in context
+
+    scripted_model.turns = [ChatTurn(content="The revenue rose [1].", tool_calls=[])]
+    resumed = await client.post(
+        "/v1/agent/chat",
+        json={"message": "Continue", "resume_context": context},
+        headers=headers,
+    )
+    assert resumed.status_code == 200
+    prompt = scripted_model.prompts[-1]
+    assert any("<previous_tool_results>" in message.get("content", "") for message in prompt)
+    assert any("Net revenue rose by a tenth." in message.get("content", "") for message in prompt)
 
 
 async def test_a_repeated_chunk_keeps_one_citation_label(

@@ -67,6 +67,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
         // The sidebar rises on a sent message, not on this save: send() owns
         // the stamp, and a brand-new session was just messaged into being.
         updatedAt: existing?.updatedAt ?? new Date().toISOString(),
+        resumeContext: existing?.resumeContext,
       }
       const conversations = existing
         ? current.conversations.map((entry) => (entry.id === id ? updated : entry))
@@ -247,6 +248,16 @@ export function useAgentConversation(onUnauthorized: () => void) {
           }
           return [...current, { kind: 'assistant', text: event.content ?? '', sources }]
         })
+        if (event.type === 'final') {
+          setHistory((current) => ({
+            ...current,
+            conversations: current.conversations.map((entry) =>
+              entry.id === sessionIdRef.current
+                ? { ...entry, resumeContext: undefined }
+                : entry,
+            ),
+          }))
+        }
         return
       }
       if (event.type === 'error') {
@@ -255,14 +266,43 @@ export function useAgentConversation(onUnauthorized: () => void) {
           ...current,
           { kind: 'error', text: event.message ?? 'The agent run failed.' },
         ])
+        if (event.resume_context) {
+          setHistory((current) => {
+            const id = sessionIdRef.current
+            const existing = current.conversations.find((entry) => entry.id === id)
+            return {
+              activeId: id,
+              conversations: existing
+                ? current.conversations.map((entry) =>
+                    entry.id === id
+                      ? { ...entry, resumeContext: event.resume_context }
+                      : entry,
+                  )
+                : [
+                    {
+                      id,
+                      title: titleOf(itemsRef.current),
+                      items: itemsRef.current,
+                      updatedAt: new Date().toISOString(),
+                      resumeContext: event.resume_context,
+                    },
+                    ...current.conversations,
+                  ],
+            }
+          })
+        }
       }
     }
 
     try {
+      const resumeContext = history.conversations.find(
+        (entry) => entry.id === sessionIdRef.current,
+      )?.resumeContext
       await streamAgentChat({
         message,
         history: historyOf(items),
         sessionId: sessionIdRef.current,
+        resumeContext,
         signal: controller.signal,
         onEvent,
       })

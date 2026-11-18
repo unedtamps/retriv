@@ -10,6 +10,7 @@ export interface StoredConversation {
   title: string
   items: ChatItem[]
   updatedAt: string
+  resumeContext?: string
 }
 
 export interface StoredChatHistory {
@@ -53,6 +54,10 @@ export function loadChatHistory(): StoredChatHistory {
         title: typeof entry.title === "string" && entry.title !== "" ? entry.title : titleOf(entry.items),
         items: sanitizeItems(entry.items),
         updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : "",
+        resumeContext:
+          typeof entry.resumeContext === "string" && entry.resumeContext !== ""
+            ? entry.resumeContext
+            : undefined,
       }))
       .slice(0, MAX_CONVERSATIONS)
     return {

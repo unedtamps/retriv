@@ -97,6 +97,7 @@ function installApi(
     toolCalls?: { name: string; arguments: Record<string, unknown>; preview: string }[]
     final?: string
     sources?: AgentChatSource[]
+    error?: { message: string; resumeContext?: string }
   } = {},
 ) {
   const refreshes: string[] = []
@@ -177,6 +178,20 @@ function installApi(
           ]
           for (const frame of early) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
+          }
+          if (chat.error !== undefined) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'error',
+                  message: chat.error.message,
+                  retryable: false,
+                  resume_context: chat.error.resumeContext,
+                })}\n\n`,
+              ),
+            )
+            controller.close()
+            return
           }
           if (chat.holdBeforeFinalMs !== undefined) {
             await new Promise((resolve) => setTimeout(resolve, chat.holdBeforeFinalMs))
@@ -910,6 +925,37 @@ describe('dashboard application', () => {
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).queryByRole('button', { name: 'Users' })).not.toBeInTheDocument()
     expect(window.location.search).toContain('view=chat')
+  })
+
+  it('replays tool context after a stopped agent run', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    const fetchMock = installApi(undefined, undefined, undefined, {}, {}, {}, {}, {
+      error: {
+        message: 'The answer needed more than 50 model turns; the run was stopped.',
+        resumeContext: 'Tool search_context\nNet revenue rose by a tenth.',
+      },
+    })
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText(/more than 50 model turns/)).toBeInTheDocument()
+
+    await user.type(input, 'Continue')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.filter(
+        ([url]) => String(url) === '/v1/agent/chat',
+      )
+      const body = JSON.parse(String(calls.at(-1)?.[1]?.body)) as {
+        resume_context?: string
+      }
+      expect(body.resume_context).toContain('Net revenue rose by a tenth.')
+    })
   })
 
   it('streams an agent answer into the chat conversation', async () => {

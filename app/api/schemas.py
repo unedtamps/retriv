@@ -429,3 +429,4 @@ class AgentChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8_000)
     history: list[AgentChatMessage] = Field(default_factory=list, max_length=30)
     session_id: str | None = Field(default=None, min_length=8, max_length=128)
+    resume_context: str | None = Field(default=None, max_length=16_000)

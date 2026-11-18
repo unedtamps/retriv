@@ -357,4 +357,5 @@ export interface AgentChatEvent {
   turns_allowed?: number
   replaced?: boolean
   reason?: string
+  resume_context?: string
 }

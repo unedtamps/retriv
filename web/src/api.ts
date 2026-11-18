@@ -600,6 +600,7 @@ export async function streamAgentChat(input: {
   message: string
   history: AgentChatHistoryMessage[]
   sessionId: string
+  resumeContext?: string
   signal: AbortSignal
   onEvent: (event: AgentChatEvent) => void
 }): Promise<void> {
@@ -610,6 +611,7 @@ export async function streamAgentChat(input: {
       message: input.message,
       history: input.history,
       session_id: input.sessionId,
+      resume_context: input.resumeContext,
     }),
     signal: input.signal,
   })

@@ -105,6 +105,7 @@ async def agent_chat(
                 history=history,
                 message=payload.message,
                 max_turns=settings.agent_max_turns,
+                resume_context=payload.resume_context,
             ):
                 yield f"data: {json.dumps(event)}\n\n".encode()
         finally:
