@@ -196,6 +196,7 @@ function installApi(
           if (chat.holdBeforeFinalMs !== undefined) {
             await new Promise((resolve) => setTimeout(resolve, chat.holdBeforeFinalMs))
           }
+          if (init?.signal?.aborted) return
           const final = {
             type: 'final',
             content:
@@ -943,6 +944,46 @@ describe('dashboard application', () => {
     await user.type(input, 'What is in this workspace?')
     await user.keyboard('{Enter}')
     expect(await screen.findByText(/more than 50 model turns/)).toBeInTheDocument()
+
+    await user.type(input, 'Continue')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.filter(
+        ([url]) => String(url) === '/v1/agent/chat',
+      )
+      const body = JSON.parse(String(calls.at(-1)?.[1]?.body)) as {
+        resume_context?: string
+      }
+      expect(body.resume_context).toContain('Net revenue rose by a tenth.')
+    })
+  })
+
+  it('carries tool context after the user stops a run', async () => {
+    window.history.replaceState(null, '', '/dashboard?view=chat')
+    const fetchMock = installApi(undefined, undefined, undefined, {}, {}, {}, {}, {
+      toolCalls: [
+        {
+          name: 'search_context',
+          arguments: { query: 'revenue' },
+          preview: 'Net revenue rose by a tenth.',
+        },
+      ],
+      holdBeforeFinalMs: 1000,
+    })
+    writeSessionToken('member-token')
+    const user = userEvent.setup()
+    render(<App />)
+
+    const input = await screen.findByPlaceholderText('Ask this workspace…')
+    await user.type(input, 'What is in this workspace?')
+    await user.keyboard('{Enter}')
+    await user.click(await screen.findByRole('button', { name: /1 tool call/ }))
+    await screen.findByText('search_context')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
 
     await user.type(input, 'Continue')
     await user.keyboard('{Enter}')

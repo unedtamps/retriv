@@ -35,6 +35,25 @@ export function historyOf(items: ChatItem[]): AgentChatHistoryMessage[] {
     .map((item) => ({ role: item.kind, content: item.text }))
 }
 
+const RESUME_CONTEXT_CHARS = 12_000
+const RESUME_TOOL_RESULT_CHARS = 1_200
+
+function toolContextOf(items: ChatItem[]): string | undefined {
+  const calls = items
+    .filter((item): item is Extract<ChatItem, { kind: 'activity' }> => item.kind === 'activity')
+    .flatMap((item) => item.calls)
+    .filter((call) => call.preview !== '')
+  if (calls.length === 0) return undefined
+  return calls
+    .slice(-8)
+    .map(
+      (call) =>
+        `Tool ${call.name} ${JSON.stringify(call.arguments)}\n${call.preview.slice(0, RESUME_TOOL_RESULT_CHARS)}`,
+    )
+    .join('\n\n')
+    .slice(0, RESUME_CONTEXT_CHARS)
+}
+
 export function useAgentConversation(onUnauthorized: () => void) {
   const [history, setHistory] = useState<StoredChatHistory>(() => loadChatHistory())
   const active = useMemo(
@@ -86,6 +105,32 @@ export function useAgentConversation(onUnauthorized: () => void) {
     streamingRef.current = false
     setItems([])
     setBusy(false)
+  }
+
+  const rememberToolContext = () => {
+    const context = toolContextOf(itemsRef.current)
+    if (context === undefined) return
+    setHistory((current) => {
+      const id = sessionIdRef.current
+      const existing = current.conversations.find((entry) => entry.id === id)
+      return {
+        ...current,
+        conversations: existing
+          ? current.conversations.map((entry) =>
+              entry.id === id ? { ...entry, resumeContext: context } : entry,
+            )
+          : [
+              {
+                id,
+                title: titleOf(itemsRef.current),
+                items: itemsRef.current,
+                updatedAt: new Date().toISOString(),
+                resumeContext: context,
+              },
+              ...current.conversations,
+            ],
+      }
+    })
   }
 
   useEffect(() => {
@@ -320,9 +365,13 @@ export function useAgentConversation(onUnauthorized: () => void) {
     }
   }
 
-  const stop = () => abortRef.current?.abort()
+  const stop = () => {
+    rememberToolContext()
+    abortRef.current?.abort()
+  }
 
   const newConversation = () => {
+    rememberToolContext()
     abortRef.current?.abort()
     commitTranscript(false)
     epochRef.current += 1
@@ -332,6 +381,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
 
   const selectSession = (id: string) => {
     if (id === history.activeId) return
+    rememberToolContext()
     commitTranscript(false)
     epochRef.current += 1
     setHistory((current) => ({ ...current, activeId: id }))
