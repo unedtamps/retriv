@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     login_window_seconds: int = Field(default=300, ge=1, le=3600)
     max_password_bytes: int = Field(default=1024, ge=64, le=8192)
     allow_web_setup: bool = True
+    agent_max_turns: int = Field(default=50, ge=1, le=200)
     cors_allowed_origins: list[str] = [
         "http://127.0.0.1:9500",
         "http://localhost:9500",

@@ -276,6 +276,7 @@ async def test_chat_streams_tool_calls_to_an_answer(
     events = sse_events(response.text)
     kinds = [event["type"] for event in events]
     assert kinds == ["turn_start", "tool_call", "tool_result", "final"]
+    assert events[0]["turns_allowed"] == 50
     assert events[1]["name"] == "search_context"
     assert "Net revenue rose by a tenth." in events[2]["preview"]
     assert "page_number=2" in events[2]["preview"]

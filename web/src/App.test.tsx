@@ -159,7 +159,7 @@ function installApi(
             { name: 'search_context', arguments: { query: 'anything' }, preview: 'top hit' },
           ]
           const early = [
-            { type: 'turn_start', turns_allowed: 12 },
+            { type: 'turn_start', turns_allowed: 50 },
             ...(chat.preToolDeltas ?? []).map((content) => ({
               type: 'message_delta' as const,
               content,

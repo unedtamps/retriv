@@ -24,6 +24,7 @@ from app.agents.model_settings import (
 from app.agents.toolkit import AgentToolKit
 from app.api.dependencies import CurrentUser
 from app.api.schemas import AgentChatRequest
+from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.session import get_session
 from app.mcp.auth import McpPrincipal
@@ -51,6 +52,7 @@ async def agent_chat(
     current_user: CurrentUser,
     runtime: Annotated[McpRuntime, Depends(_runtime)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> StreamingResponse:
     """Ask one question, with the conversation so far, and stream the work.
 
@@ -102,6 +104,7 @@ async def agent_chat(
                 kit=kit,
                 history=history,
                 message=payload.message,
+                max_turns=settings.agent_max_turns,
             ):
                 yield f"data: {json.dumps(event)}\n\n".encode()
         finally:

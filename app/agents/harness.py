@@ -29,7 +29,7 @@ from app.retrieval.context import RetrievalUnavailable
 from app.retrieval.format import CitationIndex
 from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 
-MAX_TURNS = 12
+MAX_TURNS = 50
 MAX_TOOL_RESULT_CHARS = 20_000
 TOOL_RESULT_PREVIEW_CHARS = 1_200
 # The tool schema advertises this ceiling; the loop enforces it too, because
@@ -669,6 +669,7 @@ async def run_agent(
     kit: AgentToolKit,
     history: list[dict[str, Any]],
     message: str,
+    max_turns: int = MAX_TURNS,
 ) -> AsyncIterator[dict[str, Any]]:
     """Carry one user message to an answer, yielding progress events.
 
@@ -693,9 +694,9 @@ async def run_agent(
     served: dict[int, ServedSource] = {}
     tool_names: list[str] = []
     citations = CitationIndex()
-    yield {"type": "turn_start", "turns_allowed": MAX_TURNS}
+    yield {"type": "turn_start", "turns_allowed": max_turns}
 
-    for _ in range(MAX_TURNS):
+    for _ in range(max_turns):
         turn: ChatTurn | None = None
         stream = getattr(provider, "stream_turn", None)
         try:
@@ -790,7 +791,7 @@ async def run_agent(
     yield {
         "type": "error",
         "message": (
-            f"The answer needed more than {MAX_TURNS} model turns; the run "
+            f"The answer needed more than {max_turns} model turns; the run "
             "was stopped. Narrow the question and try again."
         ),
         "retryable": False,
