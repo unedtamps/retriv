@@ -196,7 +196,7 @@ export function LoginScreen({ onLogin, setup }: LoginScreenProps) {
               </form>
             )}
             <p className="mt-6 border-t border-line pt-4 font-mono text-[0.65rem] leading-5 text-ink-faint">
-              Sessions are kept in this browser tab and cleared when you sign out or close it.
+              Sessions are kept in this browser and cleared when you sign out.
             </p>
           </div>
         </section>

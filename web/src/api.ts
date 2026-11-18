@@ -30,7 +30,13 @@ import type {
   WorkspaceMemberList,
   WorkspaceRole,
 } from './types'
-import { clearSession, readSession, writeSession } from './session'
+import {
+  SESSION_STORAGE_KEY,
+  clearSession,
+  readSession,
+  writeSession,
+  type StoredSession,
+} from './session'
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() ?? ''
 const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '')
@@ -96,6 +102,8 @@ export function restoreSession(): boolean {
   if (session === null) return false
   accessToken = session.accessToken
   refreshToken = session.refreshToken
+  accessExpiresAt = session.expiresAt ?? 0
+  accessLifetimeMs = session.lifetimeMs ?? 0
   return true
 }
 
@@ -129,7 +137,12 @@ export function applyTokens(access: string, refresh: string | null, expiresIn?: 
   accessLifetimeMs = expiresIn === undefined ? 0 : expiresIn * 1_000
   accessExpiresAt = accessLifetimeMs === 0 ? 0 : Date.now() + accessLifetimeMs
   if (refresh === null) clearSession()
-  writeSession({ accessToken: access, refreshToken: refresh })
+  writeSession({
+    accessToken: access,
+    refreshToken: refresh,
+    expiresAt: accessExpiresAt === 0 ? undefined : accessExpiresAt,
+    lifetimeMs: accessLifetimeMs === 0 ? undefined : accessLifetimeMs,
+  })
   scheduleRefresh(expiresIn)
 }
 
@@ -187,24 +200,48 @@ function cancelRefresh(): void {
  * Resolves whether the session is now usable. A failure clears the session,
  * once, and tells the app.
  */
+function adoptStoredSession(session: StoredSession): void {
+  accessToken = session.accessToken
+  refreshToken = session.refreshToken
+  accessExpiresAt = session.expiresAt ?? 0
+  accessLifetimeMs = session.lifetimeMs ?? 0
+}
+
+async function withRefreshLock<T>(run: () => Promise<T>): Promise<T> {
+  if (typeof navigator === 'undefined' || navigator.locks === undefined) return run()
+  return navigator.locks.request('retriv-session-refresh', run)
+}
+
 function refreshSession(): Promise<boolean> {
   if (refreshInFlight !== null) return refreshInFlight
 
   if (refreshToken === null) return Promise.resolve(false)
+  const seenAccess = accessToken
 
-  const presented = refreshToken
-  refreshInFlight = fetch(`${API_BASE_URL}/v1/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ refresh_token: presented }),
-    cache: 'no-store',
-  })
-    .then(async (response) => {
-      if (!response.ok) throw new ApiError(response.status, await readProblem(response))
-      const body = (await response.json()) as SessionToken
-      applyTokens(body.access_token, body.refresh_token ?? null, body.expires_in)
+  refreshInFlight = withRefreshLock(async () => {
+    const stored = readSession()
+    if (stored === null || stored.refreshToken === null) {
+      clearTokens()
+      sessionLostHandler?.()
+      return false
+    }
+    if (stored.accessToken !== seenAccess || stored.refreshToken !== refreshToken) {
+      adoptStoredSession(stored)
       return true
+    }
+
+    const presented = refreshToken
+    const response = await fetch(`${API_BASE_URL}/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ refresh_token: presented }),
+      cache: 'no-store',
     })
+    if (!response.ok) throw new ApiError(response.status, await readProblem(response))
+    const body = (await response.json()) as SessionToken
+    applyTokens(body.access_token, body.refresh_token ?? null, body.expires_in)
+    return true
+  })
     .catch(() => {
       clearTokens()
       sessionLostHandler?.()
@@ -215,6 +252,34 @@ function refreshSession(): Promise<boolean> {
     })
 
   return refreshInFlight
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== SESSION_STORAGE_KEY) return
+    if (event.newValue === null) {
+      const hadSession = accessToken !== null || refreshToken !== null
+      accessToken = null
+      refreshToken = null
+      accessExpiresAt = 0
+      accessLifetimeMs = 0
+      cancelRefresh()
+      if (hadSession) sessionLostHandler?.()
+      return
+    }
+    const stored = readSession()
+    if (stored === null) return
+    adoptStoredSession(stored)
+    cancelRefresh()
+    if (
+      stored.refreshToken !== null &&
+      stored.expiresAt !== undefined &&
+      stored.lifetimeMs !== undefined
+    ) {
+      const remainingMs = Math.max(0, stored.expiresAt - Date.now())
+      if (remainingMs > 0) scheduleRefresh(remainingMs / 1_000)
+    }
+  })
 }
 
 async function readProblem(response: Response): Promise<ProblemDetail | null> {

@@ -241,7 +241,9 @@ MinIO service runs locally.
 ## Security
 
 - Dashboard users authenticate with a short-lived HS256 JWT; MCP clients use a
-  long-lived `rk_...` API key.
+  long-lived `rk_...` API key. Dashboard tokens live in `localStorage` so a
+  session survives a tab close, which makes XSS token theft a deployment risk;
+  keep a strict CSP and avoid raw HTML.
 - The JWT carries `auth_version`. Password rotation bumps it, revoking
   outstanding tokens on the next request.
 - When no administrator exists, the login screen offers a one-time first-admin
