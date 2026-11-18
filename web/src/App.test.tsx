@@ -104,6 +104,9 @@ function installApi(
   let meCalls = 0
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url === '/v1/setup/status') {
+      return json({ needs_admin: false, setup_allowed: true })
+    }
     if (url === '/v1/auth/token') {
       expect(init?.body).toBeInstanceOf(URLSearchParams)
       return json({
@@ -348,6 +351,49 @@ function installApi(
 }
 
 describe('dashboard application', () => {
+  it('creates the first administrator when the deployment has no admin', async () => {
+    window.history.replaceState(null, '', '/')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/v1/setup/status') {
+        return json({ needs_admin: true, setup_allowed: true })
+      }
+      if (url === '/v1/setup/admin') {
+        expect(init?.method).toBe('POST')
+        return json(
+          {
+            access_token: 'setup-token',
+            token_type: 'bearer',
+            expires_in: 3600,
+            refresh_token: `rt_${'c'.repeat(43)}`,
+            refresh_expires_in: 2592000,
+          },
+          201,
+        )
+      }
+      if (url === '/v1/auth/me') return json(admin)
+      if (url.startsWith('/v1/workspaces?')) {
+        return json({ items: [workspace], total: 1, offset: 0, limit: 100 })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Create the first administrator' }),
+    ).toBeInTheDocument()
+    await user.type(await screen.findByLabelText('Username'), 'root')
+    await user.type(await screen.findByLabelText('Password'), 'setup-password-123')
+    await user.type(screen.getByLabelText('Confirm password'), 'setup-password-123')
+    await user.click(screen.getByRole('button', { name: 'Create administrator' }))
+
+    expect(await screen.findByRole('heading', { name: 'Chat', level: 1 })).toBeInTheDocument()
+    expect(readSessionToken()).toBe('setup-token')
+  })
+
   it('lands on the governance dashboard after login and sends the session token', async () => {
     window.history.replaceState(null, '', '/')
     const fetchMock = installApi()
@@ -355,8 +401,8 @@ describe('dashboard application', () => {
 
     render(<App />)
 
-    await user.type(screen.getByLabelText('Username'), 'admin')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'admin')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(await screen.findByRole('heading', { name: 'Chat', level: 1 })).toBeInTheDocument()
@@ -1383,6 +1429,9 @@ describe('dashboard application', () => {
     writeSessionToken('expired-token')
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url === '/v1/setup/status') {
+        return json({ needs_admin: false, setup_allowed: true })
+      }
       if (url === '/v1/auth/me') return json({ detail: 'Invalid or expired token' }, 401)
       if (url.startsWith('/v1/workspaces?')) {
         return json({ items: [], total: 0, offset: 0, limit: 100 })
@@ -1475,8 +1524,8 @@ describe('dashboard application', () => {
 
     render(<App />)
     expect(window.location.pathname).toBe('/upload-context')
-    await user.type(screen.getByLabelText('Username'), 'maya')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'maya')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
@@ -1511,8 +1560,8 @@ describe('dashboard application', () => {
 
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
-    await user.type(screen.getByLabelText('Username'), 'maya')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'maya')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
@@ -1536,8 +1585,8 @@ describe('dashboard application', () => {
 
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
-    await user.type(screen.getByLabelText('Username'), 'maya')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'maya')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
@@ -1572,8 +1621,8 @@ describe('dashboard application', () => {
 
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
-    await user.type(screen.getByLabelText('Username'), 'maya')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'maya')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
@@ -1599,8 +1648,8 @@ describe('dashboard application', () => {
 
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
-    await user.type(screen.getByLabelText('Username'), 'maya')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'maya')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
@@ -1618,8 +1667,8 @@ describe('dashboard application', () => {
 
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
-    await user.type(screen.getByLabelText('Username'), 'maya')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'maya')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(await screen.findByRole('heading', { name: 'Upload context', level: 1 })).toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), workspace.id)
@@ -1670,8 +1719,8 @@ describe('dashboard application', () => {
     const user = userEvent.setup()
     window.history.pushState({}, '', '/upload-context')
     render(<App />)
-    await user.type(screen.getByLabelText('Username'), 'maya')
-    await user.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await user.type(await screen.findByLabelText('Username'), 'maya')
+    await user.type(await screen.findByLabelText('Password'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(

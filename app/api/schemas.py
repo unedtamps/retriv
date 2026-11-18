@@ -37,6 +37,24 @@ class CurrentUserResponse(BaseModel):
     is_active: bool
 
 
+class SetupStatusResponse(BaseModel):
+    needs_admin: bool
+    setup_allowed: bool
+
+
+class SetupAdminRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=12, max_length=1024)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("Username cannot be blank")
+        return normalized
+
+
 class WorkspaceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

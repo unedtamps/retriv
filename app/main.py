@@ -30,6 +30,7 @@ from app.routes import (
     documents_search,
     health,
     processing_runs,
+    setup,
     workspaces,
 )
 from app.security.bootstrap import ensure_bootstrap_admin
@@ -115,6 +116,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     application.include_router(health.router)
+    application.include_router(setup.router)
     application.include_router(auth.router)
     application.include_router(admin.router)
     application.include_router(workspaces.router)

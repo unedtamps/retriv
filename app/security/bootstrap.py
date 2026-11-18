@@ -14,6 +14,7 @@ restart undoing it.
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from anyio import to_thread
@@ -23,7 +24,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.db.models import User
+from app.db.models import SystemState, User
 from app.security.auth import hash_password, verify_password
 
 logger = logging.getLogger(__name__)
@@ -65,10 +66,23 @@ async def ensure_bootstrap_admin(
     """
     username = settings.bootstrap_admin_username
     password = settings.bootstrap_admin_password.get_secret_value()
-    if not username or not password:
-        return
 
     async with sessions() as session, session.begin():
+        state = await session.get(SystemState, 1, with_for_update=True)
+        if state is None:
+            state = SystemState(id=1)
+            session.add(state)
+            await session.flush()
+
+        existing_admin = await session.scalar(
+            select(User.id).where(User.role == "admin").limit(1)
+        )
+        if existing_admin is not None and state.admin_created_at is None:
+            state.admin_created_at = datetime.now(UTC)
+
+        if not username or not password:
+            return
+
         user = await session.scalar(select(User).where(User.username == username).with_for_update())
         if user is None:
             password_hash = await to_thread.run_sync(hash_password, password)
@@ -83,6 +97,7 @@ async def ensure_bootstrap_admin(
             )
             result = await session.execute(statement)
             if int(getattr(result, "rowcount", 0) or 0) == 1:
+                state.admin_created_at = datetime.now(UTC)
                 logger.info("Created bootstrap administrator %r", username)
                 return
             user = await session.scalar(
@@ -98,6 +113,8 @@ async def ensure_bootstrap_admin(
                 username,
                 user.role,
             )
+        else:
+            state.admin_created_at = datetime.now(UTC)
 
         if await to_thread.run_sync(verify_password, password, user.password_hash):
             return

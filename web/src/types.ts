@@ -21,6 +21,11 @@ export interface SessionToken {
   refresh_expires_in?: number
 }
 
+export interface SetupStatus {
+  needs_admin: boolean
+  setup_allowed: boolean
+}
+
 export interface CurrentUser {
   id: string
   username: string

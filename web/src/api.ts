@@ -23,6 +23,7 @@ import type {
   MemberCandidateList,
   ProblemDetail,
   SessionToken,
+  SetupStatus,
   Workspace,
   WorkspaceList,
   WorkspaceMember,
@@ -294,6 +295,20 @@ function ownerMemberPath(workspaceId: string, userId?: string): string {
 }
 
 export const api = {
+  setupStatus(signal?: AbortSignal): Promise<SetupStatus> {
+    return request<SetupStatus>('/v1/setup/status', { anonymous: true, signal })
+  },
+
+  async setupAdmin(username: string, password: string): Promise<SessionToken> {
+    const session = await request<SessionToken>('/v1/setup/admin', {
+      method: 'POST',
+      ...jsonOptions({ username, password }),
+      anonymous: true,
+    })
+    applyTokens(session.access_token, session.refresh_token ?? null, session.expires_in)
+    return session
+  },
+
   async login(username: string, password: string): Promise<SessionToken> {
     const form = new URLSearchParams({ username, password })
     const session = await request<SessionToken>('/v1/auth/token', {

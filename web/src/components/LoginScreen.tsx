@@ -6,20 +6,31 @@ import loginScene from '../assets/login-scene.png'
 
 interface LoginScreenProps {
   onLogin: (username: string, password: string) => Promise<void>
+  setup?: {
+    allowed: boolean
+    onCreate: (username: string, password: string) => Promise<void>
+  }
 }
 
-export function LoginScreen({ onLogin }: LoginScreenProps) {
+export function LoginScreen({ onLogin, setup }: LoginScreenProps) {
+  const isSetup = setup !== undefined
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting'>('idle')
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (setup !== undefined && password !== confirm) {
+      setError('Passwords do not match.')
+      return
+    }
     setStatus('submitting')
     setError(null)
     try {
-      await onLogin(username, password)
+      if (setup !== undefined) await setup.onCreate(username, password)
+      else await onLogin(username, password)
     } catch (caught) {
       setError(getErrorMessage(caught))
       setStatus('idle')
@@ -50,13 +61,14 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
             <div>
               <h1 className="font-condensed text-3xl font-bold uppercase leading-[1.12] tracking-[0.03em] xl:text-4xl">
-                Access is explicit
+                {isSetup ? 'First access is explicit' : 'Access is explicit'}
                 <br />
-                Context stays scoped
+                {isSetup ? 'The administrator starts here' : 'Context stays scoped'}
               </h1>
               <p className="mt-4 max-w-md text-sm leading-6 text-on-dark-muted">
-                Administer users, workspace ownership, and retrieval boundaries from one
-                deliberate surface.
+                {isSetup
+                  ? 'Create the account that will manage users, workspace ownership, and retrieval boundaries.'
+                  : 'Administer users, workspace ownership, and retrieval boundaries from one deliberate surface.'}
               </p>
             </div>
 
@@ -88,66 +100,101 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               <LockKeyhole aria-hidden="true" size={19} strokeWidth={1.8} />
             </div>
             <h2 className="mt-4 font-condensed text-base font-bold uppercase tracking-[0.05em] text-ink">
-              Sign in to the dashboard
+              {isSetup ? 'Create the first administrator' : 'Sign in to the dashboard'}
             </h2>
             <p className="mt-2 text-sm leading-6 text-ink-muted">
-              Your workspace permissions are resolved from the current access policy after
-              sign-in.
+              {isSetup
+                ? 'No administrator exists yet. This account is created once, then used to create users and workspaces.'
+                : 'Your workspace permissions are resolved from the current access policy after sign-in.'}
             </p>
 
-            <form className="mt-7 space-y-4" onSubmit={handleSubmit}>
-              <div>
-                <label className="label" htmlFor="username">
-                  Username
-                </label>
-                <input
-                  id="username"
-                  name="username"
-                  className="field"
-                  value={username}
-                  autoComplete="username"
-                  autoFocus
-                  required
-                  maxLength={255}
-                  onChange={(event) => setUsername(event.target.value)}
-                />
+            {setup !== undefined && !setup.allowed ? (
+              <div className="mt-7 rounded-card border border-warn/30 bg-warn-soft p-4 text-sm leading-6 text-warn">
+                Web setup is disabled. Set RETRIV_BOOTSTRAP_ADMIN_USERNAME and
+                RETRIV_BOOTSTRAP_ADMIN_PASSWORD, then restart the API.
               </div>
-              <div>
-                <label className="label" htmlFor="password">
-                  Password
-                </label>
-                <div className="relative">
-                  <KeyRound
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
-                    size={16}
-                  />
+            ) : (
+              <form className="mt-7 space-y-4" onSubmit={handleSubmit}>
+                <div>
+                  <label className="label" htmlFor="username">
+                    Username
+                  </label>
                   <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    className="field pl-9"
-                    value={password}
-                    autoComplete="current-password"
+                    id="username"
+                    name="username"
+                    className="field"
+                    value={username}
+                    autoComplete="username"
+                    autoFocus
                     required
-                    onChange={(event) => setPassword(event.target.value)}
+                    maxLength={255}
+                    onChange={(event) => setUsername(event.target.value)}
                   />
                 </div>
-              </div>
-              {error === null ? null : (
-                <p className="error-note" role="alert">
-                  {error}
-                </p>
-              )}
-              <button
-                type="submit"
-                className="btn btn-primary w-full justify-between py-3"
-                disabled={status === 'submitting'}
-              >
-                <span>{status === 'submitting' ? 'Signing in…' : 'Continue'}</span>
-                <ArrowRight aria-hidden="true" size={18} />
-              </button>
-            </form>
+                <div>
+                  <label className="label" htmlFor="password">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <KeyRound
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
+                      size={16}
+                    />
+                    <input
+                      id="password"
+                      name="password"
+                      type="password"
+                      className="field pl-9"
+                      value={password}
+                      autoComplete={isSetup ? 'new-password' : 'current-password'}
+                      required
+                      minLength={isSetup ? 12 : undefined}
+                      onChange={(event) => setPassword(event.target.value)}
+                    />
+                  </div>
+                </div>
+                {isSetup ? (
+                  <div>
+                    <label className="label" htmlFor="confirm-password">
+                      Confirm password
+                    </label>
+                    <input
+                      id="confirm-password"
+                      name="confirm-password"
+                      type="password"
+                      className="field"
+                      value={confirm}
+                      autoComplete="new-password"
+                      required
+                      minLength={12}
+                      onChange={(event) => setConfirm(event.target.value)}
+                    />
+                  </div>
+                ) : null}
+                {error === null ? null : (
+                  <p className="error-note" role="alert">
+                    {error}
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  className="btn btn-primary w-full justify-between py-3"
+                  disabled={status === 'submitting'}
+                >
+                  <span>
+                    {status === 'submitting'
+                      ? isSetup
+                        ? 'Creating administrator…'
+                        : 'Signing in…'
+                      : isSetup
+                        ? 'Create administrator'
+                        : 'Continue'}
+                  </span>
+                  <ArrowRight aria-hidden="true" size={18} />
+                </button>
+              </form>
+            )}
             <p className="mt-6 border-t border-line pt-4 font-mono text-[0.65rem] leading-5 text-ink-faint">
               Sessions are kept in this browser tab and cleared when you sign out or close it.
             </p>

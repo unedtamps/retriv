@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.db.models import User
+from app.db.models import SystemState, User
 from app.security.auth import hash_password, verify_password
 from app.security.bootstrap import ensure_bootstrap_admin
 
@@ -46,6 +46,10 @@ async def test_a_fresh_database_gets_the_bootstrap_admin(
     assert user.is_active is True
     assert user.auth_version == 0
     assert verify_password(PASSWORD, user.password_hash)
+    async with db_session_factory() as session:
+        state = await session.scalar(select(SystemState).where(SystemState.id == 1))
+        assert state is not None
+        assert state.admin_created_at is not None
 
 
 async def test_a_second_start_leaves_the_existing_row_alone(
@@ -121,3 +125,33 @@ async def test_nothing_happens_when_the_pair_is_unset(
 
     async with db_session_factory() as session:
         assert await session.scalar(select(func.count()).select_from(User)) == 0
+        state = await session.scalar(select(SystemState).where(SystemState.id == 1))
+        assert state is not None
+        assert state.admin_created_at is None
+
+
+async def test_an_existing_admin_closes_setup_without_the_environment(
+    db_session_factory: async_sessionmaker[AsyncSession], settings: Settings
+) -> None:
+    async with db_session_factory() as session:
+        session.add(
+            User(
+                username="root",
+                password_hash=hash_password(PASSWORD),
+                role="admin",
+            )
+        )
+        await session.commit()
+
+    unset = settings.model_copy(
+        update={
+            "bootstrap_admin_username": "",
+            "bootstrap_admin_password": SecretStr(""),
+        }
+    )
+    await ensure_bootstrap_admin(unset, db_session_factory)
+
+    async with db_session_factory() as session:
+        state = await session.scalar(select(SystemState).where(SystemState.id == 1))
+        assert state is not None
+        assert state.admin_created_at is not None

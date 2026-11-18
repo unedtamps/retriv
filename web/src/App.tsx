@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import {
+  ApiError,
   api,
   clearTokens,
   getErrorMessage,
@@ -15,7 +16,7 @@ import { BrandMark } from './components/ui/Brand'
 import { useTheme } from './hooks/useTheme'
 import { clearChatHistory } from './lib/chatHistoryStore'
 import { clearDocumentCache } from './lib/documentCache'
-import type { AppRoute, CurrentUser, Workspace } from './types'
+import type { AppRoute, CurrentUser, SetupStatus, Workspace } from './types'
 
 interface ReadyState {
   user: CurrentUser
@@ -35,6 +36,10 @@ function App() {
   const [loading, setLoading] = useState(hasSession())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null)
+  const [setupLoading, setSetupLoading] = useState(!signedIn)
+  const [setupError, setSetupError] = useState<string | null>(null)
+  const [setupRetry, setSetupRetry] = useState(0)
   const theme = useTheme()
 
   useEffect(() => {
@@ -57,12 +62,31 @@ function App() {
     setReady(null)
     setLoading(false)
     setLoadError(null)
+    setSetupLoading(true)
+    setSetupError(null)
   }, [])
 
   useEffect(() => {
     setSessionLostHandler(handleLogout)
     return () => setSessionLostHandler(null)
   }, [handleLogout])
+
+  useEffect(() => {
+    if (signedIn) return
+    const controller = new AbortController()
+    api
+      .setupStatus(controller.signal)
+      .then((status) => {
+        setSetupStatus(status)
+        setSetupLoading(false)
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof Error && caught.name === 'AbortError') return
+        setSetupError(getErrorMessage(caught))
+        setSetupLoading(false)
+      })
+    return () => controller.abort()
+  }, [signedIn, setupRetry])
 
   const navigate = useCallback((route: AppRoute) => {
     if (window.location.pathname !== route) window.history.pushState(null, '', route)
@@ -101,6 +125,20 @@ function App() {
     setSignedIn(true)
   }
 
+  async function handleSetup(username: string, password: string) {
+    try {
+      await api.setupAdmin(username, password)
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        setSetupStatus({ needs_admin: false, setup_allowed: true })
+      }
+      throw caught
+    }
+    setLoading(true)
+    setLoadError(null)
+    setSignedIn(true)
+  }
+
   async function handleSignOut() {
     await api.logout()
     handleLogout()
@@ -122,7 +160,33 @@ function App() {
     }
   }, [handleLogout])
 
-  if (!signedIn) return <LoginScreen onLogin={handleLogin} />
+  if (!signedIn) {
+    if (setupLoading) return <BootScreen />
+    if (setupError !== null) {
+      return (
+        <AuthUnavailable
+          message={setupError}
+          onRetry={() => {
+            setSetupLoading(true)
+            setSetupError(null)
+            setSetupRetry((value) => value + 1)
+          }}
+        />
+      )
+    }
+    if (setupStatus?.needs_admin) {
+      return (
+        <LoginScreen
+          onLogin={handleLogin}
+          setup={{
+            allowed: setupStatus.setup_allowed,
+            onCreate: handleSetup,
+          }}
+        />
+      )
+    }
+    return <LoginScreen onLogin={handleLogin} />
+  }
   if (loading) return <BootScreen />
   if (loadError !== null || ready === null) {
     return (
@@ -175,6 +239,24 @@ async function loadWorkspaceCatalog(signal?: AbortSignal): Promise<Workspace[]> 
   }
   const pages = await Promise.all(remainingPages)
   return [first, ...pages].flatMap((page) => page.items)
+}
+
+function AuthUnavailable({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <main className="flex min-h-svh items-center justify-center bg-paper p-5">
+      <section className="w-full max-w-md rounded-card border border-line bg-surface p-6">
+        <span className="flex h-10 w-10 items-center justify-center rounded-card border border-danger/30 bg-danger-soft text-danger">
+          <AlertTriangle aria-hidden="true" size={19} />
+        </span>
+        <h1 className="mt-4 text-lg font-semibold text-ink">Sign-in unavailable</h1>
+        <p className="mt-2 text-sm leading-6 text-ink-muted">{message}</p>
+        <button type="button" className="btn btn-primary mt-5" onClick={onRetry}>
+          <RefreshCw aria-hidden="true" size={16} />
+          Try again
+        </button>
+      </section>
+    </main>
+  )
 }
 
 function BootScreen() {

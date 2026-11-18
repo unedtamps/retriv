@@ -1,0 +1,6 @@
+ts	phase	decision	why	evidence	result
+2026-11-18T13:12:07Z	frame	Dropped organizations and chose first-run admin creation	The org layer was larger than the problem; the current single-tenant auth already works	user decision 2026-11-18	design fixed
+2026-11-18T13:12:07Z	schema	Added a system_state singleton as the one-time setup gate	The gate must serialize two simultaneous first-admin requests without changing users	alembic/versions/0007_first_admin.py	migration passed on scratch Postgres
+2026-11-18T13:12:07Z	endpoints	Added public setup status and first-admin creation	The login screen needs to know whether setup is open, and creation must be one-time	app/routes/setup.py, tests/test_setup.py	6 setup tests passed
+2026-11-18T13:12:07Z	frontend	Switched the auth screen to create the first administrator when needed	The first visit should not require an environment variable or a second screen	web/src/App.tsx, web/src/components/LoginScreen.tsx, web/src/App.test.tsx	89 web tests passed, build passed
+2026-11-18T13:12:07Z	verify	Ran the full backend, Postgres, web, lint, type, and build gates	Prove the setup flow and the existing auth paths together	pytest 682 passed/17 skipped/1 deselected; make test-postgres 16 passed; ruff and mypy clean; web build	green except the host LibreOffice OOXML gap

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     max_password_bytes: int = Field(default=1024, ge=64, le=8192)
     bootstrap_admin_username: str = ""
     bootstrap_admin_password: SecretStr = SecretStr("")
+    allow_web_setup: bool = True
     cors_allowed_origins: list[str] = [
         "http://127.0.0.1:9500",
         "http://localhost:9500",

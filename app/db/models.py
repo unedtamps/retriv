@@ -497,6 +497,20 @@ class RefreshToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SystemState(Base):
+    """The one-time setup gate for the first administrator."""
+
+    __tablename__ = "system_state"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="system_state_singleton"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    admin_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class AgentModelSetting(Base):
     """The one chat model the in-server agent harness uses, chosen by an admin.
 
