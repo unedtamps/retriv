@@ -138,4 +138,32 @@ describe('chat history store', () => {
     expect(restored.conversations).toEqual([])
     expect(localStorage.getItem('retriv.chat.conversation.v1')).toBeNull()
   })
+
+  it('keeps the archive for the same user and records the owner', () => {
+    saveChatHistory(aHistory({ ownerId: 'user-a' }))
+
+    const restored = loadChatHistory('user-a')
+
+    expect(restored.ownerId).toBe('user-a')
+    expect(restored.conversations).toHaveLength(1)
+  })
+
+  it('clears the archive when a different user loads it', () => {
+    saveChatHistory(aHistory({ ownerId: 'user-a' }))
+
+    const restored = loadChatHistory('user-b')
+
+    expect(restored.ownerId).toBe('user-b')
+    expect(restored.conversations).toHaveLength(0)
+    expect(localStorage.getItem('retriv.chat.conversations.v2')).toBeNull()
+  })
+
+  it('claims an unowned archive for the first user after the upgrade', () => {
+    saveChatHistory(aHistory())
+
+    const restored = loadChatHistory('user-a')
+
+    expect(restored.ownerId).toBe('user-a')
+    expect(restored.conversations).toHaveLength(1)
+  })
 })

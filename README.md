@@ -244,6 +244,12 @@ MinIO service runs locally.
   long-lived `rk_...` API key. Dashboard tokens live in `localStorage` so a
   session survives a tab close, which makes XSS token theft a deployment risk;
   keep a strict CSP and avoid raw HTML.
+- The built dashboard ships a Content-Security-Policy (`script-src 'self'`,
+  no eval, WebAssembly allowed for the PDF decoders) and the API sends
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and
+  `Permissions-Policy` on every response.
+- The chat archive in the browser is bound to the signed-in user. A different
+  account signing in on the same browser starts with a clean transcript.
 - The JWT carries `auth_version`. Password rotation bumps it, revoking
   outstanding tokens on the next request.
 - When no administrator exists, the login screen offers a one-time first-admin

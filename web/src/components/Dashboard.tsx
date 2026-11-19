@@ -104,7 +104,7 @@ export function Dashboard({
     preferredWorkspace
   const documents = useWorkspaceDocuments(selectedWorkspace, onUnauthorized)
   const runs = useProcessingRuns(onUnauthorized)
-  const conversation = useAgentConversation(onUnauthorized)
+  const conversation = useAgentConversation(onUnauthorized, user.id)
 
   useEffect(() => {
     if (route !== '/dashboard') return

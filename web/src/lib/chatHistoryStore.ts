@@ -16,6 +16,11 @@ export interface StoredConversation {
 export interface StoredChatHistory {
   activeId: string | null
   conversations: StoredConversation[]
+  ownerId?: string
+}
+
+export function emptyChatHistory(ownerId?: string): StoredChatHistory {
+  return { activeId: null, conversations: [], ownerId }
 }
 
 export function titleOf(items: ChatItem[]): string {
@@ -35,12 +40,18 @@ function sanitizeItems(items: ChatItem[]): ChatItem[] {
     )
 }
 
-export function loadChatHistory(): StoredChatHistory {
+export function loadChatHistory(ownerId?: string): StoredChatHistory {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw === null) return migrateLegacy()
+    if (raw === null) return { ...migrateLegacy(), ownerId }
     const parsed = JSON.parse(raw) as Partial<StoredChatHistory>
-    if (!Array.isArray(parsed.conversations)) return migrateLegacy()
+    if (!Array.isArray(parsed.conversations)) return { ...migrateLegacy(), ownerId }
+    const storedOwnerId = typeof parsed.ownerId === "string" ? parsed.ownerId : undefined
+    if (ownerId !== undefined && storedOwnerId !== undefined && storedOwnerId !== ownerId) {
+      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(LEGACY_KEY)
+      return emptyChatHistory(ownerId)
+    }
     const conversations = parsed.conversations
       .filter(
         (entry): entry is StoredConversation =>
@@ -67,9 +78,10 @@ export function loadChatHistory(): StoredChatHistory {
           ? parsed.activeId
           : null,
       conversations,
+      ownerId: ownerId ?? storedOwnerId,
     }
   } catch {
-    return { activeId: null, conversations: [] }
+    return emptyChatHistory(ownerId)
   }
 }
 

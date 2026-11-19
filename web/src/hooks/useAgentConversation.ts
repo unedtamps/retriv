@@ -54,8 +54,8 @@ function toolContextOf(items: ChatItem[]): string | undefined {
     .slice(0, RESUME_CONTEXT_CHARS)
 }
 
-export function useAgentConversation(onUnauthorized: () => void) {
-  const [history, setHistory] = useState<StoredChatHistory>(() => loadChatHistory())
+export function useAgentConversation(onUnauthorized: () => void, ownerId?: string) {
+  const [history, setHistory] = useState<StoredChatHistory>(() => loadChatHistory(ownerId))
   const active = useMemo(
     () => history.conversations.find((entry) => entry.id === history.activeId) ?? null,
     [history],
@@ -72,6 +72,15 @@ export function useAgentConversation(onUnauthorized: () => void) {
   const epochRef = useRef(0)
   const itemsRef = useRef(items)
   itemsRef.current = items
+
+  // The archive belongs to one account. A different user signing in on this
+  // browser starts with a clean transcript instead of reading the previous
+  // user's conversations.
+  useEffect(() => {
+    setHistory((current) =>
+      current.ownerId === ownerId ? current : loadChatHistory(ownerId),
+    )
+  }, [ownerId])
 
   const commitTranscript = (promote: boolean) => {
     const transcript = itemsRef.current
@@ -95,7 +104,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
       // flush before a switch must not yank the active id -- the switch
       // itself decides what becomes active next.
       return promote || current.activeId === id
-        ? { activeId: id, conversations }
+        ? { ...current, activeId: id, conversations }
         : { ...current, conversations }
     })
   }
@@ -316,6 +325,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
             const id = sessionIdRef.current
             const existing = current.conversations.find((entry) => entry.id === id)
             return {
+              ...current,
               activeId: id,
               conversations: existing
                 ? current.conversations.map((entry) =>
@@ -393,6 +403,7 @@ export function useAgentConversation(onUnauthorized: () => void) {
     const wasActive = history.activeId === id
     epochRef.current += 1
     setHistory((current) => ({
+      ...current,
       activeId: current.activeId === id ? null : current.activeId,
       conversations: current.conversations.filter((entry) => entry.id !== id),
     }))

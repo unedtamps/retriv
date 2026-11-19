@@ -40,6 +40,18 @@ async def test_login_returns_valid_role_bearing_jwt(
     assert datetime.fromtimestamp(claims["exp"], UTC) > datetime.now(UTC)
 
 
+async def test_responses_carry_browser_hardening_headers(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
+
+
 async def test_login_failure_is_generic(
     client: httpx.AsyncClient, entities: SeededEntities
 ) -> None:
