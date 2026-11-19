@@ -373,6 +373,61 @@ async def test_a_match_past_the_threshold_is_served_with_its_row() -> None:
     assert sources[0].score == pytest.approx(0.93)
 
 
+async def test_a_repeated_query_skips_the_embedding_round_trip() -> None:
+    """Identical queries reuse the cached vector; a new query does not."""
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings, links = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    seed = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
+    retriever, embedding_requests, fetch = await make_retriever(
+        settings, engine, [match_row(seed, 0.93)]
+    )
+    try:
+        await retriever.retrieve("What is in the report?", [workspace_id], 4)
+        await retriever.retrieve("What is in the report?", [workspace_id], 4)
+        await retriever.retrieve("A different question", [workspace_id], 4)
+    finally:
+        await retriever.aclose()
+
+    assert len(embedding_requests) == 2
+    assert fetch.calls == 3
+
+
+async def test_a_model_change_does_not_serve_the_previous_profile_vector() -> None:
+    settings = make_settings().model_copy(
+        update={
+            "embedding_model": "test-embedding-model",
+            "embedding_profile": "test-profile",
+        }
+    )
+    engine = create_async_engine(settings.database_url)
+    metadata, documents, chunks, embeddings, links = tables()
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    workspace_id = uuid4()
+    seed = await seed_active_chunk(engine, documents, chunks, embeddings, links, workspace_id)
+    retriever, embedding_requests, fetch = await make_retriever(
+        settings, engine, [match_row(seed, 0.93)]
+    )
+    try:
+        await retriever.retrieve("What is in the report?", [workspace_id], 4)
+        retriever._settings = settings.model_copy(update={"embedding_profile": "test-profile-2"})
+        await retriever.retrieve("What is in the report?", [workspace_id], 4)
+    finally:
+        await retriever.aclose()
+
+    assert len(embedding_requests) == 2
+    assert fetch.calls == 2
+
+
 async def test_below_threshold_match_is_not_materialized_as_context() -> None:
     settings = make_settings().model_copy(
         update={

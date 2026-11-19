@@ -2,7 +2,9 @@ import hashlib
 import logging
 import math
 import re
+from collections import OrderedDict
 from collections.abc import Sequence
+from time import monotonic
 from typing import Any
 from uuid import UUID
 
@@ -46,6 +48,9 @@ from app.sections import LIKE_ESCAPE, section_descends_from, subtree_pattern
 logger = logging.getLogger(__name__)
 
 BM25_QUERY_RE = re.compile(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*")
+
+QUERY_CACHE_MAX_ENTRIES = 256
+QUERY_CACHE_TTL_SECONDS = 900.0
 
 SEARCH_VECTORS = (
     text("""
@@ -221,6 +226,9 @@ class ContextRetriever:
             timeout=settings.embedding_timeout_seconds,
         )
         self._bm25_available = False
+        self._query_cache: OrderedDict[
+            tuple[str, str, int, str], tuple[list[float], float]
+        ] = OrderedDict()
 
     async def _rerank_config(self) -> RerankConfig | None:
         """The admin's optional rerank setting, or None when it is off.
@@ -511,6 +519,30 @@ class ContextRetriever:
         return await self._rerank(query, sources, limit=limit, config=rerank)
 
     async def _embed_query(self, query: str) -> list[float]:
+        """The query's vector, reusing an identical recent embedding.
+
+        The embedding call is the largest share of a search (~67% in the
+        2026-11-09 measurements), and the same query arrives more than once:
+        an agent retrying a turn, a user re-asking, a follow-up built on the
+        same words. Identical text under the same model, profile and
+        dimensions always embeds to the same vector, so a short-lived cache
+        trades a bounded slice of memory for skipping that round trip.
+        Entries expire rather than being invalidated, because the key carries
+        the model, profile and dimensions: a settings change simply stops
+        hitting the old keys and the cap evicts them.
+        """
+        key = (
+            self._settings.embedding_model,
+            self._settings.embedding_profile,
+            self._settings.embedding_dimensions,
+            query,
+        )
+        now = monotonic()
+        cached = self._query_cache.get(key)
+        if cached is not None and cached[1] > now:
+            self._query_cache.move_to_end(key)
+            return cached[0]
+
         response = await self._embedding_client.post(
             "embeddings",
             json={"model": self._settings.embedding_model, "input": [query]},
@@ -538,7 +570,13 @@ class ContextRetriever:
             if not math.isfinite(number):
                 raise ValueError("Embedding response contains a non-finite vector value")
             vector.append(number)
-        return truncate_normalize(vector, self._settings.embedding_dimensions)
+        vector = truncate_normalize(vector, self._settings.embedding_dimensions)
+
+        self._query_cache[key] = (vector, now + QUERY_CACHE_TTL_SECONDS)
+        self._query_cache.move_to_end(key)
+        while len(self._query_cache) > QUERY_CACHE_MAX_ENTRIES:
+            self._query_cache.popitem(last=False)
+        return vector
 
     async def _search_vectors(
         self,
