@@ -598,3 +598,203 @@ class RetrievalSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+PROFILE_STATUS_BASIC = "basic"
+PROFILE_STATUS_ENRICHED = "enriched"
+
+VERSION_RELATION_SUPERSEDES = "supersedes"
+VERSION_RELATION_PERIODIC_SERIES = "periodic_series"
+VERSION_RELATION_KINDS: tuple[str, ...] = (
+    VERSION_RELATION_SUPERSEDES,
+    VERSION_RELATION_PERIODIC_SERIES,
+)
+
+VERSION_SUGGESTION_PENDING = "pending"
+VERSION_SUGGESTION_CONFIRMED = "confirmed"
+VERSION_SUGGESTION_DISMISSED = "dismissed"
+
+
+class DocumentProfile(Base):
+    """Extracted document intelligence: real title, category, entities, period, and summary.
+
+    Stored once per canonical document and refreshed on each active processing run.
+    ``search_text`` holds a flattened, lowercase copy of the searchable metadata so
+    both SQLite and PostgreSQL (with a pg_trgm GIN index) can match entity names,
+    aliases, categories, and titles without dialect-specific JSONB queries.
+    """
+
+    __tablename__ = "document_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('basic', 'enriched')",
+            name="document_profile_status",
+        ),
+        Index("ix_document_profiles_category", "doc_category"),
+        Index("ix_document_profiles_document_number", "document_number"),
+    )
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    processing_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("processing_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=PROFILE_STATUS_BASIC,
+        server_default=PROFILE_STATUS_BASIC,
+        nullable=False,
+    )
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    doc_category: Mapped[str] = mapped_column(
+        String(64), default="other", server_default="other", nullable=False
+    )
+    doc_subtype: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    primary_entities: Mapped[list[dict[str, Any]]] = mapped_column(JSON_TYPE, default=list)
+    counterparties: Mapped[list[dict[str, Any]]] = mapped_column(JSON_TYPE, default=list)
+    period_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    effective_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    document_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    version_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    topics: Mapped[list[str]] = mapped_column(JSON_TYPE, default=list)
+    search_text: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class DocumentVersionGroup(Base):
+    """A workspace-scoped family of related document revisions or periodic reports."""
+
+    __tablename__ = "document_version_groups"
+    __table_args__ = (
+        CheckConstraint(
+            "relation_kind IN ('supersedes', 'periodic_series')",
+            name="document_version_group_relation",
+        ),
+        Index("ix_document_version_groups_workspace", "workspace_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    relation_kind: Mapped[str] = mapped_column(
+        String(32),
+        default=VERSION_RELATION_SUPERSEDES,
+        server_default=VERSION_RELATION_SUPERSEDES,
+        nullable=False,
+    )
+    created_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class DocumentVersionMember(Base):
+    """One workspace document's membership and rank inside a version group."""
+
+    __tablename__ = "document_version_members"
+    __table_args__ = (
+        Index("ix_document_version_members_group", "group_id", "version_rank"),
+        Index("ix_document_version_members_workspace_latest", "workspace_id", "is_latest"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    group_id: Mapped[UUID] = mapped_column(
+        ForeignKey("document_version_groups.id", ondelete="CASCADE"), nullable=False
+    )
+    version_rank: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    is_latest: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    version_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    linked_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class DocumentVersionSuggestion(Base):
+    """A suggested version link awaiting manual confirmation inside one workspace."""
+
+    __tablename__ = "document_version_suggestions"
+    __table_args__ = (
+        CheckConstraint(
+            "suggested_relation IN ('supersedes', 'periodic_series')",
+            name="document_version_suggestion_relation",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'confirmed', 'dismissed')",
+            name="document_version_suggestion_status",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "document_a_id",
+            "document_b_id",
+            name="uq_document_version_suggestions_pair",
+        ),
+        Index(
+            "ix_document_version_suggestions_workspace_status",
+            "workspace_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    document_a_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    document_b_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    suggested_newer_document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    suggested_relation: Mapped[str] = mapped_column(
+        String(32),
+        default=VERSION_RELATION_SUPERSEDES,
+        server_default=VERSION_RELATION_SUPERSEDES,
+        nullable=False,
+    )
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSON_TYPE, default=list)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=VERSION_SUGGESTION_PENDING,
+        server_default=VERSION_SUGGESTION_PENDING,
+        nullable=False,
+    )
+    resolved_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+

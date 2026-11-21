@@ -50,9 +50,11 @@ from app.db.models import (
     DocumentChunk,
     DocumentImage,
     DocumentRow,
+    DocumentWorkspace,
     ProcessingRun,
 )
 from app.documents import conversion
+from app.documents.intelligence import enrich_document
 from app.documents.json_protocol import (
     JsonLimits,
     JsonProtocolError,
@@ -69,6 +71,7 @@ from app.documents.validation import (
     sniff_delimiter,
     uniquify_columns,
 )
+from app.documents.versions import detect_version_suggestions_for_document
 from app.embeddings.base import (
     EmbeddingProvider,
     EmbeddingProviderError,
@@ -1492,6 +1495,7 @@ class ProcessingWorker:
         """
         stop_event = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat_lease(run_id, lease_token, stop_event))
+        activated = False
         try:
             now = utcnow()
             async with self._session_factory() as session, session.begin():
@@ -1592,10 +1596,13 @@ class ProcessingWorker:
                 run.embedding_dimensions = None
                 run.completed_at = now
                 stored_document.active_processing_run_id = run_id
-                return True
+                activated = True
         finally:
             stop_event.set()
             await heartbeat
+        if activated:
+            await self._enrich_and_detect_versions(document.id, run_id)
+        return activated
 
     async def _process_delete(self, claimed_run: ProcessingRun) -> None:
         """Remove one document from every store it occupies.
@@ -1982,7 +1989,39 @@ class ProcessingWorker:
             document_id = run.document_id
         if document_id is not None:
             await self._sweep_superseded_artifacts(document_id, run_id)
+            await self._enrich_and_detect_versions(document_id, run_id)
         return True
+
+    async def _enrich_and_detect_versions(self, document_id: UUID, run_id: UUID) -> None:
+        """Best-effort canonical profile extraction and workspace version detection.
+
+        Runs after the processing run is already marked ready; any failure is
+        logged and swallowed so indexing never fails on enrichment issues.
+        """
+        try:
+            async with self._session_factory() as session:
+                await enrich_document(session, document_id=document_id, run_id=run_id)
+                workspace_ids = list(
+                    (
+                        await session.scalars(
+                            select(DocumentWorkspace.workspace_id).where(
+                                DocumentWorkspace.document_id == document_id,
+                                DocumentWorkspace.deleted_at.is_(None),
+                            )
+                        )
+                    ).all()
+                )
+                for workspace_id in workspace_ids:
+                    await detect_version_suggestions_for_document(
+                        session,
+                        workspace_id=workspace_id,
+                        document_id=document_id,
+                    )
+        except Exception:
+            logger.exception(
+                "Best-effort document intelligence or version detection failed",
+                extra={"document_id": str(document_id), "run_id": str(run_id)},
+            )
 
     async def _sweep_superseded_artifacts(self, document_id: UUID, keep_run_id: UUID) -> None:
         """Remove the artifact folders of runs this run superseded.
