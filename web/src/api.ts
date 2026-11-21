@@ -12,6 +12,7 @@ import type {
   RetrievalTestResult,
   RetrievalUpdate,
   ChunkRegions,
+  ConfirmVersionSuggestionInput,
   CreatedApiKey,
   CreatedUser,
   CurrentUser,
@@ -19,11 +20,16 @@ import type {
   DocumentSearchResponse,
   DocumentTextLayer,
   DocumentUpload,
+  DocumentVersionGroup,
+  DocumentVersionsDetail,
+  DocumentVersionSuggestionList,
   GeneratedPassword,
+  LinkDocumentVersionInput,
   MemberCandidateList,
   ProblemDetail,
   SessionToken,
   SetupStatus,
+  UpdateVersionGroupInput,
   Workspace,
   WorkspaceList,
   WorkspaceMember,
@@ -558,6 +564,96 @@ export const api = {
     return request<DocumentSearchResponse>(`/v1/documents/search?${params}`, {
       signal: options.signal,
     })
+  },
+
+  listVersionSuggestions(
+    workspaceId: string,
+    options?: {
+      status?: 'pending' | 'confirmed' | 'dismissed'
+      documentId?: string
+      signal?: AbortSignal
+    },
+  ): Promise<DocumentVersionSuggestionList> {
+    const params = new URLSearchParams()
+    if (options?.status !== undefined) params.set('status', options.status)
+    if (options?.documentId !== undefined) params.set('document_id', options.documentId)
+    const qs = params.toString()
+    const path = `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/version-suggestions${qs ? `?${qs}` : ''}`
+    return request<DocumentVersionSuggestionList>(path, { signal: options?.signal })
+  },
+
+  confirmVersionSuggestion(
+    workspaceId: string,
+    suggestionId: string,
+    input: ConfirmVersionSuggestionInput = {},
+  ): Promise<DocumentVersionGroup> {
+    return request<DocumentVersionGroup>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/version-suggestions/${encodeURIComponent(suggestionId)}/confirm`,
+      {
+        method: 'POST',
+        ...jsonOptions(input),
+      },
+    )
+  },
+
+  dismissVersionSuggestion(workspaceId: string, suggestionId: string): Promise<void> {
+    return request<void>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/version-suggestions/${encodeURIComponent(suggestionId)}/dismiss`,
+      { method: 'POST' },
+    )
+  },
+
+  getDocumentVersions(
+    workspaceId: string,
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentVersionsDetail> {
+    return request<DocumentVersionsDetail>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/versions`,
+      { signal },
+    )
+  },
+
+  linkDocumentVersion(
+    workspaceId: string,
+    documentId: string,
+    input: LinkDocumentVersionInput,
+  ): Promise<DocumentVersionsDetail> {
+    return request<DocumentVersionsDetail>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/versions/link`,
+      {
+        method: 'POST',
+        ...jsonOptions(input),
+      },
+    )
+  },
+
+  unlinkDocumentVersion(workspaceId: string, documentId: string): Promise<void> {
+    return request<void>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/versions`,
+      { method: 'DELETE' },
+    )
+  },
+
+  updateVersionGroup(
+    workspaceId: string,
+    groupId: string,
+    input: UpdateVersionGroupInput,
+  ): Promise<DocumentVersionGroup> {
+    return request<DocumentVersionGroup>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/version-groups/${encodeURIComponent(groupId)}`,
+      {
+        method: 'PATCH',
+        ...jsonOptions(input),
+      },
+    )
+  },
+
+  enrichDocument(workspaceId: string, documentId: string): Promise<DocumentVersionsDetail> {
+    return request<DocumentVersionsDetail>(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/enrich`,
+      { method: 'POST' },
+    )
   },
 
   listAdminUsers(options: UserPageOptions = {}): Promise<AdminUserList> {

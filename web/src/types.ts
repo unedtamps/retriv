@@ -78,6 +78,127 @@ export interface AdminWorkspaceList {
   limit: number
 }
 
+export type VersionRelationKind = 'supersedes' | 'periodic_series'
+
+export interface DocumentEntity {
+  name: string
+  type: string
+  aliases: string[]
+}
+
+export interface DocumentProfile {
+  status: string
+  title: string | null
+  doc_category: string
+  doc_subtype: string | null
+  language: string | null
+  primary_entities: DocumentEntity[]
+  counterparties: DocumentEntity[]
+  period_label: string | null
+  effective_date: string | null
+  document_number: string | null
+  version_label: string | null
+  summary: string | null
+  topics: string[]
+  model: string | null
+  updated_at: string | null
+}
+
+export interface DocumentVersionSignal {
+  group_id: string
+  group_name: string
+  relation_kind: VersionRelationKind
+  version_rank: number
+  version_count: number
+  is_latest: boolean
+  is_superseded: boolean
+  latest_document_id: string
+  latest_filename: string
+  latest_period_label: string | null
+  version_note: string | null
+}
+
+export interface DocumentVersionMember {
+  document_id: string
+  filename: string
+  title: string | null
+  period_label: string | null
+  effective_date: string | null
+  version_label: string | null
+  version_rank: number
+  is_latest: boolean
+  version_note: string | null
+  linked_at: string
+  created_at: string
+}
+
+export interface DocumentVersionGroup {
+  group_id: string
+  name: string
+  relation_kind: VersionRelationKind
+  members: DocumentVersionMember[]
+}
+
+export interface VersionSuggestionDoc {
+  document_id: string
+  filename: string
+  title: string | null
+  doc_category: string | null
+  doc_subtype: string | null
+  period_label: string | null
+  effective_date: string | null
+  version_label: string | null
+  primary_entities: string[]
+  created_at: string
+}
+
+export interface DocumentVersionSuggestion {
+  id: string
+  workspace_id: string
+  document_a: VersionSuggestionDoc
+  document_b: VersionSuggestionDoc
+  suggested_newer_document_id: string
+  suggested_relation: VersionRelationKind
+  confidence: number
+  reasons: string[]
+  status: string
+  created_at: string
+  resolved_at: string | null
+}
+
+export interface DocumentVersionSuggestionList {
+  items: DocumentVersionSuggestion[]
+  total: number
+}
+
+export interface DocumentVersionsDetail {
+  document_id: string
+  workspace_id: string
+  profile: DocumentProfile | null
+  group: DocumentVersionGroup | null
+  pending_suggestions: DocumentVersionSuggestion[]
+}
+
+export interface ConfirmVersionSuggestionInput {
+  relation_kind?: VersionRelationKind
+  newer_document_id?: string
+  group_name?: string
+}
+
+export interface LinkDocumentVersionInput {
+  related_document_id: string
+  direction?: 'newer' | 'older'
+  relation_kind?: VersionRelationKind
+  group_name?: string
+  version_note?: string
+}
+
+export interface UpdateVersionGroupInput {
+  name?: string
+  relation_kind?: VersionRelationKind
+  member_order?: string[]
+}
+
 export interface DocumentUpload {
   id: string
   workspace_id: string
@@ -92,6 +213,9 @@ export interface DocumentUpload {
   duplicate: boolean
   /** Zero unless this is a row-stored file (CSV, XLSX or JSON). */
   row_count: number
+  profile?: DocumentProfile | null
+  version?: DocumentVersionSignal | null
+  pending_version_suggestions?: number
 }
 
 export interface DocumentList {
@@ -159,6 +283,12 @@ export interface DocumentSearchHit {
   status: string
   row_count: number
   created_at: string
+  title?: string | null
+  doc_category?: string | null
+  doc_subtype?: string | null
+  primary_entities?: string[]
+  period_label?: string | null
+  version?: DocumentVersionSignal | null
 }
 
 export interface DocumentSearchResponse {

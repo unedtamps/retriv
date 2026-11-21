@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Download, ExternalLink, LoaderCircle, Maximize2, Minimize2 } from 'lucide-react'
+import { AlertTriangle, Download, ExternalLink, LoaderCircle, Maximize2, Minimize2 } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import { cachedDocument, loadDocument, type DocumentFile } from '../lib/documentCache'
 import type { DocumentUpload, Workspace } from '../types'
@@ -20,6 +20,7 @@ interface DocumentViewerDrawerProps {
   workspace: Workspace
   onUnauthorized: () => void
   onClose: () => void
+  onOpenDocument?: (documentId: string) => void
   /** The PDF page a citation points at; ignored by the other previews. */
   page?: number
   /** Provenance regions to draw over the PDF page. */
@@ -38,6 +39,7 @@ export function DocumentViewerDrawer({
   workspace,
   onUnauthorized,
   onClose,
+  onOpenDocument,
   page,
   highlights,
   anchors,
@@ -133,68 +135,102 @@ export function DocumentViewerDrawer({
         </>
       }
     >
-      <div className="min-h-0 flex-1 overflow-hidden bg-paper">
-        {error !== null ? (
-          <p className="error-note" role="alert">
-            {error}
-          </p>
-        ) : isDocx ? (
-          <DocumentDocxPreview
-            document={document}
-            workspace={workspace}
-            anchors={anchors}
-            onUnauthorized={onUnauthorized}
-          />
-        ) : isJson ? (
-          <DocumentJsonPreview
-            document={document}
-            workspace={workspace}
-            onUnauthorized={onUnauthorized}
-          />
-        ) : isSheet ? (
-          <DocumentSheetPreview
-            document={document}
-            workspace={workspace}
-            onUnauthorized={onUnauthorized}
-          />
-        ) : file === null ? (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-paper">
+        {document.version?.is_superseded ? (
           <div
-            className="flex h-full items-center justify-center gap-2 text-sm text-ink-muted"
-            role="status"
+            role="note"
+            className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-warn-soft/60 px-4 py-2 text-xs text-ink"
           >
-            <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
-            Loading preview…
-          </div>
-        ) : isPdf ? (
-          <Suspense
-            fallback={
-              <div
-                className="flex h-full items-center justify-center gap-2 text-sm text-ink-muted"
-                role="status"
+            <div className="flex min-w-0 items-center gap-2">
+              <AlertTriangle aria-hidden="true" size={14} className="shrink-0 text-warn" />
+              <span className="truncate">
+                <strong className="font-semibold">Superseded revision</strong> (v
+                {document.version.version_rank}/{document.version.version_count})
+                {document.version.latest_filename ? (
+                  <>
+                    {' · '}Newer version:{' '}
+                    <span className="font-medium">{document.version.latest_filename}</span>
+                  </>
+                ) : null}
+              </span>
+            </div>
+            {document.version.latest_document_id && onOpenDocument !== undefined ? (
+              <button
+                type="button"
+                className="btn btn-secondary h-7 shrink-0 px-2.5 text-xs"
+                onClick={() => {
+                  const latestId = document.version?.latest_document_id
+                  if (latestId) onOpenDocument(latestId)
+                }}
               >
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
-                Loading the PDF viewer…
-              </div>
-            }
-          >
-            <DocumentPdfPreview
-              key={`${workspace.id}:${document.id}`}
+                Open latest
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {error !== null ? (
+            <p className="error-note" role="alert">
+              {error}
+            </p>
+          ) : isDocx ? (
+            <DocumentDocxPreview
               document={document}
               workspace={workspace}
-              page={page}
-              highlights={highlights}
+              anchors={anchors}
               onUnauthorized={onUnauthorized}
             />
-          </Suspense>
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <p className="text-sm font-medium text-ink">No inline preview for this file type</p>
-            <p className="max-w-sm text-sm leading-6 text-ink-muted">
-              {document.detected_media_type} cannot be rendered in the browser. Download it to open
-              it locally.
-            </p>
-          </div>
-        )}
+          ) : isJson ? (
+            <DocumentJsonPreview
+              document={document}
+              workspace={workspace}
+              onUnauthorized={onUnauthorized}
+            />
+          ) : isSheet ? (
+            <DocumentSheetPreview
+              document={document}
+              workspace={workspace}
+              onUnauthorized={onUnauthorized}
+            />
+          ) : file === null ? (
+            <div
+              className="flex h-full items-center justify-center gap-2 text-sm text-ink-muted"
+              role="status"
+            >
+              <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+              Loading preview…
+            </div>
+          ) : isPdf ? (
+            <Suspense
+              fallback={
+                <div
+                  className="flex h-full items-center justify-center gap-2 text-sm text-ink-muted"
+                  role="status"
+                >
+                  <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+                  Loading the PDF viewer…
+                </div>
+              }
+            >
+              <DocumentPdfPreview
+                key={`${workspace.id}:${document.id}`}
+                document={document}
+                workspace={workspace}
+                page={page}
+                highlights={highlights}
+                onUnauthorized={onUnauthorized}
+              />
+            </Suspense>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+              <p className="text-sm font-medium text-ink">No inline preview for this file type</p>
+              <p className="max-w-sm text-sm leading-6 text-ink-muted">
+                {document.detected_media_type} cannot be rendered in the browser. Download it to open
+                it locally.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </Dialog>
   )

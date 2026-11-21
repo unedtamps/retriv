@@ -199,3 +199,51 @@ export function isActiveStatus(status: string): boolean {
 export function isFailedStatus(status: string): boolean {
   return ['failed', 'cancelled', 'unsupported_format'].includes(status)
 }
+
+const DOC_CATEGORY_LABELS: Record<string, string> = {
+  financial_report: 'Financial report',
+  contract_agreement: 'Contract',
+  policy_sop: 'Policy / SOP',
+  regulation_legal: 'Regulation',
+  invoice_receipt: 'Invoice',
+  proposal_pitch: 'Proposal',
+  technical_spec: 'Technical spec',
+  meeting_memo: 'Memo',
+  dataset_ledger: 'Dataset',
+  other: 'Document',
+}
+
+export function docCategoryLabel(category: string | null | undefined, subtype?: string | null): string {
+  if (subtype !== undefined && subtype !== null && subtype.trim() !== '') {
+    return subtype.trim()
+  }
+  if (category === undefined || category === null || category === '') return ''
+  return DOC_CATEGORY_LABELS[category] ?? category.replaceAll('_', ' ')
+}
+
+export function versionSignalBadge(signal: {
+  relation_kind: 'supersedes' | 'periodic_series'
+  version_rank: number
+  version_count: number
+  is_latest: boolean
+  is_superseded: boolean
+}): { label: string; tone: StatusTone } {
+  if (signal.is_superseded) {
+    return {
+      label: `Superseded · v${signal.version_rank}/${signal.version_count}`,
+      tone: 'warning',
+    }
+  }
+  if (signal.relation_kind === 'periodic_series') {
+    return {
+      label: signal.is_latest
+        ? `Series · latest (${signal.version_count})`
+        : `Series · #${signal.version_rank}/${signal.version_count}`,
+      tone: signal.is_latest ? 'info' : 'neutral',
+    }
+  }
+  return {
+    label: `Latest · v${signal.version_rank}/${signal.version_count}`,
+    tone: 'success',
+  }
+}

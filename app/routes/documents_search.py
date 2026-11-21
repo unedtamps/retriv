@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas import DocumentSearchHit, DocumentSearchResponse
 from app.db.session import get_session
 from app.documents.search import find_documents
+from app.routes.document_versions import version_signal_response
 from app.routes.processing_runs import readable_workspace_ids
 from app.security.auth import CurrentUser
 
@@ -21,7 +22,7 @@ async def search_documents(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     workspace_id: Annotated[UUID | None, Query()] = None,
 ) -> DocumentSearchResponse:
-    """Documents whose filename contains ``q``, across every readable workspace.
+    """Documents whose filename or extracted profile matches ``q`` across readable workspaces.
 
     The scope is the caller's own memberships with read access, so a search
     can never name a file in a workspace the caller cannot open. Narrowing by
@@ -49,6 +50,12 @@ async def search_documents(
                 status=summary.status,
                 row_count=summary.row_count,
                 created_at=summary.created_at,
+                title=summary.title,
+                doc_category=summary.doc_category,
+                doc_subtype=summary.doc_subtype,
+                primary_entities=list(summary.primary_entities),
+                period_label=summary.period_label,
+                version=version_signal_response(summary.version_signal),
             )
             for summary in summaries
         ],

@@ -26,6 +26,7 @@ from app.routes import (
     agent,
     api_keys,
     auth,
+    document_versions,
     documents,
     documents_search,
     health,
@@ -108,7 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             CORSMiddleware,
             allow_origins=settings.cors_allowed_origins,
             allow_credentials=False,
-            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type"],
             expose_headers=["X-Request-ID"],
         )
@@ -118,6 +119,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(auth.router)
     application.include_router(admin.router)
     application.include_router(workspaces.router)
+    application.include_router(document_versions.router)
     application.include_router(documents.router)
     application.include_router(documents_search.router)
     application.include_router(agent.router)

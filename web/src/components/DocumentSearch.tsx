@@ -3,7 +3,13 @@ import { createPortal } from 'react-dom'
 import { FileText, Search } from 'lucide-react'
 import { api, getErrorMessage, isUnauthorized } from '../api'
 import type { DocumentSearchHit } from '../types'
-import { documentStatusTone, runStatusLabel, STATUS_TONE_CLASSES } from '../lib/visuals'
+import {
+  docCategoryLabel,
+  documentStatusTone,
+  runStatusLabel,
+  STATUS_TONE_CLASSES,
+  versionSignalBadge,
+} from '../lib/visuals'
 
 interface DocumentSearchProps {
   inputRef?: RefObject<HTMLInputElement | null>
@@ -195,6 +201,17 @@ export function DocumentSearch({
                   <ul className="max-h-80 overflow-y-auto overscroll-contain">
                     {visibleHits.map((hit, index) => {
                       const active = index === activeIndex
+                      const entityName = hit.primary_entities?.[0] ?? null
+                      const categoryLabel = docCategoryLabel(hit.doc_category, hit.doc_subtype)
+                      const metadataParts = [
+                        entityName,
+                        categoryLabel || null,
+                        hit.period_label ?? null,
+                      ].filter((part): part is string => Boolean(part))
+                      const versionBadge =
+                        hit.version !== undefined && hit.version !== null
+                          ? versionSignalBadge(hit.version)
+                          : null
                       return (
                         <li key={`${hit.workspace_id}-${hit.document_id}`}>
                           <button
@@ -218,7 +235,12 @@ export function DocumentSearch({
                               <span className="block truncate text-xs font-medium text-ink">
                                 {hit.filename}
                               </span>
-                              <span className="mt-1 flex items-center gap-1.5">
+                              {metadataParts.length > 0 ? (
+                                <span className="mt-0.5 block truncate text-[0.65rem] text-ink-muted">
+                                  {metadataParts.join(' · ')}
+                                </span>
+                              ) : null}
+                              <span className="mt-1 flex flex-wrap items-center gap-1.5">
                                 <span className="truncate font-mono text-[0.6rem] text-ink-faint">
                                   {hit.workspace_name}
                                 </span>
@@ -227,6 +249,13 @@ export function DocumentSearch({
                                 >
                                   {runStatusLabel(hit.status)}
                                 </span>
+                                {versionBadge !== null ? (
+                                  <span
+                                    className={`stamp shrink-0 ${STATUS_TONE_CLASSES[versionBadge.tone]}`}
+                                  >
+                                    {versionBadge.label}
+                                  </span>
+                                ) : null}
                               </span>
                             </span>
                           </button>
