@@ -31,12 +31,17 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from app.core.config import Settings
 from app.db.models import (
     EMBEDDING_INDEXED,
+    VERSION_RELATION_PERIODIC_SERIES,
+    VERSION_RELATION_SUPERSEDES,
     ChunkEmbedding,
     Document,
     DocumentChunk,
+    DocumentVersionGroup,
+    DocumentVersionMember,
     DocumentWorkspace,
     RetrievalSetting,
 )
+from app.documents.versions import load_workspace_version_signals
 from app.embeddings.base import EmbeddingProviderError
 from app.embeddings.openai_compatible import truncate_normalize
 from app.embeddings.pgvector import vector_literal
@@ -72,6 +77,18 @@ SEARCH_VECTORS = (
               WHERE link.document_id = embedding.document_id
                 AND link.workspace_id IN :workspace_ids
                 AND link.deleted_at IS NULL
+                AND (
+                    :include_superseded
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM document_version_members AS dvm
+                        JOIN document_version_groups AS dvg ON dvg.id = dvm.group_id
+                        WHERE dvm.workspace_id = link.workspace_id
+                          AND dvm.document_id = link.document_id
+                          AND dvg.relation_kind = 'supersedes'
+                          AND dvm.is_latest = FALSE
+                    )
+                )
           )
         ORDER BY embedding.embedding <=> CAST(:query_vector AS vector)
         LIMIT :candidate_limit
@@ -85,6 +102,18 @@ SEARCH_VECTORS = (
             WHERE link.document_id = chunk.document_id
               AND link.workspace_id IN :workspace_ids
               AND link.deleted_at IS NULL
+              AND (
+                  :include_superseded
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM document_version_members AS dvm
+                      JOIN document_version_groups AS dvg ON dvg.id = dvm.group_id
+                      WHERE dvm.workspace_id = link.workspace_id
+                        AND dvm.document_id = link.document_id
+                        AND dvg.relation_kind = 'supersedes'
+                        AND dvm.is_latest = FALSE
+                  )
+              )
             ORDER BY link.workspace_id
             LIMIT 1
         ) AS workspace_id,
@@ -105,6 +134,18 @@ SEARCH_VECTORS = (
             WHERE link.document_id = chunk.document_id
               AND link.workspace_id IN :workspace_ids
               AND link.deleted_at IS NULL
+              AND (
+                  :include_superseded
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM document_version_members AS dvm
+                      JOIN document_version_groups AS dvg ON dvg.id = dvm.group_id
+                      WHERE dvm.workspace_id = link.workspace_id
+                        AND dvm.document_id = link.document_id
+                        AND dvg.relation_kind = 'supersedes'
+                        AND dvm.is_latest = FALSE
+                  )
+              )
             ORDER BY link.workspace_id
             LIMIT 1
         ) AS filename
@@ -123,6 +164,18 @@ SEARCH_VECTORS = (
           WHERE link.document_id = chunk.document_id
             AND link.workspace_id IN :workspace_ids
             AND link.deleted_at IS NULL
+            AND (
+                :include_superseded
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM document_version_members AS dvm
+                    JOIN document_version_groups AS dvg ON dvg.id = dvm.group_id
+                    WHERE dvm.workspace_id = link.workspace_id
+                      AND dvm.document_id = link.document_id
+                      AND dvg.relation_kind = 'supersedes'
+                      AND dvm.is_latest = FALSE
+                )
+            )
       )
     ORDER BY nearest.score DESC
     LIMIT :limit
@@ -130,6 +183,7 @@ SEARCH_VECTORS = (
     .bindparams(
         bindparam("workspace_ids", type_=Uuid(as_uuid=True), expanding=True),
         bindparam("document_id", type_=Uuid(as_uuid=True)),
+        bindparam("include_superseded", type_=Boolean()),
     )
     .columns(
         score=Float(),
@@ -145,6 +199,58 @@ SEARCH_VECTORS = (
         filename=String(),
     )
 )
+
+
+def _not_superseded_link_clause() -> Any:
+    """True when ``DocumentWorkspace`` is not a superseded member of a supersedes group."""
+    return ~exists().where(
+        DocumentVersionMember.workspace_id == DocumentWorkspace.workspace_id,
+        DocumentVersionMember.document_id == DocumentWorkspace.document_id,
+        DocumentVersionMember.is_latest.is_(False),
+        DocumentVersionGroup.id == DocumentVersionMember.group_id,
+        DocumentVersionGroup.relation_kind == VERSION_RELATION_SUPERSEDES,
+    )
+
+
+async def attach_version_signals(
+    session: Any,
+    sources: list[ContextSource],
+) -> list[ContextSource]:
+    """Enrich retrieved/read ``ContextSource`` items with workspace version signals."""
+    if not sources:
+        return sources
+    signals = await load_workspace_version_signals(
+        session,
+        workspace_ids=[source.workspace_id for source in sources],
+        document_ids=[source.document_id for source in sources],
+    )
+    if not signals:
+        return sources
+    enriched: list[ContextSource] = []
+    for source in sources:
+        signal = signals.get((source.workspace_id, source.document_id))
+        if signal is None:
+            enriched.append(source)
+            continue
+        if signal.is_superseded:
+            status = "superseded"
+        elif signal.relation_kind == VERSION_RELATION_PERIODIC_SERIES:
+            status = "series_latest" if signal.is_latest else "series_member"
+        else:
+            status = "latest" if signal.is_latest else "superseded"
+        enriched.append(
+            source.model_copy(
+                update={
+                    "version_status": status,
+                    "version_group_name": signal.group_name,
+                    "version_rank": signal.version_rank,
+                    "version_count": signal.version_count,
+                    "latest_document_id": signal.latest_document_id,
+                    "latest_filename": signal.latest_filename,
+                }
+            )
+        )
+    return enriched
 
 
 def section_anchors(sources: Sequence[ContextSource]) -> list[str]:
@@ -282,6 +388,7 @@ class ContextRetriever:
         budget: int | None = None,
         min_score: float | None = None,
         document_id: UUID | None = None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
         """Return up to ``limit`` vector matches, plus the sections they belong to.
 
@@ -298,12 +405,17 @@ class ContextRetriever:
         ``document_id`` narrows the search to one document; it must still be
         inside ``workspace_ids``. Section completion is narrowed with it, or a
         same-named section in another document could leak into the answer.
+
+        By default, documents confirmed as superseded by a newer revision in the
+        same workspace are excluded unless ``include_superseded=True`` or the
+        caller explicitly targets that ``document_id``.
         """
         if not workspace_ids:
             raise RetrievalUnavailable("A verified non-empty workspace scope is required")
         if len(workspace_ids) != len(set(workspace_ids)):
             raise RetrievalUnavailable("The workspace scope contains duplicate IDs")
 
+        effective_include_superseded = include_superseded or document_id is not None
         width = self._settings.section_expand_chunks
         cap = limit if budget is None else min(limit + width, budget)
         floor = self._settings.min_relevance_score if min_score is None else min_score
@@ -318,18 +430,22 @@ class ContextRetriever:
                 pool,
                 min_score=floor,
                 document_id=document_id,
+                include_superseded=effective_include_superseded,
             )
             completed = await self._complete_sections(
                 sources,
                 workspace_ids,
                 min_score=floor,
                 document_id=document_id,
+                include_superseded=effective_include_superseded,
             )
             if rerank is None:
                 room = max(0, cap - len(sources))
-                return sources + completed[:room]
-            candidates = sources + completed[: max(0, pool - len(sources))]
-            return await self._rerank(query, candidates, limit=cap, config=rerank)
+                selected = sources + completed[:room]
+            else:
+                candidates = sources + completed[: max(0, pool - len(sources))]
+                selected = await self._rerank(query, candidates, limit=cap, config=rerank)
+            return await self._attach_signals(selected)
         except (
             EmbeddingProviderError,
             httpx.HTTPError,
@@ -340,6 +456,16 @@ class ContextRetriever:
             ValueError,
         ) as exc:
             raise RetrievalUnavailable("Scoped context retrieval failed validation") from exc
+
+    async def _attach_signals(self, sources: list[ContextSource]) -> list[ContextSource]:
+        if not sources:
+            return sources
+        try:
+            async with self._sessions() as session:
+                return await attach_version_signals(session, sources)
+        except SQLAlchemyError:
+            logger.debug("version signals could not be read; serving sources without version tags")
+            return sources
 
     async def _has_bm25(self) -> bool:
         """Whether the scoped database has a usable ParadeDB BM25 index.
@@ -364,26 +490,28 @@ class ContextRetriever:
         self._bm25_available = found is not None
         return self._bm25_available
 
-    def _text_select(self, workspace_ids: list[UUID]) -> Any:
+    def _text_select(
+        self, workspace_ids: list[UUID], *, include_superseded: bool = False
+    ) -> Any:
         """The shared validated text-search row shape and scope."""
+        link_conditions: list[Any] = [
+            DocumentWorkspace.document_id == DocumentChunk.document_id,
+            DocumentWorkspace.workspace_id.in_(workspace_ids),
+            DocumentWorkspace.deleted_at.is_(None),
+        ]
+        if not include_superseded:
+            link_conditions.append(_not_superseded_link_clause())
+
         link_workspace = (
             select(DocumentWorkspace.workspace_id)
-            .where(
-                DocumentWorkspace.document_id == DocumentChunk.document_id,
-                DocumentWorkspace.workspace_id.in_(workspace_ids),
-                DocumentWorkspace.deleted_at.is_(None),
-            )
+            .where(*link_conditions)
             .order_by(DocumentWorkspace.workspace_id)
             .limit(1)
             .scalar_subquery()
         )
         link_filename = (
             select(DocumentWorkspace.filename)
-            .where(
-                DocumentWorkspace.document_id == DocumentChunk.document_id,
-                DocumentWorkspace.workspace_id.in_(workspace_ids),
-                DocumentWorkspace.deleted_at.is_(None),
-            )
+            .where(*link_conditions)
             .order_by(DocumentWorkspace.workspace_id)
             .limit(1)
             .scalar_subquery()
@@ -406,11 +534,7 @@ class ContextRetriever:
             )
             .join(Document, Document.id == DocumentChunk.document_id)
             .where(
-                exists().where(
-                    DocumentWorkspace.document_id == DocumentChunk.document_id,
-                    DocumentWorkspace.workspace_id.in_(workspace_ids),
-                    DocumentWorkspace.deleted_at.is_(None),
-                ),
+                exists().where(*link_conditions),
                 Document.deleted_at.is_(None),
                 Document.active_processing_run_id == DocumentChunk.processing_run_id,
             )
@@ -422,6 +546,8 @@ class ContextRetriever:
         workspace_ids: list[UUID],
         document_id: UUID | None,
         limit: int,
+        *,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
         """Rank chunks containing any of the query's terms with ParadeDB.
 
@@ -434,7 +560,7 @@ class ContextRetriever:
         if not bm25_query:
             return []
         statement = (
-            self._text_select(workspace_ids)
+            self._text_select(workspace_ids, include_superseded=include_superseded)
             .where(DocumentChunk.text.op("|||")(bm25_query))
             .order_by(
                 func.pdb.score(DocumentChunk.id).desc(),
@@ -460,27 +586,9 @@ class ContextRetriever:
         limit: int,
         *,
         document_id: UUID | None = None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
-        """Chunks matching ``query`` literally, then by its lexical terms.
-
-        An embedding answers "what is this about" and does that well, but it is
-        the wrong instrument for an identifier: an invoice number, an article
-        reference, a name. Those are strings, and a string search is exact
-        where a vector is approximate.
-
-        Exact substring matches are returned first and win outright. If no
-        chunk contains the query as a phrase, a ParadeDB BM25 index ranks the
-        chunks containing its terms; that is what makes a long keyword string
-        useful when the words are present but not contiguous. Without
-        ``pg_search`` or the BM25 index, the tool keeps the old exact-only
-        behaviour.
-
-        The rows are validated exactly as a vector match is -- live document,
-        active run, workspace link, matching content hash -- but the embedding
-        ledger is deliberately not joined. Text that failed to embed is still
-        text a reader can use, and a lexical tool that refuses it would be
-        hiding the one thing it exists to find.
-        """
+        """Chunks matching ``query`` literally, then by its lexical terms."""
         if not workspace_ids:
             raise RetrievalUnavailable("A verified non-empty workspace scope is required")
         if len(workspace_ids) != len(set(workspace_ids)):
@@ -488,11 +596,12 @@ class ContextRetriever:
         if not query.strip():
             raise RetrievalUnavailable("A non-empty text query is required")
 
+        effective_include_superseded = include_superseded or document_id is not None
         rerank = await self._rerank_config()
         pool = max(limit, min(rerank.candidates, 20)) if rerank is not None else limit
         pattern = f"%{escape_like(query)}%"
         statement = (
-            self._text_select(workspace_ids)
+            self._text_select(workspace_ids, include_superseded=effective_include_superseded)
             .where(DocumentChunk.text.ilike(pattern, escape="\\"))
             .order_by(
                 case((DocumentChunk.text.like(pattern, escape="\\"), 0), else_=1),
@@ -512,11 +621,15 @@ class ContextRetriever:
         sources = self._text_sources(rows)
         if not sources and await self._has_bm25():
             sources = await self._bm25_search_text(
-                query, workspace_ids, document_id, pool
+                query,
+                workspace_ids,
+                document_id,
+                pool,
+                include_superseded=effective_include_superseded,
             )
-        if rerank is None:
-            return sources
-        return await self._rerank(query, sources, limit=limit, config=rerank)
+        if rerank is not None:
+            sources = await self._rerank(query, sources, limit=limit, config=rerank)
+        return await self._attach_signals(sources)
 
     async def _embed_query(self, query: str) -> list[float]:
         """The query's vector, reusing an identical recent embedding.
@@ -586,6 +699,7 @@ class ContextRetriever:
         *,
         min_score: float,
         document_id: UUID | None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
         """The nearest ``limit`` indexed chunks, servable by construction.
 
@@ -596,7 +710,11 @@ class ContextRetriever:
         here. A match that falls below it costs a slot, exactly as before.
         """
         rows = await self._fetch_vector_rows(
-            vector, workspace_ids, limit, document_id=document_id
+            vector,
+            workspace_ids,
+            limit,
+            document_id=document_id,
+            include_superseded=include_superseded,
         )
         return self._validated_sources(rows, min_score=min_score)
 
@@ -607,6 +725,7 @@ class ContextRetriever:
         limit: int,
         *,
         document_id: UUID | None,
+        include_superseded: bool = False,
     ) -> list[RowMapping]:
         candidate_limit = min(
             max(limit * self._settings.retrieval_candidate_multiplier, 32),
@@ -640,6 +759,7 @@ class ContextRetriever:
                     "embedding_model": self._settings.embedding_model,
                     "embedding_dimensions": self._settings.embedding_dimensions,
                     "document_id": document_id,
+                    "include_superseded": include_superseded,
                     "candidate_limit": candidate_limit,
                     "limit": limit,
                 },
@@ -721,6 +841,7 @@ class ContextRetriever:
         *,
         min_score: float,
         document_id: UUID | None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
         """Fill in the sections the matched chunks belong to, under the same validation.
 
@@ -739,24 +860,24 @@ class ContextRetriever:
             return []
 
         existing = {source.chunk_id for source in sources}
+        link_conditions: list[Any] = [
+            DocumentWorkspace.document_id == DocumentChunk.document_id,
+            DocumentWorkspace.workspace_id.in_(workspace_ids),
+            DocumentWorkspace.deleted_at.is_(None),
+        ]
+        if not include_superseded:
+            link_conditions.append(_not_superseded_link_clause())
+
         link_workspace = (
             select(DocumentWorkspace.workspace_id)
-            .where(
-                DocumentWorkspace.document_id == DocumentChunk.document_id,
-                DocumentWorkspace.workspace_id.in_(workspace_ids),
-                DocumentWorkspace.deleted_at.is_(None),
-            )
+            .where(*link_conditions)
             .order_by(DocumentWorkspace.workspace_id)
             .limit(1)
             .scalar_subquery()
         )
         link_filename = (
             select(DocumentWorkspace.filename)
-            .where(
-                DocumentWorkspace.document_id == DocumentChunk.document_id,
-                DocumentWorkspace.workspace_id.in_(workspace_ids),
-                DocumentWorkspace.deleted_at.is_(None),
-            )
+            .where(*link_conditions)
             .order_by(DocumentWorkspace.workspace_id)
             .limit(1)
             .scalar_subquery()
@@ -791,11 +912,7 @@ class ContextRetriever:
             )
             .where(
                 _section_clause(anchors),
-                exists().where(
-                    DocumentWorkspace.document_id == DocumentChunk.document_id,
-                    DocumentWorkspace.workspace_id.in_(workspace_ids),
-                    DocumentWorkspace.deleted_at.is_(None),
-                ),
+                exists().where(*link_conditions),
                 Document.deleted_at.is_(None),
                 Document.active_processing_run_id == DocumentChunk.processing_run_id,
                 ChunkEmbedding.embedding_profile == self._settings.embedding_profile,

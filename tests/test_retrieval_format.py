@@ -15,14 +15,23 @@ from app.retrieval.format import (
     format_context,
     navigation_hint,
     source_indices,
+    version_hint,
 )
 from app.retrieval.schemas import ContextSource
 
 
-def source(*, heading: bool, ordinal: int = 0) -> ContextSource:
+def source(
+    *,
+    heading: bool,
+    ordinal: int = 0,
+    version_status: str | None = None,
+    latest_document_id: object = None,
+    latest_filename: str | None = None,
+    document_id: object = None,
+) -> ContextSource:
     return ContextSource(
         workspace_id=uuid4(),
-        document_id=uuid4(),
+        document_id=document_id or uuid4(),  # type: ignore[arg-type]
         processing_run_id=uuid4(),
         chunk_id=uuid4(),
         ordinal=ordinal,
@@ -33,6 +42,9 @@ def source(*, heading: bool, ordinal: int = 0) -> ContextSource:
         is_heading_only=heading,
         page_numbers=[1],
         text="text",
+        version_status=version_status,
+        latest_document_id=latest_document_id,  # type: ignore[arg-type]
+        latest_filename=latest_filename,
     )
 
 
@@ -99,3 +111,44 @@ def test_the_source_label_names_what_a_reader_can_act_on() -> None:
     assert f"workspace_id={first.workspace_id}" in label
     assert "page_number=1" in label
     assert "chunk_id" not in label
+
+
+def test_format_context_and_version_hint_surface_superseded_signals() -> None:
+    latest_id = uuid4()
+    superseded_doc_id = uuid4()
+    first = source(
+        heading=False,
+        ordinal=1,
+        document_id=superseded_doc_id,
+        version_status="superseded",
+        latest_document_id=latest_id,
+        latest_filename="report-v2.pdf",
+    )
+    second = source(
+        heading=False,
+        ordinal=2,
+        document_id=superseded_doc_id,
+        version_status="superseded",
+        latest_document_id=latest_id,
+        latest_filename="report-v2.pdf",
+    )
+    latest = source(heading=False, ordinal=0, version_status="latest")
+
+    indices = source_indices({s.chunk_id: s for s in (first, second, latest)})
+    body = format_context([first, latest], indices)
+    lines = [line for line in body.splitlines() if line.startswith("[")]
+
+    assert "version=superseded" in lines[0]
+    assert f"latest_document_id={latest_id}" in lines[0]
+    assert 'latest_filename="report-v2.pdf"' in lines[0]
+    assert "version=latest" in lines[1]
+    assert "latest_document_id" not in lines[1]
+
+    notice = version_hint([first, second, latest], indices)
+    assert notice.startswith("Version notice:")
+    assert f"document_id={latest_id}" in notice
+    assert "report-v2.pdf" in notice
+    # Deduplicated per superseded document
+    assert notice.count(str(latest_id)) == 1
+    assert version_hint([latest], {latest.chunk_id: 1}) == ""
+

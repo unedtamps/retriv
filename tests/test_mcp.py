@@ -77,8 +77,10 @@ class FakeRetriever(ContextRetriever):
         self.budgets: list[int | None] = []
         self.min_scores: list[float | None] = []
         self.document_ids: list[UUID | None] = []
+        self.include_superseded_flags: list[bool] = []
         self.results: list[list[ContextSource]] = []
         self.text_calls: list[tuple[str, list[UUID], int, UUID | None]] = []
+        self.text_include_superseded: list[bool] = []
         self.text_results: list[list[ContextSource]] = []
         self.error: Exception | None = None
 
@@ -91,12 +93,14 @@ class FakeRetriever(ContextRetriever):
         budget: int | None = None,
         min_score: float | None = None,
         document_id: UUID | None = None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
         del query, limit
         self.calls.append(list(workspace_ids))
         self.budgets.append(budget)
         self.min_scores.append(min_score)
         self.document_ids.append(document_id)
+        self.include_superseded_flags.append(include_superseded)
         if self.error is not None:
             raise self.error
         return self.results.pop(0) if self.results else []
@@ -108,8 +112,10 @@ class FakeRetriever(ContextRetriever):
         limit: int,
         *,
         document_id: UUID | None = None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
         self.text_calls.append((query, list(workspace_ids), limit, document_id))
+        self.text_include_superseded.append(include_superseded)
         if self.error is not None:
             raise self.error
         return self.text_results.pop(0) if self.text_results else []
@@ -819,7 +825,7 @@ async def test_find_documents_says_so_when_nothing_matches(
     result = await mcp.session.call(mcp.alice_key, "find_documents", pattern="nonexistent")
     assert result["isError"] is False
     body = text_of(result)
-    assert "No document whose name contains" in body
+    assert "No document matching 'nonexistent'" in body
     assert "one.pdf" not in body
 
 
@@ -1535,3 +1541,96 @@ async def _seed_processed_document(
                 )
             )
     return seeded.document_id
+
+
+async def test_mcp_intelligence_discovery_version_signals_and_include_superseded(
+    mcp: McpEnv,
+) -> None:
+    """MCP find_documents, describe_document, and search tools expose intelligence & versions."""
+    from app.db.models import PROFILE_STATUS_ENRICHED, DocumentProfile
+    from app.documents.intelligence import build_search_text
+    from app.documents.versions import link_document_versions
+
+    doc_v1 = await _seed_processed_document(
+        mcp,
+        filename="10-K-2024-As-Filed.pdf",
+        entries=[("Apple FY2024 net sales.", ["Overview"], 1)],
+    )
+    doc_v2 = await _seed_processed_document(
+        mcp,
+        filename="10-K-2025-As-Filed.pdf",
+        entries=[("Apple FY2025 net sales.", ["Overview"], 1)],
+    )
+    entities_payload = [
+        {"name": "Apple Inc.", "normalized": "apple", "type": "company", "aliases": []}
+    ]
+    async with mcp.session_factory() as session, session.begin():
+        for doc_id, period in ((doc_v1, "FY2024"), (doc_v2, "FY2025")):
+            session.add(
+                DocumentProfile(
+                    document_id=doc_id,
+                    status=PROFILE_STATUS_ENRICHED,
+                    title=f"Apple Inc. Form 10-K {period}",
+                    doc_category="financial_report",
+                    doc_subtype="10-K",
+                    primary_entities=entities_payload,
+                    counterparties=[],
+                    period_label=period,
+                    summary=f"Annual filing for Apple Inc. ({period}).",
+                    search_text=build_search_text(
+                        title=f"Apple Inc. Form 10-K {period}",
+                        doc_category="financial_report",
+                        doc_subtype="10-K",
+                        primary_entities=entities_payload,
+                        counterparties=[],
+                        period_label=period,
+                        effective_date=None,
+                        document_number=None,
+                        version_label=None,
+                        summary=f"Annual filing for Apple Inc. ({period}).",
+                        topics=[],
+                    ),
+                )
+            )
+        await session.flush()
+        await link_document_versions(
+            session,
+            workspace_id=mcp.entities.legal.id,
+            older_document_id=doc_v1,
+            newer_document_id=doc_v2,
+            relation_kind="supersedes",
+            actor_user_id=mcp.entities.user.id,
+            commit=False,
+        )
+
+    found = await mcp.session.call(mcp.alice_key, "find_documents", pattern="Apple 10-K")
+    assert found["isError"] is False
+    found_text = text_of(found)
+    assert "10-K-2025-As-Filed.pdf" in found_text
+    assert "10-K-2024-As-Filed.pdf" in found_text
+    assert "Apple Inc." in found_text
+    assert 'version="latest' in found_text
+    assert 'version="superseded' in found_text
+
+    described = await mcp.session.call(
+        mcp.alice_key,
+        "describe_document",
+        document_id=str(doc_v1),
+        workspace_id=str(mcp.entities.legal.id),
+    )
+    assert described["isError"] is False
+    desc_text = text_of(described)
+    assert "Apple Inc. Form 10-K FY2024" in desc_text
+    assert "primary_entities: Apple Inc." in desc_text
+    assert "10-K-2025-As-Filed.pdf" in desc_text
+    assert "superseded" in desc_text
+
+    await mcp.session.call(
+        mcp.alice_key, "search_context", query="net sales", include_superseded=True
+    )
+    await mcp.session.call(
+        mcp.alice_key, "search_text", query="net sales", include_superseded=True
+    )
+    assert mcp.retriever.include_superseded_flags[-1] is True
+    assert mcp.retriever.text_include_superseded[-1] is True
+

@@ -92,6 +92,35 @@ def tables() -> tuple[MetaData, Table, Table, Table, Table]:
         Column("status", String(32)),
         Column("content_hash", String(64)),
     )
+    Table(
+        "document_version_groups",
+        metadata,
+        Column("id", Uuid(as_uuid=True), primary_key=True),
+        Column("workspace_id", Uuid(as_uuid=True)),
+        Column("name", String(255)),
+        Column("relation_kind", String(32)),
+        Column("created_by_user_id", Uuid(as_uuid=True)),
+        Column("created_at", DateTime(timezone=True)),
+        Column("updated_at", DateTime(timezone=True)),
+    )
+    Table(
+        "document_version_members",
+        metadata,
+        Column("workspace_id", Uuid(as_uuid=True), primary_key=True),
+        Column("document_id", Uuid(as_uuid=True), primary_key=True),
+        Column("group_id", Uuid(as_uuid=True)),
+        Column("version_rank", Integer),
+        Column("is_latest", Boolean),
+        Column("version_note", String(255)),
+        Column("linked_by_user_id", Uuid(as_uuid=True)),
+        Column("linked_at", DateTime(timezone=True)),
+    )
+    Table(
+        "document_profiles",
+        metadata,
+        Column("document_id", Uuid(as_uuid=True), primary_key=True),
+        Column("period_label", String(64)),
+    )
     return metadata, documents, chunks, embeddings, links
 
 
@@ -106,6 +135,7 @@ class StubbedFetch:
     def __init__(self, rows: Sequence[dict[str, object]]) -> None:
         self.rows = list(rows)
         self.calls = 0
+        self.include_superseded_calls: list[bool] = []
 
     async def __call__(
         self,
@@ -114,9 +144,11 @@ class StubbedFetch:
         limit: int,
         *,
         document_id: UUID | None = None,
+        include_superseded: bool = False,
     ) -> list[dict[str, object]]:
         del document_id
         self.calls += 1
+        self.include_superseded_calls.append(include_superseded)
         assert workspace_ids, "the scope must reach the fetch"
         return self.rows[:limit]
 
@@ -1303,3 +1335,98 @@ async def test_vector_fetch_oversamples_and_forces_the_hnsw_plan() -> None:
     assert query_params is not None
     assert query_params["candidate_limit"] == 64
     assert query_params["limit"] == 8
+    assert query_params["include_superseded"] is False
+
+
+async def test_text_search_excludes_superseded_by_default_and_attaches_version_signals() -> None:
+    """Superseded revisions are hidden unless include_superseded=True or targeted by document_id."""
+    from datetime import UTC, datetime
+
+    retriever, engine, documents, chunks, embeddings, links = await text_search_env()
+    workspace_id = uuid4()
+    older = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "Leave entitlement is 12 days per year.", ["Leave Policy"])],
+        filename="HR-Leave-Policy-v1.pdf",
+    )
+    newer = await seed_section(
+        engine,
+        documents,
+        chunks,
+        embeddings,
+        links,
+        workspace_id,
+        [(10, "Leave entitlement is 15 days per year.", ["Leave Policy"])],
+        filename="HR-Leave-Policy-v2.pdf",
+    )
+    older_doc_id: UUID = older[0]["document_id"]  # type: ignore[assignment]
+    newer_doc_id: UUID = newer[0]["document_id"]  # type: ignore[assignment]
+    group_id = uuid4()
+    now = datetime.now(UTC)
+    groups_table = documents.metadata.tables["document_version_groups"]
+    members_table = documents.metadata.tables["document_version_members"]
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(groups_table).values(
+                id=group_id,
+                workspace_id=workspace_id,
+                name="HR Leave Policy",
+                relation_kind="supersedes",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await connection.execute(
+            insert(members_table).values(
+                [
+                    {
+                        "workspace_id": workspace_id,
+                        "document_id": older_doc_id,
+                        "group_id": group_id,
+                        "version_rank": 1,
+                        "is_latest": False,
+                        "linked_at": now,
+                    },
+                    {
+                        "workspace_id": workspace_id,
+                        "document_id": newer_doc_id,
+                        "group_id": group_id,
+                        "version_rank": 2,
+                        "is_latest": True,
+                        "linked_at": now,
+                    },
+                ]
+            )
+        )
+
+    try:
+        default_hits = await retriever.search_text("Leave entitlement", [workspace_id], 10)
+        all_hits = await retriever.search_text(
+            "Leave entitlement", [workspace_id], 10, include_superseded=True
+        )
+        direct_old_hits = await retriever.search_text(
+            "Leave entitlement", [workspace_id], 10, document_id=older_doc_id
+        )
+    finally:
+        await retriever.aclose()
+
+    assert [s.document_id for s in default_hits] == [newer_doc_id]
+    assert default_hits[0].version_status == "latest"
+    assert default_hits[0].version_rank == 2
+    assert default_hits[0].version_count == 2
+
+    assert {s.document_id for s in all_hits} == {older_doc_id, newer_doc_id}
+    old_source = next(s for s in all_hits if s.document_id == older_doc_id)
+    assert old_source.version_status == "superseded"
+    assert old_source.latest_document_id == newer_doc_id
+    assert old_source.latest_filename == "HR-Leave-Policy-v2.pdf"
+
+    assert [s.document_id for s in direct_old_hits] == [older_doc_id]
+    assert direct_old_hits[0].version_status == "superseded"
+    assert direct_old_hits[0].latest_document_id == newer_doc_id
+

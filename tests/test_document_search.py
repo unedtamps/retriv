@@ -152,3 +152,103 @@ async def test_narrowing_to_a_workspace_outside_the_scope_matches_nothing(
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "total": 0}
+
+
+async def test_search_matches_extracted_profile_metadata_and_ranks_latest_first(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    entities: SeededEntities,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A query for 'Apple 2025' finds 10-K-2025-As-Filed.pdf via DocumentProfile."""
+    from uuid import UUID
+
+    from app.db.models import PROFILE_STATUS_ENRICHED, DocumentProfile
+    from app.documents.intelligence import build_search_text
+    from app.documents.search import find_documents
+    from app.documents.versions import link_document_versions
+
+    r1 = await client.post(
+        f"/v1/workspaces/{entities.finance.id}/documents",
+        headers=auth_headers,
+        files={"file": ("10-K-2024-As-Filed.pdf", pdf_bytes("Apple FY2024"), "application/pdf")},
+    )
+    r2 = await client.post(
+        f"/v1/workspaces/{entities.finance.id}/documents",
+        headers=auth_headers,
+        files={"file": ("10-K-2025-As-Filed.pdf", pdf_bytes("Apple FY2025"), "application/pdf")},
+    )
+    assert r1.status_code == 202
+    assert r2.status_code == 202
+    doc_2024 = UUID(r1.json()["id"])
+    doc_2025 = UUID(r2.json()["id"])
+
+    async with db_session_factory() as session, session.begin():
+        for doc_id, period in ((doc_2024, "FY2024"), (doc_2025, "FY2025")):
+            entities_payload = [
+                {"name": "Apple Inc.", "normalized": "apple", "type": "company", "aliases": []}
+            ]
+            session.add(
+                DocumentProfile(
+                    document_id=doc_id,
+                    status=PROFILE_STATUS_ENRICHED,
+                    title=f"Apple Inc. Form 10-K {period}",
+                    doc_category="financial_report",
+                    doc_subtype="10-K",
+                    primary_entities=entities_payload,
+                    counterparties=[],
+                    period_label=period,
+                    search_text=build_search_text(
+                        title=f"Apple Inc. Form 10-K {period}",
+                        doc_category="financial_report",
+                        doc_subtype="10-K",
+                        primary_entities=entities_payload,
+                        counterparties=[],
+                        period_label=period,
+                        effective_date=None,
+                        document_number=None,
+                        version_label=None,
+                        summary=f"Annual report for Apple Inc. for {period}.",
+                        topics=[],
+                    ),
+                )
+            )
+        await session.flush()
+        await link_document_versions(
+            session,
+            workspace_id=entities.finance.id,
+            older_document_id=doc_2024,
+            newer_document_id=doc_2025,
+            relation_kind="supersedes",
+            actor_user_id=entities.user.id,
+            commit=False,
+        )
+
+    async with db_session_factory() as session:
+        only_2025, total_2025 = await find_documents(
+            session,
+            [entities.finance.id],
+            pattern="Apple 2025",
+            limit=10,
+        )
+        assert total_2025 == 1
+        assert only_2025[0].document_id == doc_2025
+        assert only_2025[0].primary_entities == ("Apple Inc.",)
+        assert only_2025[0].version_signal is not None
+        assert only_2025[0].version_signal.is_latest is True
+        assert only_2025[0].version_signal.is_superseded is False
+
+        both, total_both = await find_documents(
+            session,
+            [entities.finance.id],
+            pattern="Apple 10-K",
+            limit=10,
+        )
+        assert total_both == 2
+        # Latest non-superseded document is ranked ahead of the superseded revision.
+        assert both[0].document_id == doc_2025
+        assert both[1].document_id == doc_2024
+        assert both[1].version_signal is not None
+        assert both[1].version_signal.is_superseded is True
+        assert both[1].version_signal.latest_document_id == doc_2025
+

@@ -98,18 +98,21 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
             "function": {
                 "name": "find_documents",
                 "description": (
-                    "Find documents by name and report each one's status, size, "
-                    "workspace and workspace_id, across every workspace the user can "
-                    "read. Omit `pattern` to list every document. Use this first when "
-                    "a question names a file and you need its document_id and "
-                    "workspace_id."
+                    "Find documents by filename OR extracted metadata (company/entity names, "
+                    "titles, document types, periods, document numbers) and report each one's "
+                    "status, size, version signal, and workspace_id across readable workspaces. "
+                    "Omit `pattern` to list every document. Use this when a question names a "
+                    "file, company, or report and you need its document_id."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "pattern": {
                             "type": "string",
-                            "description": "Part of the filename, case-insensitive.",
+                            "description": (
+                                "Filename substring or metadata keywords (e.g. 'Apple 2025' or "
+                                "'Leave Policy'), case-insensitive."
+                            ),
                         },
                         "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                     },
@@ -125,7 +128,8 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                     "meaning. Returns labelled sources with the ordinal that says "
                     "where each sits in its document; a source marked kind=heading "
                     "points at wording further in, reachable with read_document. "
-                    "Pass document_id to search only that document."
+                    "Superseded document versions are excluded by default unless "
+                    "`include_superseded` is true or `document_id` is passed."
                 ),
                 "parameters": {
                     "type": "object",
@@ -154,6 +158,14 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                                 "scope."
                             ),
                         },
+                        "include_superseded": {
+                            "type": "boolean",
+                            "description": (
+                                "Include documents superseded by a newer confirmed version. "
+                                "Default false; set true when comparing or inspecting older "
+                                "revisions."
+                            ),
+                        },
                     },
                     "required": ["query"],
                 },
@@ -168,7 +180,8 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                     "matches first, case-insensitive. Use it for identifiers, "
                     "article numbers, codes, names, and keyword strings that a "
                     "meaning-based search misses; use search_context for "
-                    "concepts. Pass document_id to search only that document."
+                    "concepts. Superseded versions are excluded by default unless "
+                    "`include_superseded` is true or `document_id` is passed."
                 ),
                 "parameters": {
                     "type": "object",
@@ -186,6 +199,13 @@ def _tool_specs(*, row_queries: bool) -> list[dict[str, Any]]:
                                 "Search only this document, as find_documents "
                                 "reported it; omit to search every document in "
                                 "scope."
+                            ),
+                        },
+                        "include_superseded": {
+                            "type": "boolean",
+                            "description": (
+                                "Include documents superseded by a newer confirmed version. "
+                                "Default false; set true for historical revisions."
                             ),
                         },
                     },
@@ -418,6 +438,7 @@ async def _execute_tool(
             workspace_id=None,
             document_id=_uuid_argument(arguments, "document_id"),
             min_score=None if min_score is None else max(-1.0, min(1.0, min_score)),
+            include_superseded=bool(arguments.get("include_superseded", False)),
             start_index=start_index,
             citations=citations,
         )
@@ -439,6 +460,7 @@ async def _execute_tool(
             query=query[:200],
             limit=max(1, min(limit, MAX_SEARCH_LIMIT)),
             document_id=_uuid_argument(arguments, "document_id"),
+            include_superseded=bool(arguments.get("include_superseded", False)),
             start_index=start_index,
             citations=citations,
         )
@@ -601,17 +623,24 @@ def _system_prompt() -> str:
         "keyword strings -- with exact phrase matches first, read_document to "
         "read around a hit or from a given ordinal, list_queryable_files and "
         "query_rows for spreadsheets and CSVs, list_images and get_image for "
-        "pictures, and get_document_link for the original file. Use "
-        "find_documents only when the question names a file and you need its "
+        "pictures, and get_document_link for the original file. "
+        "find_documents searches filenames and extracted document intelligence "
+        "(companies/entities, titles, document types, periods, document numbers) "
+        "and shows confirmed version signals (latest, superseded, periodic series). "
+        "Use it when a question names a file, company, or report and you need its "
         "ids; use list_workspaces only when the question asks which "
         "workspaces exist or names one you cannot resolve. "
+        "Search tools exclude superseded document versions by default so you "
+        "answer from the latest confirmed revision; pass include_superseded=true "
+        "when the user asks about historical versions or version comparisons, and "
+        "alert the user whenever a source carries a version=superseded notice. "
         "get_document_outline lists a document's sections with the ordinal each "
         "starts at, so a long document is entered at the right place instead of "
-        "read from the top. describe_document reports what was actually "
-        "extracted from a file, which is how you tell a document that is silent "
-        "from one that failed to extract. Cite the files and sections an answer "
-        "came from. If the documents do not contain the answer, say so instead "
-        "of guessing.\n\n"
+        "read from the top. describe_document reports extracted metadata, "
+        "confirmed version siblings, and extraction health, which is how you tell "
+        "a document that is silent from one that failed to extract. Cite the files "
+        "and sections an answer came from. If the documents do not contain the "
+        "answer, say so instead of guessing.\n\n"
         "Answer in the language the question was asked in."
     )
 

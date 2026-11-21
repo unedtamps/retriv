@@ -30,11 +30,13 @@ from app.db.models import (
     Document,
     DocumentChunk,
     DocumentImage,
+    DocumentProfile,
     DocumentWorkspace,
     ProcessingRun,
     Workspace,
     WorkspaceMembership,
 )
+from app.documents.versions import load_document_version_detail
 from app.infrastructure.storage import ObjectNotFoundError, ObjectTooLargeError, StorageError
 from app.mcp.auth import McpPrincipal
 from app.mcp.documents import find_documents as search_documents
@@ -54,6 +56,7 @@ from app.retrieval.format import (
     format_outline,
     navigation_footer,
     navigation_hint,
+    version_hint,
 )
 from app.retrieval.navigation import DocumentNotFound, DocumentNotNavigable
 from app.retrieval.schemas import ContextSource
@@ -222,6 +225,7 @@ class AgentToolKit:
         workspace_id: UUID | None = None,
         document_id: UUID | None = None,
         min_score: float | None = None,
+        include_superseded: bool = False,
         start_index: int = 1,
         citations: CitationIndex | None = None,
     ) -> ToolOutcome:
@@ -235,15 +239,17 @@ class AgentToolKit:
             budget=self._runtime.settings.max_context_sources,
             min_score=min_score,
             document_id=document_id,
+            include_superseded=include_superseded,
         )
         if not sources:
             return ToolOutcome(text="No relevant sources were found.")
         registry = citations if citations is not None else CitationIndex(start_index)
         indices = registry.indices_for(sources)
-        body = format_context(sources, indices)
-        hint = navigation_hint(sources, indices)
-        text = f"{body}\n\n{hint}" if hint else body
-        return ToolOutcome(text=text, sources=_served_sources(sources, indices))
+        parts = [format_context(sources, indices)]
+        for extra_hint in (navigation_hint(sources, indices), version_hint(sources, indices)):
+            if extra_hint:
+                parts.append(extra_hint)
+        return ToolOutcome(text="\n\n".join(parts), sources=_served_sources(sources, indices))
 
     async def search_text(
         self,
@@ -252,6 +258,7 @@ class AgentToolKit:
         limit: int,
         workspace_id: UUID | None = None,
         document_id: UUID | None = None,
+        include_superseded: bool = False,
         start_index: int = 1,
         citations: CitationIndex | None = None,
     ) -> ToolOutcome:
@@ -260,7 +267,11 @@ class AgentToolKit:
         if not scope:
             return ToolOutcome(text="No searchable workspace is in scope for this API key.")
         sources = await self._runtime.retriever.search_text(
-            query, scope, limit, document_id=document_id
+            query,
+            scope,
+            limit,
+            document_id=document_id,
+            include_superseded=include_superseded,
         )
         if not sources:
             return ToolOutcome(
@@ -272,8 +283,12 @@ class AgentToolKit:
             )
         registry = citations if citations is not None else CitationIndex(start_index)
         indices = registry.indices_for(sources)
+        parts = [format_context(sources, indices)]
+        v_hint = version_hint(sources, indices)
+        if v_hint:
+            parts.append(v_hint)
         return ToolOutcome(
-            text=format_context(sources, indices),
+            text="\n\n".join(parts),
             sources=_served_sources(sources, indices),
         )
 
@@ -298,9 +313,13 @@ class AgentToolKit:
             return ToolOutcome(text=navigation_footer(window))
         registry = citations if citations is not None else CitationIndex(start_index)
         indices = registry.indices_for(window.sources)
-        body = format_context(window.sources, indices)
+        parts = [format_context(window.sources, indices)]
+        v_hint = version_hint(window.sources, indices)
+        if v_hint:
+            parts.append(v_hint)
+        parts.append(navigation_footer(window))
         return ToolOutcome(
-            text=f"{body}\n\n{navigation_footer(window)}",
+            text="\n\n".join(parts),
             sources=_served_sources(window.sources, indices),
         )
 
@@ -475,6 +494,12 @@ class AgentToolKit:
                 )
                 or 0
             )
+            profile = await session.get(DocumentProfile, document.id)
+            version_group, _ = await load_document_version_detail(
+                session,
+                workspace_id=link.workspace_id,
+                document_id=document.id,
+            )
 
         row_stored = document.detected_media_type in ROW_STORED_MEDIA_TYPES
         pages = 0
@@ -496,6 +521,38 @@ class AgentToolKit:
                 for column in sheet_columns:
                     if column not in columns:
                         columns.append(column)
+
+        primary_entities: list[str] = []
+        counterparties: list[str] = []
+        if profile is not None:
+            primary_entities = [
+                str(e["name"])
+                for e in (profile.primary_entities or [])
+                if isinstance(e, dict) and isinstance(e.get("name"), str)
+            ]
+            counterparties = [
+                str(e["name"])
+                for e in (profile.counterparties or [])
+                if isinstance(e, dict) and isinstance(e.get("name"), str)
+            ]
+
+        version_is_latest: bool | None = None
+        version_siblings: list[str] = []
+        if version_group is not None:
+            for member in version_group.members:
+                if member.document_id == document.id:
+                    version_is_latest = member.is_latest
+                tags: list[str] = []
+                if member.period_label:
+                    tags.append(member.period_label)
+                if member.version_label:
+                    tags.append(member.version_label)
+                if member.is_latest:
+                    tags.append("latest")
+                if member.document_id == document.id:
+                    tags.append("this document")
+                tag_str = f" ({', '.join(tags)})" if tags else ""
+                version_siblings.append(f"[{member.document_id}] {member.filename}{tag_str}")
 
         return format_document_report(
             DocumentReport(
@@ -522,6 +579,22 @@ class AgentToolKit:
                 queryable=self.row_queries,
                 row_stored=row_stored,
                 tables=tables,
+                title=profile.title if profile is not None else None,
+                doc_category=profile.doc_category if profile is not None else None,
+                doc_subtype=profile.doc_subtype if profile is not None else None,
+                primary_entities=primary_entities,
+                counterparties=counterparties,
+                period_label=profile.period_label if profile is not None else None,
+                effective_date=profile.effective_date if profile is not None else None,
+                document_number=profile.document_number if profile is not None else None,
+                version_label=profile.version_label if profile is not None else None,
+                summary=profile.summary if profile is not None else None,
+                version_group_name=version_group.name if version_group is not None else None,
+                version_relation=(
+                    version_group.relation_kind if version_group is not None else None
+                ),
+                version_is_latest=version_is_latest,
+                version_siblings=version_siblings,
             )
         )
 

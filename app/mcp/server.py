@@ -66,9 +66,15 @@ def _instructions(*, row_queries: bool) -> str:
         "near matches instead. A topic or a concept goes to search_context. "
         "Either way each source carries the ordinal to read on from, and "
         "get_document_outline names the ordinal a section starts at.\n\n"
-        "Call find_documents when a question names a file and you need its "
-        "document_id and whether it is ready to search; omit the name to see "
-        "everything you may read. Then use search_context for narrative "
+        "Call find_documents when a question names a file, company/entity, "
+        "document type, or period and you need its document_id and whether it "
+        "is ready to search; omit the pattern to see everything you may read. "
+        "Confirmed version signals (latest, superseded, periodic series) appear "
+        "on find_documents, describe_document, and retrieved sources. "
+        "search_context and search_text exclude superseded versions by default "
+        "so answers come from the latest confirmed revision; pass "
+        "include_superseded=true when asked about older versions or version "
+        "comparisons. Then use search_context for narrative "
         "documents. Pass the document_id find_documents returned to keep the "
         "search inside that one file; omit it to search every document in "
         "scope. It finds passages by meaning and returns each source's "
@@ -85,9 +91,10 @@ def _instructions(*, row_queries: bool) -> str:
         "get_document_outline lists a "
         "document's sections with the ordinal each starts at, so a long "
         "document is entered at the right place instead of read from the top. "
-        "describe_document reports what was actually extracted -- pages, "
-        "chunks, images, rows -- which is how a document that is silent is "
-        "told apart from one that was never extracted."
+        "describe_document reports extracted metadata (title, type, entities, "
+        "period, summary), confirmed version siblings, and extraction health "
+        "(pages, chunks, images, rows) -- which is how a document that is "
+        "silent is told apart from one that was never extracted."
     )
     tail = (
         "\n\nWhen you need a document's original file rather than a passage "
@@ -180,6 +187,13 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
                 "Omit it to use the deployment's configured floor.",
             ),
         ] = None,
+        include_superseded: Annotated[
+            bool,
+            Field(
+                description="Include documents marked as superseded by a newer "
+                "confirmed version. Defaults to false unless document_id is set."
+            ),
+        ] = False,
     ) -> str:
         """Search the documents for passages relevant to a query.
 
@@ -195,6 +209,8 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         `document_id`, from find_documents, restricts the search to that one
         document; omit it to search every document in scope. `min_score`
         raises or lowers the relevance floor for this search only.
+        Superseded versions are excluded by default unless `include_superseded`
+        is true or `document_id` is explicitly provided.
         """
         return (await (await _kit(box.runtime, ctx.headers)).search_context(
             query=query,
@@ -202,6 +218,7 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             workspace_id=workspace_id,
             document_id=document_id,
             min_score=min_score,
+            include_superseded=include_superseded,
         )).text
 
     @mcp.tool()
@@ -212,6 +229,13 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         limit: Annotated[int, Field(ge=1, le=20)] = settings.max_context_chunks,
         workspace_id: UUID | None = None,
         document_id: UUID | None = None,
+        include_superseded: Annotated[
+            bool,
+            Field(
+                description="Include documents marked as superseded by a newer "
+                "confirmed version. Defaults to false unless document_id is set."
+            ),
+        ] = False,
     ) -> str:
         """Find chunks containing the query's terms, exact phrase first.
 
@@ -225,13 +249,15 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         When no chunk contains the whole phrase, it falls back to BM25 term
         ranking, so `net revenue` can also find a passage where those words are
         separated. Pass `document_id` to stay inside one file; omit it to search
-        every document in scope.
+        every document in scope. Superseded versions are excluded by default
+        unless `include_superseded` is true or `document_id` is provided.
         """
         return (await (await _kit(box.runtime, ctx.headers)).search_text(
             query=query,
             limit=limit,
             workspace_id=workspace_id,
             document_id=document_id,
+            include_superseded=include_superseded,
         )).text
 
     @mcp.tool()
@@ -302,14 +328,17 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
         document_id: UUID,
         workspace_id: UUID | None = None,
     ) -> str:
-        """Report what was extracted from a document, and whether it worked.
+        """Report extracted intelligence, confirmed versions, and extraction health.
 
         `find_documents` says a document is `ready`; that only means the
-        pipeline finished. This says what it produced: pages, chunks, how many
-        of them were embedded, sections, images and rows. A scanned PDF
-        without a text layer is `ready` with zero chunks, and searching it will
-        never find anything -- the difference between "the document does not
-        say" and "the document was never readable" is exactly this report.
+        pipeline finished. This returns extracted document metadata (title,
+        category/subtype, primary entities, counterparties, period, effective
+        date, document number, summary), confirmed version siblings in the
+        workspace, and what the pipeline produced: pages, chunks, how many of
+        them were embedded, sections, images and rows. A scanned PDF without a
+        text layer is `ready` with zero chunks, and searching it will never
+        find anything -- the difference between "the document does not say"
+        and "the document was never readable" is exactly this report.
 
         `last_error` carries the pipeline's own message when a run failed.
         """
@@ -346,29 +375,33 @@ def build_mcp_server(settings: Settings, box: McpRuntimeBox) -> tuple[MCPServer,
             str | None,
             Field(
                 max_length=200,
-                description="Part of the filename to look for, case-insensitive. "
-                "Omit it to list every document instead.",
+                description="Terms to match against filename or extracted "
+                "document intelligence (company/entity, title, category, "
+                "period, document number), case-insensitive. Omit to list "
+                "every document instead.",
             ),
         ] = None,
         workspace_id: UUID | None = None,
         limit: Annotated[int, Field(ge=1, le=100)] = 20,
     ) -> str:
-        """Find documents by name, and report what each one is.
+        """Find documents by filename or extracted metadata, and report what each is.
 
-        Use this when the question names a file and you need its document_id
-        before you can do anything else with it. Omit `pattern` to see the
-        whole set.
+        Use this when the question names a file, company/entity, document
+        type, or period and you need its document_id before doing anything
+        else with it. Omit `pattern` to see the whole set.
 
-        `status` tells you whether searching it will help: `ready` documents
-        are searchable, `processing` ones are not yet. A CSV, workbook or
-        JSON data file also shows its row count and is queryable with
-        query_rows; any other file is read with search_context, or fetched
+        Each line carries extracted intelligence (entity, type, period) when
+        available, plus confirmed version signals (`latest`, `superseded`, or
+        `series`). `status` tells you whether searching it will help: `ready`
+        documents are searchable, `processing` ones are not yet. A CSV,
+        workbook or JSON data file also shows its row count and is queryable
+        with query_rows; any other file is read with search_context, or fetched
         whole with get_document_link.
 
         Filenames are not unique, and one canonical document can appear in
         several linked workspaces with a different name in each. Compare
-        workspace_id, size and status to pick, and never assume the first
-        line is the one wanted.
+        workspace_id, size, version, and status to pick, and never assume the
+        first line is the one wanted.
         """
         return await (await _kit(box.runtime, ctx.headers)).find_documents(
             pattern=pattern, workspace_id=workspace_id, limit=limit

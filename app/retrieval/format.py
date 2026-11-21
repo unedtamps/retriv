@@ -25,8 +25,17 @@ def format_context(sources: list[ContextSource], indices: dict[UUID, int]) -> st
             else ""
         )
         kind = " kind=heading" if source.is_heading_only else ""
+        version = ""
+        if source.version_status:
+            version = f" version={source.version_status}"
+            if source.version_status == "superseded" and source.latest_document_id is not None:
+                latest_name = json.dumps(source.latest_filename or "unknown", ensure_ascii=True)
+                version += (
+                    f" latest_document_id={source.latest_document_id}"
+                    f" latest_filename={latest_name}"
+                )
         sections.append(
-            f"[{index}] filename={filename} page_number={pages}{section}{kind} "
+            f"[{index}] filename={filename} page_number={pages}{section}{kind}{version} "
             f"ordinal={source.ordinal} workspace_id={source.workspace_id} "
             f"document_id={source.document_id}\n"
             f"<untrusted_document_text>\n{escape(source.text)}\n</untrusted_document_text>"
@@ -40,11 +49,6 @@ def navigation_hint(sources: list[ContextSource], indices: dict[UUID, int]) -> s
     Only rendered when a heading-only chunk was actually returned. A hint shown
     on every search would be background noise within two queries, and a reader
     that learns to ignore it cannot be taught anything by the version that matters.
-
-    The wording agrees with the count in all four combinations. The total is
-    already stated, so the hint names only the first heading's position rather
-    than repeating how many others there are: a reader that reads "3 of 3
-    sources" and then "and 2 more" cannot tell which number to trust.
     """
     headings = [source for source in sources if source.is_heading_only]
     if not headings:
@@ -65,6 +69,35 @@ def navigation_hint(sources: list[ContextSource], indices: dict[UUID, int]) -> s
         f"silent on the subject. Call "
         f"read_document(document_id={first.document_id}, "
         f"start_ordinal={first.ordinal}) to read forward from {label}."
+    )
+
+
+def version_hint(sources: list[ContextSource], indices: dict[UUID, int]) -> str:
+    """Warn the reader when any returned source belongs to a superseded document."""
+    superseded = [
+        source
+        for source in sources
+        if source.version_status == "superseded" and source.latest_document_id is not None
+    ]
+    if not superseded:
+        return ""
+    seen: set[UUID] = set()
+    notes: list[str] = []
+    for source in superseded:
+        if source.document_id in seen:
+            continue
+        seen.add(source.document_id)
+        label = f"[{indices[source.chunk_id]}]"
+        latest_name = source.latest_filename or str(source.latest_document_id)
+        notes.append(
+            f"Source {label} ({source.filename or source.document_id}) is superseded by "
+            f"{latest_name} (document_id={source.latest_document_id})."
+        )
+    return (
+        "Version notice: "
+        + " ".join(notes)
+        + " Verify against the latest version unless the user specifically asked for an "
+        "older version."
     )
 
 
@@ -152,4 +185,3 @@ def format_outline(outline: DocumentOutline) -> str:
             "Read from an ordinal above, or read_document from 0 to walk the document."
         )
     return "\n".join(lines)
-

@@ -36,6 +36,7 @@ from app.db.models import (
     DocumentChunk,
     DocumentWorkspace,
 )
+from app.retrieval.context import attach_version_signals
 from app.retrieval.schemas import ContextSource, NavigationWindow
 from app.retrieval.sql import ROW_STORED_MEDIA_TYPES
 
@@ -184,12 +185,20 @@ class DocumentNavigator:
                         self._window_query(run_id, start_ordinal, limit, workspace_ids)
                     )
                 ).all()
+                window = self._to_window(rows, total=int(total or 0))
+                if window.sources:
+                    enriched = await attach_version_signals(session, window.sources)
+                    window = NavigationWindow(
+                        sources=enriched,
+                        total=window.total,
+                        next_ordinal=window.next_ordinal,
+                    )
         except (DocumentNotFound, DocumentNotNavigable):
             raise
         except (SQLAlchemyError, IndexError, KeyError, TypeError, ValueError) as exc:
             raise DocumentNotFound("That document could not be read.") from exc
 
-        return self._to_window(rows, total=int(total or 0))
+        return window
 
     async def outline(
         self,

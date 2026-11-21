@@ -55,8 +55,9 @@ class FakeRetriever(ContextRetriever):
         budget: int | None = None,
         min_score: float | None = None,
         document_id: Any = None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
-        del query, limit, budget, min_score, document_id
+        del query, limit, budget, min_score, document_id, include_superseded
         self.scopes.append(list(workspace_ids))
         if self.error is not None:
             raise self.error
@@ -1019,7 +1020,9 @@ class _LimitRecordingKit:
         self.limits: list[int] = []
         self.min_scores: list[float | None] = []
         self.document_ids: list[Any] = []
+        self.include_superseded_calls: list[bool] = []
         self.text_queries: list[tuple[str, int, Any]] = []
+        self.text_include_superseded: list[bool] = []
         self.outlines: list[tuple[Any, Any, int]] = []
         self.described: list[tuple[Any, Any]] = []
         self.workspaces_called = False
@@ -1032,6 +1035,7 @@ class _LimitRecordingKit:
         workspace_id: Any = None,
         document_id: Any = None,
         min_score: float | None = None,
+        include_superseded: bool = False,
         start_index: int = 1,
         citations: Any = None,
     ) -> str:
@@ -1039,6 +1043,7 @@ class _LimitRecordingKit:
         self.limits.append(limit)
         self.min_scores.append(min_score)
         self.document_ids.append(document_id)
+        self.include_superseded_calls.append(include_superseded)
         return "ok"
 
     async def search_text(
@@ -1048,11 +1053,13 @@ class _LimitRecordingKit:
         limit: int,
         workspace_id: Any = None,
         document_id: Any = None,
+        include_superseded: bool = False,
         start_index: int = 1,
         citations: Any = None,
     ) -> str:
         del workspace_id, start_index, citations
         self.text_queries.append((query, limit, document_id))
+        self.text_include_superseded.append(include_superseded)
         return "ok"
 
     async def list_workspaces(self) -> str:
@@ -1422,3 +1429,16 @@ async def test_retrieval_settings_save_bge_provider(
     assert row is not None
     assert row.rerank_provider == "bge"
     assert row.rerank_blend == 0.3
+
+
+async def test_include_superseded_dispatches_to_search_tools() -> None:
+    """include_superseded defaults to False and passes True when explicitly set."""
+    kit: Any = _LimitRecordingKit()
+    await _execute_tool(kit, "search_context", {"query": "policy"})
+    await _execute_tool(kit, "search_context", {"query": "policy", "include_superseded": True})
+    await _execute_tool(kit, "search_text", {"query": "Pasal 7"})
+    await _execute_tool(kit, "search_text", {"query": "Pasal 7", "include_superseded": True})
+
+    assert kit.include_superseded_calls == [False, True]
+    assert kit.text_include_superseded == [False, True]
+
