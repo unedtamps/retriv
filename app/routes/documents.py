@@ -36,6 +36,7 @@ from app.core.errors import AppError
 from app.db.models import (
     Document,
     DocumentChunk,
+    DocumentProfile,
     DocumentWorkspace,
     ProcessingRun,
 )
@@ -61,8 +62,14 @@ from app.documents.validation import (
     stage_chunks,
     stage_upload,
 )
+from app.documents.versions import (
+    DocumentVersionSignal,
+    load_document_version_signals_for_workspace,
+    load_pending_suggestion_counts,
+)
 from app.infrastructure.storage import ObjectNotFoundError, StorageError, iter_object
 from app.processing.service import derived_document_status, load_active_run
+from app.routes.document_versions import profile_response, version_signal_response
 from app.security.auth import CurrentUser
 
 logger = logging.getLogger(__name__)
@@ -229,16 +236,39 @@ async def list_documents(
         .where(condition)
     )
     result = await session.execute(
-        select(Document, DocumentWorkspace, ProcessingRun)
+        select(Document, DocumentWorkspace, ProcessingRun, DocumentProfile)
         .join(DocumentWorkspace, DocumentWorkspace.document_id == Document.id)
         .outerjoin(ProcessingRun, ProcessingRun.id == Document.active_processing_run_id)
+        .outerjoin(DocumentProfile, DocumentProfile.document_id == Document.id)
         .where(condition)
         .order_by(DocumentWorkspace.created_at.desc(), Document.id)
         .offset(offset)
         .limit(limit)
     )
+    rows = result.all()
+    doc_ids = [document.id for document, _, _, _ in rows]
+    signals = await load_document_version_signals_for_workspace(
+        session,
+        workspace_id=workspace.id,
+        document_ids=doc_ids,
+    )
+    pending_counts = await load_pending_suggestion_counts(
+        session,
+        workspace_id=workspace.id,
+        document_ids=doc_ids,
+    )
     return DocumentListResponse(
-        items=[document_response(document, link, run) for document, link, run in result.all()],
+        items=[
+            document_response(
+                document,
+                link,
+                run,
+                profile=profile,
+                version=signals.get(document.id),
+                pending_version_suggestions=pending_counts.get(document.id, 0),
+            )
+            for document, link, run, profile in rows
+        ],
         total=total or 0,
         offset=offset,
         limit=limit,
@@ -252,7 +282,25 @@ async def get_document_metadata(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> DocumentResponse:
     run = await load_active_run(session, document.document)
-    return document_response(document.document, document.link, run)
+    profile = await session.get(DocumentProfile, document.document.id)
+    signals = await load_document_version_signals_for_workspace(
+        session,
+        workspace_id=document.link.workspace_id,
+        document_ids=[document.document.id],
+    )
+    pending_counts = await load_pending_suggestion_counts(
+        session,
+        workspace_id=document.link.workspace_id,
+        document_ids=[document.document.id],
+    )
+    return document_response(
+        document.document,
+        document.link,
+        run,
+        profile=profile,
+        version=signals.get(document.document.id),
+        pending_version_suggestions=pending_counts.get(document.document.id, 0),
+    )
 
 
 @router.get(
@@ -499,6 +547,9 @@ def document_response(
     run: ProcessingRun | None = None,
     *,
     duplicate: bool = False,
+    profile: DocumentProfile | None = None,
+    version: DocumentVersionSignal | None = None,
+    pending_version_suggestions: int = 0,
 ) -> DocumentResponse:
     if link.deleted_at is not None and document.deleted_at is None:
         status = "deleting"
@@ -516,6 +567,9 @@ def document_response(
         created_by_user_id=link.created_by_user_id,
         created_at=link.created_at,
         duplicate=duplicate,
+        profile=profile_response(profile),
+        version=version_signal_response(version),
+        pending_version_suggestions=pending_version_suggestions,
     )
 
 

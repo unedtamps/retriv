@@ -225,6 +225,25 @@ export function Dashboard({
     window.setTimeout(() => setFocusDocumentId(null), 2200)
   }
 
+  async function openDocumentById(documentId: string, workspaceOverride?: Workspace) {
+    const workspace = workspaceOverride ?? selectedWorkspace
+    if (workspace === null || !workspace.can_download) return
+    const loaded = documents.data?.items.find(
+      (item) => item.id === documentId && item.workspace_id === workspace.id,
+    )
+    if (loaded !== undefined) {
+      setViewer({ document: loaded, workspace })
+      return
+    }
+    try {
+      const fetched = await api.getDocument(workspace.id, documentId)
+      setViewer({ document: fetched, workspace })
+    } catch (caught) {
+      if (isUnauthorized(caught)) onUnauthorized()
+      else showNotice(getErrorMessage(caught), 'error')
+    }
+  }
+
   function openUpload() {
     if (selectedWorkspace === null || !selectedWorkspace.can_upload) return
     setUploadOpen(true)
@@ -375,6 +394,9 @@ export function Dashboard({
               setViewer({ document, workspace: selectedWorkspace })
             }
           }}
+          onOpenDocumentById={(documentId) => void openDocumentById(documentId)}
+          onUnauthorized={onUnauthorized}
+          onNotice={showNotice}
           onUpload={openUpload}
           onDeleteDocument={setDeleteTarget}
         />
@@ -465,6 +487,7 @@ export function Dashboard({
           page={viewer.page}
           highlights={viewer.highlights}
           anchors={viewer.anchors}
+          onOpenDocument={(documentId) => void openDocumentById(documentId, viewer.workspace)}
           onUnauthorized={onUnauthorized}
           onClose={() => setViewer(null)}
         />

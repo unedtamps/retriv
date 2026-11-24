@@ -200,6 +200,47 @@ class WorkspaceMemberCandidateListResponse(BaseModel):
     items: list[WorkspaceMemberCandidateResponse]
 
 
+VersionRelationKind = Literal["supersedes", "periodic_series"]
+
+
+class DocumentEntityResponse(BaseModel):
+    name: str
+    type: str = "other"
+    aliases: list[str] = Field(default_factory=list)
+
+
+class DocumentProfileResponse(BaseModel):
+    status: str
+    title: str | None = None
+    doc_category: str = "other"
+    doc_subtype: str | None = None
+    language: str | None = None
+    primary_entities: list[DocumentEntityResponse] = Field(default_factory=list)
+    counterparties: list[DocumentEntityResponse] = Field(default_factory=list)
+    period_label: str | None = None
+    effective_date: str | None = None
+    document_number: str | None = None
+    version_label: str | None = None
+    summary: str | None = None
+    topics: list[str] = Field(default_factory=list)
+    model: str | None = None
+    updated_at: datetime | None = None
+
+
+class DocumentVersionSignalResponse(BaseModel):
+    group_id: UUID
+    group_name: str
+    relation_kind: VersionRelationKind
+    version_rank: int
+    version_count: int
+    is_latest: bool
+    is_superseded: bool
+    latest_document_id: UUID
+    latest_filename: str
+    latest_period_label: str | None = None
+    version_note: str | None = None
+
+
 class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -214,6 +255,9 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     duplicate: bool = False
     row_count: int = 0
+    profile: DocumentProfileResponse | None = None
+    version: DocumentVersionSignalResponse | None = None
+    pending_version_suggestions: int = 0
 
 
 class DocumentListResponse(BaseModel):
@@ -221,6 +265,87 @@ class DocumentListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class DocumentVersionMemberResponse(BaseModel):
+    document_id: UUID
+    filename: str
+    title: str | None = None
+    period_label: str | None = None
+    effective_date: str | None = None
+    version_label: str | None = None
+    version_rank: int
+    is_latest: bool
+    version_note: str | None = None
+    linked_at: datetime
+    created_at: datetime
+
+
+class DocumentVersionGroupResponse(BaseModel):
+    group_id: UUID
+    name: str
+    relation_kind: VersionRelationKind
+    members: list[DocumentVersionMemberResponse] = Field(default_factory=list)
+
+
+class VersionSuggestionDocResponse(BaseModel):
+    document_id: UUID
+    filename: str
+    title: str | None = None
+    doc_category: str | None = None
+    doc_subtype: str | None = None
+    period_label: str | None = None
+    effective_date: str | None = None
+    version_label: str | None = None
+    primary_entities: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+
+class DocumentVersionSuggestionResponse(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    document_a: VersionSuggestionDocResponse
+    document_b: VersionSuggestionDocResponse
+    suggested_newer_document_id: UUID
+    suggested_relation: VersionRelationKind
+    confidence: float
+    reasons: list[str] = Field(default_factory=list)
+    status: str
+    created_at: datetime
+    resolved_at: datetime | None = None
+
+
+class DocumentVersionSuggestionListResponse(BaseModel):
+    items: list[DocumentVersionSuggestionResponse]
+    total: int
+
+
+class DocumentVersionsDetailResponse(BaseModel):
+    document_id: UUID
+    workspace_id: UUID
+    profile: DocumentProfileResponse | None = None
+    group: DocumentVersionGroupResponse | None = None
+    pending_suggestions: list[DocumentVersionSuggestionResponse] = Field(default_factory=list)
+
+
+class ConfirmVersionSuggestionRequest(BaseModel):
+    relation_kind: VersionRelationKind | None = None
+    newer_document_id: UUID | None = None
+    group_name: str | None = Field(default=None, max_length=255)
+
+
+class LinkDocumentVersionRequest(BaseModel):
+    related_document_id: UUID
+    direction: Literal["newer", "older"] = "newer"
+    relation_kind: VersionRelationKind = "supersedes"
+    group_name: str | None = Field(default=None, max_length=255)
+    version_note: str | None = Field(default=None, max_length=255)
+
+
+class UpdateVersionGroupRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    relation_kind: VersionRelationKind | None = None
+    member_order: list[UUID] | None = None
 
 
 class DocumentSourceRegion(BaseModel):
@@ -283,6 +408,12 @@ class DocumentSearchHit(BaseModel):
     status: str
     row_count: int
     created_at: datetime
+    title: str | None = None
+    doc_category: str | None = None
+    doc_subtype: str | None = None
+    primary_entities: list[str] = Field(default_factory=list)
+    period_label: str | None = None
+    version: DocumentVersionSignalResponse | None = None
 
 
 class DocumentSearchResponse(BaseModel):

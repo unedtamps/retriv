@@ -71,17 +71,24 @@ class DocumentReport:
     queryable: bool
     row_stored: bool
     tables: list[tuple[str, list[str], int]] = field(default_factory=list)
+    title: str | None = None
+    doc_category: str | None = None
+    doc_subtype: str | None = None
+    primary_entities: list[str] = field(default_factory=list)
+    counterparties: list[str] = field(default_factory=list)
+    period_label: str | None = None
+    effective_date: str | None = None
+    document_number: str | None = None
+    version_label: str | None = None
+    summary: str | None = None
+    version_group_name: str | None = None
+    version_relation: str | None = None
+    version_is_latest: bool | None = None
+    version_siblings: list[str] = field(default_factory=list)
 
 
 def format_document_report(report: DocumentReport) -> str:
-    """Render extraction health so "not found" cannot mean "not readable".
-
-    ``find_documents`` reports a status, which is enough to know whether to
-    search and not enough to know what happened. A scan without OCR is
-    ``ready`` and returns nothing, and that is the failure this report exists
-    to make visible: pages and chunk counts are facts about the extraction,
-    not about the subject.
-    """
+    """Render extraction health, intelligence metadata, and version links."""
     lines = [
         f"filename: {report.filename}",
         f"document_id: {report.document_id}",
@@ -94,6 +101,43 @@ def format_document_report(report: DocumentReport) -> str:
     lines.append(f"status: {report.status}")
     if report.pipeline:
         lines.append(f"pipeline: {report.pipeline}")
+
+    if report.title:
+        lines.append(f"title: {report.title}")
+    if report.doc_category:
+        doc_type = (
+            f"{report.doc_category} ({report.doc_subtype})"
+            if report.doc_subtype
+            else report.doc_category
+        )
+        lines.append(f"document_type: {doc_type}")
+    if report.primary_entities:
+        lines.append(f"primary_entities: {', '.join(report.primary_entities)}")
+    if report.counterparties:
+        lines.append(f"counterparties: {', '.join(report.counterparties)}")
+    if report.period_label:
+        lines.append(f"period: {report.period_label}")
+    if report.effective_date:
+        lines.append(f"effective_date: {report.effective_date}")
+    if report.document_number:
+        lines.append(f"document_number: {report.document_number}")
+    if report.version_label:
+        lines.append(f"version_label: {report.version_label}")
+    if report.summary:
+        lines.append(f"summary: {report.summary}")
+
+    if report.version_group_name:
+        state = "latest" if report.version_is_latest else (
+            "superseded" if report.version_relation == "supersedes" else "historical"
+        )
+        lines.append(
+            f"version_group: {report.version_group_name} "
+            f"(relation={report.version_relation}, status={state})"
+        )
+        if report.version_siblings:
+            lines.append("versions:")
+            for sibling in report.version_siblings:
+                lines.append(f"  {sibling}")
 
     if report.row_stored:
         lines.append(f"rows: {report.rows}")

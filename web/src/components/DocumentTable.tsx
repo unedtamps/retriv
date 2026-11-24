@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { Eye, FileText, RotateCcw, Trash2 } from 'lucide-react'
+import { Eye, FileText, GitBranch, RotateCcw, Trash2 } from 'lucide-react'
 import type { ProcessingRuns } from '../hooks/useProcessingRuns'
 import type { DocumentUpload, ProcessingRun } from '../types'
 import {
+  docCategoryLabel,
   documentStatusLabel,
   documentStatusTone,
   documentType,
@@ -11,6 +12,7 @@ import {
   isActiveStatus,
   runStatusLabel,
   STATUS_TONE_CLASSES,
+  versionSignalBadge,
 } from '../lib/visuals'
 
 interface DocumentTableProps {
@@ -24,6 +26,7 @@ interface DocumentTableProps {
   onReindex?: (document: DocumentUpload) => void
   canView?: boolean
   onView?: (document: DocumentUpload) => void
+  onInspectVersions?: (document: DocumentUpload) => void
   runs?: ProcessingRuns
   focusDocumentId?: string | null
   onDelete: (document: DocumentUpload) => void
@@ -40,6 +43,7 @@ export function DocumentTable({
   onReindex,
   canView = false,
   onView,
+  onInspectVersions,
   runs,
   focusDocumentId,
   onDelete,
@@ -132,6 +136,20 @@ export function DocumentTable({
                   activeRun !== undefined && activeRun.chunk_count > 0
                     ? `${activeRun.embedded_chunk_count}/${activeRun.chunk_count}`
                     : null
+                const profile = document.profile ?? null
+                const entityName = profile?.primary_entities[0]?.name ?? null
+                const categoryName =
+                  profile !== null
+                    ? docCategoryLabel(profile.doc_category, profile.doc_subtype)
+                    : ''
+                const metadataParts = [
+                  entityName,
+                  categoryName || null,
+                  profile?.period_label ?? null,
+                ].filter((part): part is string => Boolean(part))
+                const version = document.version ?? null
+                const versionBadge = version !== null ? versionSignalBadge(version) : null
+                const pendingSuggestions = document.pending_version_suggestions ?? 0
                 return (
                   <tr
                     key={document.id}
@@ -146,7 +164,7 @@ export function DocumentTable({
                         {canView && onView !== undefined ? (
                           <button
                             type="button"
-                            className="block max-w-[16rem] truncate text-left text-sm font-semibold text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:no-underline disabled:text-ink-faint"
+                            className="block max-w-[18rem] truncate text-left text-sm font-semibold text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:no-underline disabled:text-ink-faint"
                             aria-label={`View ${document.original_filename}`}
                             disabled={document.status === 'deleting'}
                             onClick={() => onView(document)}
@@ -154,14 +172,65 @@ export function DocumentTable({
                             {document.original_filename}
                           </button>
                         ) : (
-                          <p className="max-w-[16rem] truncate text-sm font-semibold text-ink">
+                          <p className="max-w-[18rem] truncate text-sm font-semibold text-ink">
                             {document.original_filename}
                           </p>
                         )}
-                        {document.row_count > 0 ? (
-                          <p className="mt-0.5 font-mono text-[0.62rem] text-ink-faint">
-                            {document.row_count} rows
+                        {metadataParts.length > 0 ? (
+                          <p className="mt-0.5 max-w-[22rem] truncate text-xs text-ink-muted">
+                            {metadataParts.join(' · ')}
                           </p>
+                        ) : null}
+                        {versionBadge !== null || pendingSuggestions > 0 || document.row_count > 0 ? (
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {versionBadge !== null ? (
+                              onInspectVersions !== undefined ? (
+                                <button
+                                  type="button"
+                                  className={`stamp cursor-pointer whitespace-nowrap transition-opacity hover:opacity-85 ${STATUS_TONE_CLASSES[versionBadge.tone]}`}
+                                  title={
+                                    version?.is_superseded && version.latest_filename
+                                      ? `Superseded by ${version.latest_filename}`
+                                      : 'Inspect document version history'
+                                  }
+                                  onClick={() => onInspectVersions(document)}
+                                >
+                                  {versionBadge.label}
+                                </button>
+                              ) : (
+                                <span
+                                  className={`stamp whitespace-nowrap ${STATUS_TONE_CLASSES[versionBadge.tone]}`}
+                                >
+                                  {versionBadge.label}
+                                </span>
+                              )
+                            ) : null}
+                            {pendingSuggestions > 0 ? (
+                              onInspectVersions !== undefined ? (
+                                <button
+                                  type="button"
+                                  className={`stamp cursor-pointer whitespace-nowrap transition-opacity hover:opacity-85 ${STATUS_TONE_CLASSES.info}`}
+                                  title="Review potential version matches"
+                                  onClick={() => onInspectVersions(document)}
+                                >
+                                  {pendingSuggestions === 1
+                                    ? '1 match suggestion'
+                                    : `${pendingSuggestions} match suggestions`}
+                                </button>
+                              ) : (
+                                <span className={`stamp whitespace-nowrap ${STATUS_TONE_CLASSES.info}`}>
+                                  {pendingSuggestions === 1
+                                    ? '1 match suggestion'
+                                    : `${pendingSuggestions} match suggestions`}
+                                </span>
+                              )
+                            ) : null}
+                            {document.row_count > 0 ? (
+                              <span className="font-mono text-[0.62rem] text-ink-faint">
+                                {document.row_count} rows
+                              </span>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                     </td>
@@ -194,6 +263,24 @@ export function DocumentTable({
                     </td>
                     <td className="px-3 py-3 align-middle">
                       <div className="flex items-center justify-end gap-1">
+                        {onInspectVersions !== undefined ? (
+                          <button
+                            type="button"
+                            className="relative flex h-7 w-7 items-center justify-center rounded-stamp border border-transparent text-ink-faint transition-colors hover:border-line hover:text-ink disabled:opacity-40"
+                            aria-label={`Intelligence and versions for ${document.original_filename}`}
+                            title="Intelligence & versions"
+                            disabled={document.status === 'deleting'}
+                            onClick={() => onInspectVersions(document)}
+                          >
+                            <GitBranch aria-hidden="true" size={14} />
+                            {pendingSuggestions > 0 ? (
+                              <span
+                                aria-hidden="true"
+                                className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-blue"
+                              />
+                            ) : null}
+                          </button>
+                        ) : null}
                         {canView && onView !== undefined ? (
                           <button
                             type="button"

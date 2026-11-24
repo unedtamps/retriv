@@ -27,6 +27,10 @@ from app.db.models import (
     ProcessingRun,
 )
 from app.documents.validation import StagedUpload, ValidationResult, validate_document
+from app.documents.versions import (
+    cleanup_document_versions_on_unlink,
+    detect_version_suggestions_for_document,
+)
 from app.infrastructure.scanner import (
     MalwareDetectedError,
     MalwareScanner,
@@ -84,6 +88,7 @@ async def ingest_staged_upload(
         if existing is None or existing.deleted_at is not None:
             raise document_deletion_error()
         link = await find_document_link(session, workspace_id, existing.id, lock=True)
+        newly_attached = False
         if link is None:
             link = DocumentWorkspace(
                 workspace_id=workspace_id,
@@ -93,10 +98,14 @@ async def ingest_staged_upload(
             )
             session.add(link)
             await session.commit()
+            newly_attached = True
         elif link.deleted_at is not None:
             link.deleted_at = None
             link.filename = staged.original_filename
             await session.commit()
+            newly_attached = True
+        if newly_attached and existing.active_processing_run_id is not None:
+            await _detect_versions_best_effort(session, workspace_id, existing.id)
         return IngestedDocument(
             document=existing,
             link=link,
@@ -199,12 +208,33 @@ async def attach_to_existing(
         )
         session.add(link)
         await session.commit()
+        if document.active_processing_run_id is not None:
+            await _detect_versions_best_effort(session, workspace_id, document.id)
         return link
     if link.deleted_at is not None:
         link.deleted_at = None
         link.filename = filename
         await session.commit()
+        if document.active_processing_run_id is not None:
+            await _detect_versions_best_effort(session, workspace_id, document.id)
     return link
+
+
+async def _detect_versions_best_effort(
+    session: AsyncSession,
+    workspace_id: UUID,
+    document_id: UUID,
+) -> None:
+    try:
+        await detect_version_suggestions_for_document(
+            session, workspace_id=workspace_id, document_id=document_id
+        )
+    except Exception:
+        await session.rollback()
+        logger.exception(
+            "Best-effort version detection failed after dedup attach",
+            extra={"workspace_id": str(workspace_id), "document_id": str(document_id)},
+        )
 
 
 async def accept_document_reindex(
@@ -304,6 +334,10 @@ async def accept_document_delete(
 
     if locked_link.deleted_at is None:
         locked_link.deleted_at = datetime.now(UTC)
+
+    await cleanup_document_versions_on_unlink(
+        session, workspace_id=workspace_id, document_id=document_id
+    )
 
     remaining_links = int(
         await session.scalar(

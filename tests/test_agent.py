@@ -55,8 +55,9 @@ class FakeRetriever(ContextRetriever):
         budget: int | None = None,
         min_score: float | None = None,
         document_id: Any = None,
+        include_superseded: bool = False,
     ) -> list[ContextSource]:
-        del query, limit, budget, min_score, document_id
+        del query, limit, budget, min_score, document_id, include_superseded
         self.scopes.append(list(workspace_ids))
         if self.error is not None:
             raise self.error
@@ -498,7 +499,7 @@ async def test_chat_scope_is_the_caller_memberships(
                 ToolCall(id="call-1", name="search_context", arguments={"query": "holdings"})
             ],
         ),
-        ChatTurn(content="Here is what Legal holds.", tool_calls=[]),
+        ChatTurn(content="Here is what Legal holds [1].", tool_calls=[]),
     ]
     headers = await login(client, "bob", OUTSIDER_PASSWORD)
     response = await client.post(
@@ -1019,7 +1020,9 @@ class _LimitRecordingKit:
         self.limits: list[int] = []
         self.min_scores: list[float | None] = []
         self.document_ids: list[Any] = []
+        self.include_superseded_calls: list[bool] = []
         self.text_queries: list[tuple[str, int, Any]] = []
+        self.text_include_superseded: list[bool] = []
         self.outlines: list[tuple[Any, Any, int]] = []
         self.described: list[tuple[Any, Any]] = []
         self.workspaces_called = False
@@ -1032,6 +1035,7 @@ class _LimitRecordingKit:
         workspace_id: Any = None,
         document_id: Any = None,
         min_score: float | None = None,
+        include_superseded: bool = False,
         start_index: int = 1,
         citations: Any = None,
     ) -> str:
@@ -1039,6 +1043,7 @@ class _LimitRecordingKit:
         self.limits.append(limit)
         self.min_scores.append(min_score)
         self.document_ids.append(document_id)
+        self.include_superseded_calls.append(include_superseded)
         return "ok"
 
     async def search_text(
@@ -1048,11 +1053,13 @@ class _LimitRecordingKit:
         limit: int,
         workspace_id: Any = None,
         document_id: Any = None,
+        include_superseded: bool = False,
         start_index: int = 1,
         citations: Any = None,
     ) -> str:
         del workspace_id, start_index, citations
         self.text_queries.append((query, limit, document_id))
+        self.text_include_superseded.append(include_superseded)
         return "ok"
 
     async def list_workspaces(self) -> str:
@@ -1182,6 +1189,7 @@ async def test_an_answer_without_a_citation_is_replaced(
             ],
         ),
         ChatTurn(content="Net revenue rose by a tenth.", tool_calls=[]),
+        ChatTurn(content="Net revenue still rose by a tenth.", tool_calls=[]),
     ]
 
     headers = await login(client, "alice", OWNER_PASSWORD)
@@ -1245,6 +1253,7 @@ async def test_a_citation_to_an_unserved_source_is_replaced(
             ],
         ),
         ChatTurn(content="Net revenue rose by a tenth [9].", tool_calls=[]),
+        ChatTurn(content="Net revenue rose by a tenth [9].", tool_calls=[]),
     ]
 
     headers = await login(client, "alice", OWNER_PASSWORD)
@@ -1256,6 +1265,125 @@ async def test_a_citation_to_an_unserved_source_is_replaced(
     final = sse_events(response.text)[-1]
     assert final["replaced"] is True
     assert final["reason"] == "invalid_citation"
+
+
+async def test_no_citation_recovers_on_retry(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """When the model forgets inline citations, one self-correction turn recovers."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(content="Net revenue rose by a tenth.", tool_calls=[]),
+        ChatTurn(content="Net revenue rose by a tenth [1].", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert final["content"] == "Net revenue rose by a tenth [1]."
+    assert len(final["sources"]) == 1
+    assert final["sources"][0]["index"] == 1
+
+
+async def test_invalid_citation_recovers_on_retry(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """When a book footnote like [42] trips invalid_citation, retry fixes it."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "simplicity"})
+            ],
+        ),
+        ChatTurn(
+            content="The 2026 edition revises simplicity (see reference [42]) [1].",
+            tool_calls=[],
+        ),
+        ChatTurn(
+            content="The 2026 edition revises simplicity (reference 42) [1].",
+            tool_calls=[],
+        ),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "What changed in the new edition?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert final["content"] == "The 2026 edition revises simplicity (reference 42) [1]."
+    assert len(final["sources"]) == 1
+
+
+async def test_bracketed_numbers_in_code_spans_do_not_trigger_invalid_citation(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """Code indices like `arr[0]` or `rows[99]` in code blocks are not citations."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(
+            content=(
+                "The report indexes `items[0]` and `rows[42]` as shown [1]:\n"
+                "```python\nvalue = rows[99]\n```"
+            ),
+            tool_calls=[],
+        ),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How is revenue indexed?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert len(final["sources"]) == 1
 
 
 async def test_a_not_found_answer_after_a_search_is_allowed(
@@ -1422,3 +1550,16 @@ async def test_retrieval_settings_save_bge_provider(
     assert row is not None
     assert row.rerank_provider == "bge"
     assert row.rerank_blend == 0.3
+
+
+async def test_include_superseded_dispatches_to_search_tools() -> None:
+    """include_superseded defaults to False and passes True when explicitly set."""
+    kit: Any = _LimitRecordingKit()
+    await _execute_tool(kit, "search_context", {"query": "policy"})
+    await _execute_tool(kit, "search_context", {"query": "policy", "include_superseded": True})
+    await _execute_tool(kit, "search_text", {"query": "Pasal 7"})
+    await _execute_tool(kit, "search_text", {"query": "Pasal 7", "include_superseded": True})
+
+    assert kit.include_superseded_calls == [False, True]
+    assert kit.text_include_superseded == [False, True]
+

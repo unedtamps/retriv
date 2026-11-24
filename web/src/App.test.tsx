@@ -252,6 +252,12 @@ function installApi(
     if (documentList !== null && (init?.method === undefined || init.method === 'GET')) {
       return json(documents.list ?? { items: [], total: 0, offset: 0, limit: 50 })
     }
+    const versionSuggestions = url.match(
+      /^\/v1\/workspaces\/[^/]+\/documents\/version-suggestions(\?|$)/,
+    )
+    if (versionSuggestions !== null && (init?.method === undefined || init.method === 'GET')) {
+      return json({ items: [], total: 0 })
+    }
     const downloadMatch = url.match(/^\/v1\/workspaces\/[^/]+\/documents\/([^/?]+)\/download/)
     if (downloadMatch !== null) {
       if (documents.download === 'forbidden') return json({ code: 'insufficient_workspace_permission' }, 403)

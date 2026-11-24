@@ -19,6 +19,12 @@ class ContextSource(BaseModel):
     page_numbers: list[int]
     text: str
     token_count: int = 0
+    version_status: str | None = None
+    version_group_name: str | None = None
+    version_rank: int | None = None
+    version_count: int | None = None
+    latest_document_id: UUID | None = None
+    latest_filename: str | None = None
 
 
 @dataclass(frozen=True)
