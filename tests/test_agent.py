@@ -499,7 +499,7 @@ async def test_chat_scope_is_the_caller_memberships(
                 ToolCall(id="call-1", name="search_context", arguments={"query": "holdings"})
             ],
         ),
-        ChatTurn(content="Here is what Legal holds.", tool_calls=[]),
+        ChatTurn(content="Here is what Legal holds [1].", tool_calls=[]),
     ]
     headers = await login(client, "bob", OUTSIDER_PASSWORD)
     response = await client.post(
@@ -1189,6 +1189,7 @@ async def test_an_answer_without_a_citation_is_replaced(
             ],
         ),
         ChatTurn(content="Net revenue rose by a tenth.", tool_calls=[]),
+        ChatTurn(content="Net revenue still rose by a tenth.", tool_calls=[]),
     ]
 
     headers = await login(client, "alice", OWNER_PASSWORD)
@@ -1252,6 +1253,7 @@ async def test_a_citation_to_an_unserved_source_is_replaced(
             ],
         ),
         ChatTurn(content="Net revenue rose by a tenth [9].", tool_calls=[]),
+        ChatTurn(content="Net revenue rose by a tenth [9].", tool_calls=[]),
     ]
 
     headers = await login(client, "alice", OWNER_PASSWORD)
@@ -1263,6 +1265,125 @@ async def test_a_citation_to_an_unserved_source_is_replaced(
     final = sse_events(response.text)[-1]
     assert final["replaced"] is True
     assert final["reason"] == "invalid_citation"
+
+
+async def test_no_citation_recovers_on_retry(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """When the model forgets inline citations, one self-correction turn recovers."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(content="Net revenue rose by a tenth.", tool_calls=[]),
+        ChatTurn(content="Net revenue rose by a tenth [1].", tool_calls=[]),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How did revenue move?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert final["content"] == "Net revenue rose by a tenth [1]."
+    assert len(final["sources"]) == 1
+    assert final["sources"][0]["index"] == 1
+
+
+async def test_invalid_citation_recovers_on_retry(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """When a book footnote like [42] trips invalid_citation, retry fixes it."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "simplicity"})
+            ],
+        ),
+        ChatTurn(
+            content="The 2026 edition revises simplicity (see reference [42]) [1].",
+            tool_calls=[],
+        ),
+        ChatTurn(
+            content="The 2026 edition revises simplicity (reference 42) [1].",
+            tool_calls=[],
+        ),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "What changed in the new edition?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert final["content"] == "The 2026 edition revises simplicity (reference 42) [1]."
+    assert len(final["sources"]) == 1
+
+
+async def test_bracketed_numbers_in_code_spans_do_not_trigger_invalid_citation(
+    client: httpx.AsyncClient,
+    entities: Any,
+    runtime_env: FakeRetriever,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    scripted_model: FakeChatProvider,
+) -> None:
+    """Code indices like `arr[0]` or `rows[99]` in code blocks are not citations."""
+    from app.agents.chat import ToolCall
+
+    await seed_model_config(db_session_factory)
+    await seed_retrieval_result(runtime_env, entities.finance.id)
+    scripted_model.turns = [
+        ChatTurn(
+            content=None,
+            tool_calls=[
+                ToolCall(id="call-1", name="search_context", arguments={"query": "revenue"})
+            ],
+        ),
+        ChatTurn(
+            content=(
+                "The report indexes `items[0]` and `rows[42]` as shown [1]:\n"
+                "```python\nvalue = rows[99]\n```"
+            ),
+            tool_calls=[],
+        ),
+    ]
+
+    headers = await login(client, "alice", OWNER_PASSWORD)
+    response = await client.post(
+        "/v1/agent/chat",
+        json={"message": "How is revenue indexed?"},
+        headers=headers,
+    )
+    final = sse_events(response.text)[-1]
+    assert final["type"] == "final"
+    assert "replaced" not in final
+    assert len(final["sources"]) == 1
 
 
 async def test_a_not_found_answer_after_a_search_is_allowed(

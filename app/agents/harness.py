@@ -575,7 +575,7 @@ def _cited_sources(content: str, served: list[ServedSource]) -> list[dict[str, A
     lets a client show the same references instead of guessing them back
     from truncated tool previews.
     """
-    cited = {int(match) for match in _CITATION.findall(content)}
+    cited = _extract_citations(content)
     return [
         {
             "index": source.index,
@@ -660,6 +660,8 @@ def _assistant_message(turn: ChatTurn) -> dict[str, Any]:
 
 
 _CITATION = re.compile(r"\[(\d+)\]")
+_CODE_FENCE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE = re.compile(r"`[^`\n]+`")
 _NOT_FOUND = re.compile(
     r"\b(not (?:mentioned|found|in the documents)|no (?:information|mention)|"
     r"do(?:es)? not (?:mention|contain)|tidak (?:ada|ditemukan|disebut)|"
@@ -682,6 +684,37 @@ _REFUSAL_UNGROUNDED = (
     "I could not verify that answer against the workspace documents, so I am "
     "not showing it. Try a more specific question or name the document."
 )
+MAX_CITATION_RETRIES = 1
+
+
+def _extract_citations(text: str) -> set[int]:
+    """Return all positive `[n]` citation indices outside code spans."""
+    stripped = _INLINE_CODE.sub("", _CODE_FENCE.sub("", text))
+    return {int(match) for match in _CITATION.findall(stripped) if int(match) > 0}
+
+
+def _citation_correction_prompt(
+    failure: str,
+    served: dict[int, ServedSource],
+    answer: str,
+) -> str:
+    indices = sorted(served.keys())
+    valid_desc = f"[{indices[0]}]" if len(indices) == 1 else f"[{indices[0]}]-[{indices[-1]}]"
+    if failure == "invalid_citation":
+        bad = sorted(_extract_citations(answer) - set(indices))
+        bad_desc = ", ".join(f"[{idx}]" for idx in bad[:10])
+        return (
+            f"Your previous answer contained bracketed numbers ({bad_desc}) that do not "
+            f"match any source returned in this turn (valid source labels: {valid_desc}). "
+            "Rewrite the answer grounded strictly in this turn's sources: attach only valid "
+            f"source labels from {valid_desc} to factual claims, and do not use bracketed "
+            "numbers like [42] for book footnotes, references, or citations from earlier turns."
+        )
+    return (
+        "Your previous answer did not include inline source citations. Rewrite the answer "
+        "grounded strictly in the sources returned in this turn, attaching valid source "
+        f"labels ({valid_desc}) to every factual claim."
+    )
 
 
 def _is_meta_message(message: str) -> bool:
@@ -703,7 +736,7 @@ def _grounding_failure(
     the narrow meta messages the prompt says are answered directly.
     """
     if served:
-        cited = {int(match) for match in _CITATION.findall(answer)}
+        cited = _extract_citations(answer)
         if not cited:
             return None if _NOT_FOUND.search(answer) else "no_citation"
         if not cited <= {source.index for source in served}:
@@ -783,7 +816,31 @@ async def run_agent(
 
         if not turn.tool_calls:
             content = turn.content or ""
-            failure = _grounding_failure(content, list(served.values()), tool_names, message)
+            served_list = list(served.values())
+            failure = _grounding_failure(content, served_list, tool_names, message)
+            if failure in ("no_citation", "invalid_citation") and served:
+                retry_messages = [
+                    *messages,
+                    {"role": "assistant", "content": content},
+                    {
+                        "role": "system",
+                        "content": _citation_correction_prompt(failure, served, content),
+                    },
+                ]
+                for _ in range(MAX_CITATION_RETRIES):
+                    try:
+                        retry_turn = await provider.complete(messages=retry_messages, tools=[])
+                    except ChatProviderError:
+                        break
+                    candidate = retry_turn.content or ""
+                    retry_failure = _grounding_failure(
+                        candidate, served_list, tool_names, message
+                    )
+                    if retry_failure is None:
+                        content = candidate
+                        failure = None
+                        break
+                    failure = retry_failure
             if failure is not None:
                 yield {
                     "type": "final",
@@ -798,7 +855,7 @@ async def run_agent(
             yield {
                 "type": "final",
                 "content": content,
-                "sources": _cited_sources(content, list(served.values())),
+                "sources": _cited_sources(content, served_list),
             }
             return
 
